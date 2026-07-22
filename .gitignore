@@ -18,3 +18,7 @@ go.work.sum
 .idea/
 .vscode/
 .env
+
+# Claude Code project dir — only committed contributor skills are tracked
+.claude/*
+!.claude/skills/
