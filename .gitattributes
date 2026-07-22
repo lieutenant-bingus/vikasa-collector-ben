@@ -1,0 +1,4 @@
+# Binary fixtures — committed bytes, not text. Marking them stops
+# `git diff` from trying to wrap-print the binary and `git merge`
+# from attempting a 3-way text merge that would corrupt the file.
+deploy/k8s/topology/cabinet/fixtures/asc3-sample.bin binary

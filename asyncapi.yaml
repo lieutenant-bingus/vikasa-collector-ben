@@ -1,0 +1,165 @@
+# The collector's OWN event schema — the events it defines rather than relays.
+#
+# Health events are deliberately outside openits-models (ADR 0007): device
+# reachability and collector self-health must stay reportable precisely when
+# the wire model is in flux, so they can never be held hostage to upstream
+# schema churn. openits-models publishes its own asyncapi.yaml for the catalog
+# events the wire emitters relay; this file covers only the collector-owned
+# namespace `openits-collector.health.*`.
+#
+# Unlike the catalog's bare addresses, addresses here are tenant-parameterized:
+# the CE `type` is the schema identity, while the NATS subject splices
+# agency/site in after the first token so cabinets can be routed and
+# aggregated without parsing payloads (ADR 0006).
+#
+# The addresses below show the DEFAULT subject rendering. Subject grammar is
+# operator-configurable (ADR 0009), so a deployment with a custom template
+# publishes these same ce-types on subjects of its own shape. The ce-type —
+# the channel key, and the CloudEvent `type` — is what stays constant, and is
+# the schema identity consumers should match on.
+#
+# Kept honest by TestAsyncAPICoversEveryEmittedType: every ce-type the health
+# emitter can produce must appear here, with payload properties matching the
+# bytes it actually emits.
+
+asyncapi: 3.0.0
+
+info:
+  title: openits-collector — collector-owned events
+  version: 1.0.0
+  description: |
+    Events defined by the collector itself. Catalog events (signal-control,
+    rsu, dms, …) are defined by openits-models and documented in that repo's
+    asyncapi.yaml; the collector relays them through versioned wire emitters.
+
+defaultContentType: application/json
+
+servers:
+  cabinet:
+    host: 127.0.0.1:4222
+    protocol: nats
+    description: |
+      The cabinet-local NATS JetStream. Same-box, and the durability story for
+      the edge: WAN outages are invisible here, and upstream replication is
+      another component's job.
+
+channels:
+  openits-collector.health.device-status-changed.v1:
+    address: openits.{agency}.{site}.health.device-status-changed.v1
+    title: health — device-status-changed
+    parameters:
+      agency:
+        description: Tenant agency token; must match ^[a-z0-9][a-z0-9-]*$.
+      site:
+        description: Cabinet/site token; must match ^[a-z0-9][a-z0-9-]*$.
+    messages:
+      openits-collector.health.device-status-changed.v1:
+        $ref: '#/components/messages/openits-collector.health.device-status-changed.v1'
+
+  openits-collector.health.collector-started.v1:
+    address: openits.{agency}.{site}.health.collector-started.v1
+    title: health — collector-started
+    parameters:
+      agency:
+        description: Tenant agency token; must match ^[a-z0-9][a-z0-9-]*$.
+      site:
+        description: Cabinet/site token; must match ^[a-z0-9][a-z0-9-]*$.
+    messages:
+      openits-collector.health.collector-started.v1:
+        $ref: '#/components/messages/openits-collector.health.collector-started.v1'
+
+operations:
+  publishDeviceStatusChanged:
+    action: send
+    channel:
+      $ref: '#/channels/openits-collector.health.device-status-changed.v1'
+  publishCollectorStarted:
+    action: send
+    channel:
+      $ref: '#/channels/openits-collector.health.collector-started.v1'
+
+components:
+  messages:
+    openits-collector.health.device-status-changed.v1:
+      contentType: application/json
+      summary: A device's reachability changed (up→down or down→up).
+      description: |
+        Emitted only on transitions, never per failed poll: the first failure
+        after success reports unreachable, and the first success after failure
+        reports reachable. A poll cut short by collector shutdown is not a
+        device failure and does not appear here.
+      headers:
+        $ref: '#/components/schemas/cloudEventHeaders'
+      payload:
+        type: object
+        required: [device_id, occurred_at, reachable, reason, consecutive_failures]
+        properties:
+          device_id:
+            type: string
+            description: Device this status refers to, matching its configured id.
+          occurred_at:
+            type: string
+            format: date-time
+            description: RFC3339 UTC instant the transition was observed.
+          reachable:
+            type: boolean
+            description: True when the device answered after previously failing.
+          reason:
+            type: string
+            description: Read error that caused an unreachable transition; empty when reachable.
+          consecutive_failures:
+            type: integer
+            description: Failed polls in the current run; 1 on the down transition, 0 on recovery.
+
+    openits-collector.health.collector-started.v1:
+      contentType: application/json
+      summary: The collector booted.
+      description: |
+        Emitted once at startup, before any device is polled. The CE source is
+        the cabinet itself (//<agency>/<site>) with no device segment, since
+        the subject of the event is the collector rather than a device.
+      headers:
+        $ref: '#/components/schemas/cloudEventHeaders'
+      payload:
+        type: object
+        required: [occurred_at, version]
+        properties:
+          occurred_at:
+            type: string
+            format: date-time
+            description: RFC3339 UTC instant the collector started.
+          version:
+            type: string
+            description: Collector build version; "dev" for unstamped builds.
+
+  schemas:
+    cloudEventHeaders:
+      type: object
+      properties:
+        ce-specversion:
+          type: string
+          const: "1.0"
+        ce-type:
+          type: string
+          description: |
+            Schema identity, verbatim. Note this is NOT the NATS subject: the
+            subject splices agency/site in after the first token.
+        ce-id:
+          type: string
+          description: |
+            Content-addressed SHA-256 over (type, source, occurred-at, data).
+            Identical inputs yield an identical id, so JetStream dedup holds
+            across collector restarts.
+        ce-source:
+          type: string
+          description: |
+            //<agency>/<site>/<device-id>, or //<agency>/<site> for events
+            about the collector itself. Device identity lives here rather than
+            in the subject, which would explode subject cardinality for no
+            routing benefit.
+        ce-time:
+          type: string
+          format: date-time
+        ce-datacontenttype:
+          type: string
+          const: application/json

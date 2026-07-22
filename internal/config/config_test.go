@@ -1,0 +1,235 @@
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/Vikasa2M/vikasa-collector/sdk/adapter"
+)
+
+func regWith(vendor, kind string) *adapter.Registry {
+	r := adapter.NewRegistry()
+	r.Register(adapter.Descriptor{Vendor: vendor, DeviceKind: kind, Caps: adapter.CapState},
+		func(string, map[string]any) (adapter.Adapter, error) { return nil, nil })
+	return r
+}
+
+func write(t *testing.T, content string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "collector.yaml")
+	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+const validYAML = `
+agency: metro-atlanta
+site: cabinet-042
+model_version: openits/v1
+devices:
+  - id: asc-1
+    vendor: ntcip
+    device_kind: asc
+    poll_interval: 1s
+    connection:
+      snmp: { address: "10.0.0.12:161", community: public }
+`
+
+func TestLoadValid(t *testing.T) {
+	cfg, err := Load(write(t, validYAML), regWith("ntcip", "asc"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Agency != "metro-atlanta" || cfg.Site != "cabinet-042" || cfg.ModelVersion != "openits/v1" {
+		t.Fatalf("header: %+v", cfg)
+	}
+	d := cfg.Devices[0]
+	if d.ID != "asc-1" || d.Vendor != "ntcip" || d.DeviceKind != "asc" || d.PollInterval != time.Second {
+		t.Fatalf("device: %+v", d)
+	}
+	snmp := d.Connection["snmp"].(map[string]any)
+	if snmp["address"] != "10.0.0.12:161" {
+		t.Fatalf("connection not preserved: %+v", d.Connection)
+	}
+}
+
+func TestLoadDefaultsPollInterval(t *testing.T) {
+	yaml := `
+agency: metro
+site: cab-1
+model_version: openits/v1
+devices:
+  - { id: asc-1, vendor: ntcip, device_kind: asc, connection: {} }
+`
+	cfg, err := Load(write(t, yaml), regWith("ntcip", "asc"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Devices[0].PollInterval != 5*time.Second {
+		t.Fatalf("default poll_interval = %v, want 5s", cfg.Devices[0].PollInterval)
+	}
+}
+
+func TestLoadRejects(t *testing.T) {
+	reg := regWith("ntcip", "asc")
+	cases := map[string]string{
+		"unknown adapter": `
+agency: metro
+site: cab-1
+model_version: openits/v1
+devices: [{ id: d1, vendor: acme, device_kind: asc, connection: {} }]`,
+		"bad agency token": `
+agency: Metro.Atlanta
+site: cab-1
+model_version: openits/v1
+devices: [{ id: d1, vendor: ntcip, device_kind: asc, connection: {} }]`,
+		"missing model_version": `
+agency: metro
+site: cab-1
+devices: [{ id: d1, vendor: ntcip, device_kind: asc, connection: {} }]`,
+		"duplicate device id": `
+agency: metro
+site: cab-1
+model_version: openits/v1
+devices:
+  - { id: d1, vendor: ntcip, device_kind: asc, connection: {} }
+  - { id: d1, vendor: ntcip, device_kind: asc, connection: {} }`,
+		"no devices": `
+agency: metro
+site: cab-1
+model_version: openits/v1
+devices: []`,
+	}
+	for name, yaml := range cases {
+		if _, err := Load(write(t, yaml), reg); err == nil {
+			t.Errorf("%s: expected error", name)
+		}
+	}
+}
+
+func TestLoadSubjectDefaults(t *testing.T) {
+	cfg, err := Load(write(t, validYAML), regWith("ntcip", "asc"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	// No subject block: template empty (subject.New applies the default) and
+	// the stream name matches the pre-template scheme.
+	if cfg.Subject.Template != "" {
+		t.Errorf("Template = %q, want empty", cfg.Subject.Template)
+	}
+	if got := cfg.StreamName(); got != "OPENITS-METRO-ATLANTA-CABINET-042" {
+		t.Errorf("StreamName() = %q, want OPENITS-METRO-ATLANTA-CABINET-042", got)
+	}
+}
+
+func TestLoadSubjectCustom(t *testing.T) {
+	yaml := `
+agency: metro
+site: cab-1
+model_version: openits/v1
+subject:
+  template: "{prefix}.{region}.{agency}.{service}.{event}.{version}"
+  stream: EDGE-METRO-CAB1
+  vars:
+    prefix: traffic
+    region: southeast
+devices:
+  - { id: asc-1, vendor: ntcip, device_kind: asc, connection: {} }
+`
+	cfg, err := Load(write(t, yaml), regWith("ntcip", "asc"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Subject.Vars["region"] != "southeast" {
+		t.Errorf("vars not preserved: %+v", cfg.Subject.Vars)
+	}
+	if got := cfg.StreamName(); got != "EDGE-METRO-CAB1" {
+		t.Errorf("StreamName() = %q, want EDGE-METRO-CAB1", got)
+	}
+	sc := cfg.SubjectConfig()
+	if sc.Template != "{prefix}.{region}.{agency}.{service}.{event}.{version}" {
+		t.Errorf("SubjectConfig().Template = %q", sc.Template)
+	}
+}
+
+func TestLoadSubjectStreamOnly(t *testing.T) {
+	yaml := `
+agency: metro
+site: cab-1
+model_version: openits/v1
+subject:
+  stream: EDGE-METRO-CAB1
+devices:
+  - { id: asc-1, vendor: ntcip, device_kind: asc, connection: {} }
+`
+	cfg, err := Load(write(t, yaml), regWith("ntcip", "asc"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	// Setting only stream: custom stream is used, template remains empty (defaults apply).
+	if got := cfg.StreamName(); got != "EDGE-METRO-CAB1" {
+		t.Errorf("StreamName() = %q, want EDGE-METRO-CAB1", got)
+	}
+	if cfg.Subject.Template != "" {
+		t.Errorf("Template = %q, want empty (defaults apply)", cfg.Subject.Template)
+	}
+}
+
+func TestLoadSubjectTemplateOnly(t *testing.T) {
+	yaml := `
+agency: metro
+site: cab-1
+model_version: openits/v1
+subject:
+  template: "{prefix}.{agency}.{service}.{event}.{version}"
+devices:
+  - { id: asc-1, vendor: ntcip, device_kind: asc, connection: {} }
+`
+	cfg, err := Load(write(t, yaml), regWith("ntcip", "asc"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	// Setting only template: custom template is stored, stream defaults to pre-template scheme.
+	if cfg.Subject.Template != "{prefix}.{agency}.{service}.{event}.{version}" {
+		t.Errorf("Template = %q", cfg.Subject.Template)
+	}
+	if got := cfg.StreamName(); got != "OPENITS-METRO-CAB-1" {
+		t.Errorf("StreamName() = %q, want OPENITS-METRO-CAB-1", got)
+	}
+}
+
+// A bad template must fail at boot, not at first publish.
+func TestLoadRejectsBadSubjectTemplate(t *testing.T) {
+	cases := map[string]string{
+		"unknown placeholder": `
+agency: metro
+site: cab-1
+model_version: openits/v1
+subject: { template: "{prefix}.{nope}.{service}.{event}.{version}" }
+devices: [{ id: d1, vendor: ntcip, device_kind: asc, connection: {} }]`,
+		"no static prefix": `
+agency: metro
+site: cab-1
+model_version: openits/v1
+subject: { template: "{service}.{event}.{version}" }
+devices: [{ id: d1, vendor: ntcip, device_kind: asc, connection: {} }]`,
+		"illegal var token": `
+agency: metro
+site: cab-1
+model_version: openits/v1
+subject:
+  template: "{prefix}.{agency}.{service}.{event}.{version}"
+  vars: { prefix: "has.dot" }
+devices: [{ id: d1, vendor: ntcip, device_kind: asc, connection: {} }]`,
+	}
+	for name, yaml := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Load(write(t, yaml), regWith("ntcip", "asc")); err == nil {
+				t.Error("expected boot rejection")
+			}
+		})
+	}
+}

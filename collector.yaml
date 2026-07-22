@@ -1,0 +1,75 @@
+# Example collector configuration.
+#
+# Every value here is validated at boot and the collector refuses to start on
+# anything it does not understand: unknown vendor/device_kind, malformed
+# connection block, or tenant tokens that could corrupt subject grammar
+# (spec §6 — config is the trust boundary).
+
+# Tenant identity. Stamped on every event: spliced into the NATS subject
+# (openits.<agency>.<site>....) and into the CloudEvent source
+# (//<agency>/<site>/<device-id>). Both must match ^[a-z0-9][a-z0-9-]*$ —
+# a dot or wildcard here would corrupt the subject, so it is rejected at boot.
+agency: metro-atlanta
+site: cabinet-042
+
+# Selects the wire emitter at boot — the ONE place a models version appears.
+# One catalog version per collector instance (ADR 0005); version coexistence
+# happens across the fleet, never inside one process.
+#
+# NOTE: as of Plan 1 no openits-models emitter is wired yet, so this value is
+# validated as non-empty but does not yet select anything. Only collector-owned
+# health events reach JetStream; domain events are dropped with a warning until
+# Plan 2 lands. See README "Status".
+model_version: openits/v1
+
+# Subject grammar is yours (ADR 0009). Omit this block entirely and you get
+# the default below, which is what the collector published before templates
+# existed:
+#
+#   subject:
+#     template: "{prefix}.{agency}.{site}.{service}.{event}.{version}"
+#     vars: { prefix: openits }
+#
+# Placeholders are either instance-constants — anything under `vars`, plus
+# `agency` and `site` — or per-event values decomposed from the ce-type:
+# `service`, `event`, `version` (which carries its literal "v", e.g. "v1").
+# Reserved names (agency, site, service, event, version, device_id) cannot be
+# redefined in vars.
+#
+# Rule of thumb: COARSEST, MOST STABLE TOKENS LEFTMOST. NATS makes prefix
+# matching cheap — the JetStream stream binding, subject permissions, and
+# upstream aggregation all key off the left of the subject.
+#
+#   Tenant-first (default) — clean per-cabinet stream binding; per-site NATS
+#     auth falls out naturally. Cross-fleet subscription by event type needs
+#     mid-pattern wildcards that hardcode tenancy depth.
+#   Deep tenancy ({prefix}.{region}.{agency}.{site}...) — region-level
+#     aggregation and auth; every subscriber pattern encodes the depth.
+#   Service-first / flat ({prefix}.{service}...) — REJECTED AT BOOT. A cabinet
+#     publishes across every service, so there is no static prefix to bind a
+#     stream on and the binding would capture every subject on the server.
+#
+# Two warnings: adding a token later silently breaks subscribers whose
+# wildcards encoded the old depth, so choose depth up front; and changing the
+# grammar of a running cabinet generally means provisioning a new stream,
+# because the binding is derived from the template.
+#
+# subject:
+#   template: "{prefix}.{region}.{agency}.{site}.{service}.{event}.{version}"
+#   stream: EDGE-METRO-ATLANTA-CABINET-042   # defaults to OPENITS-<AGENCY>-<SITE>
+#   vars:
+#     prefix: openits
+#     region: southeast
+
+devices:
+  # vendor + device_kind select the adapter: registry key "<vendor>-<device_kind>".
+  # "ntcip" is itself a vendor — the generic, standards-only implementation
+  # (ADR 0003) that other ASC vendors start from.
+  - id: asc-main-and-5th
+    vendor: ntcip
+    device_kind: asc
+    poll_interval: 1s # optional; defaults to 5s
+    connection: # opaque to the core — parsed only by the adapter
+      snmp:
+        address: 10.0.0.12:161 # host:port, required
+        community: public # optional; defaults to "public"

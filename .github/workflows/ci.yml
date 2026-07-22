@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded runs on the same ref; the suite is fast and green-per-commit
+# matters more than a complete history of intermediate pushes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          # Single source of truth: the go directive in go.mod.
+          go-version-file: go.mod
+          cache: true
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt found unformatted files:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      # vet + tests + boundary lint + the lint's own selftest.
+      - name: make check
+        run: make check
+
+      # Runners are concurrent by nature (poll loops, publisher); the race
+      # detector is the point of running this separately from `make check`.
+      - name: race
+        run: go test ./... -race
+
+      - name: build
+        run: go build ./...
