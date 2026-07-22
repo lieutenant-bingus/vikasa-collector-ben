@@ -1,0 +1,30 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "packages": {
+    ".": {
+      "release-type": "go",
+      "changelog-path": "CHANGELOG.md",
+      "exclude-paths": [
+        ".github",
+        "docs",
+        "scripts",
+        "README.md",
+        "CONTRIBUTING.md",
+        "CODE_OF_CONDUCT.md",
+        "SECURITY.md",
+        "LICENSE",
+        "NOTICE",
+        "CHANGELOG.md",
+        "Makefile",
+        ".gitignore",
+        ".gitattributes",
+        "release-please-config.json",
+        ".release-please-manifest.json"
+      ],
+      "include-component-in-tag": false,
+      "include-v-in-tag": true,
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": false
+    }
+  }
+}

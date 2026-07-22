@@ -1,0 +1,43 @@
+name: Bug report
+description: A collector defect — a crash, wrong event, dropped data, or behavior that doesn't match the docs.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a report. For **security** issues, stop here and use
+        [private advisory reporting](https://github.com/Vikasa2M/vikasa-collector/security/advisories/new)
+        instead. For open-ended questions, please use Discussions.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What went wrong, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: >
+        The exact commands (e.g. `go run ./cmd/collector -config ...`,
+        `make check`) and a minimal config. Scrub real addresses, community
+        strings, and site names before pasting.
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: area
+    attributes:
+      label: Area
+      description: Which component? (e.g. `internal/vendors/ntcip/asc`, `internal/synth`, the publish path, subject templates)
+    validations:
+      required: false
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: Go version, OS/arch, NATS server version, and the device (vendor/model/firmware) if relevant.
+      render: shell
+    validations:
+      required: false

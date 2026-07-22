@@ -1,0 +1,33 @@
+version: 2
+updates:
+  # Keep the SHA-pinned GitHub Actions current. Dependabot bumps both the
+  # commit SHA and the trailing `# vX.Y.Z` comment, so pinning to a SHA does
+  # not mean the pins silently rot.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    # Wait 14 days after a version is published before proposing it, so a
+    # freshly-pushed (and possibly compromised) release isn't pulled in
+    # immediately. Applies to major/minor/patch alike.
+    cooldown:
+      default-days: 14
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  # Go module dependencies (gosnmp, nats, openits-models, yaml). Note:
+  # openits-models bumps land here as ordinary dep PRs, but adopting a new
+  # models release is a deliberate emitter-package decision (ADR 0002) —
+  # review those rather than auto-merging.
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 14
+    groups:
+      go-dependencies:
+        patterns: ["*"]

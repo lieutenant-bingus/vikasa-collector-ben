@@ -1,0 +1,12 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or idea (Discussions)
+    url: https://github.com/Vikasa2M/vikasa-collector/discussions
+    about: >
+      For questions, design discussion, or "should the collector support X?"
+      conversations, please open a Discussion rather than an issue.
+  - name: Report a security vulnerability
+    url: https://github.com/Vikasa2M/vikasa-collector/security/advisories/new
+    about: >
+      Do NOT open a public issue for security problems. Report privately via
+      GitHub Security Advisories. See SECURITY.md.

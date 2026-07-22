@@ -1,0 +1,11 @@
+# Default owners for everything in the repo. CODEOWNERS entries must be
+# GitHub users or teams (@org/team) with write access — an org name alone
+# is not a valid owner.
+* @Vikasa2M/openits-maintainers
+
+# The layering contract: adapters/sdk must not know wire schemas, and only
+# internal/wire may import openits-models (ADR 0002, CI-enforced). Changes
+# here are architecture changes — review accordingly.
+/sdk/          @Vikasa2M/openits-maintainers
+/internal/wire/ @Vikasa2M/openits-maintainers
+/docs/adr/     @Vikasa2M/openits-maintainers
