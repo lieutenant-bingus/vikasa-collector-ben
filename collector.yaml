@@ -51,13 +51,20 @@ model_version: openits/v1
 # conformance harness asserts:
 #
 #   subject:
-#     template: "{prefix}.{region}.{agency}.{agency_unit}.{service}.{device_id}.{event}"
-#     vars: { prefix: openits }
+#     template: "{namespace}.{region}.{agency}.{agency_unit}.{service}.{device_id}.{event}"
+#
+# `{namespace}` is the ce-type's own first token, which roots each event family
+# in its own subject space: `openits` for ITS catalog events,
+# `openits-collector` for the collector's own health. The collector provisions
+# ONE STREAM PER ROOT — OPENITS-<REGION>-<AGENCY>-<UNIT> and
+# OPENITS-COLLECTOR-<REGION>-<AGENCY>-<UNIT> — so the two families can carry
+# different retention, and so an operator can grant read access to traffic
+# telemetry without also exposing collector internals (ADR 0011).
 #
 # Placeholders are either instance-constants — anything under `vars`, plus
 # `region`, `agency`, `agency_unit` and `site` — or per-event values:
-# `service`, `event` and `version` decomposed from the ce-type, plus
-# `device_id`. Device-less events (the boot event) render `device_id` as the
+# `namespace`, `service`, `event` and `version` decomposed from the ce-type,
+# plus `device_id`. Device-less events (the boot event) render `device_id` as the
 # literal "collector", so every event the collector can emit has a legal
 # subject and the token count never varies.
 #
@@ -65,8 +72,8 @@ model_version: openits/v1
 # major version, and repeating it here would be a second source of truth free
 # to disagree with the first. `{version}` stays available if you want it.
 #
-# Reserved names (region, agency, agency_unit, site, service, event, version,
-# device_id) cannot be redefined in vars — an operator var shadowing one would
+# Reserved names (namespace, region, agency, agency_unit, site, service, event,
+# version, device_id) cannot be redefined in vars — an operator var shadowing one would
 # produce subjects that disagree with the collector's own identity, and it
 # would surface as unroutable events rather than a config error.
 #
@@ -74,7 +81,13 @@ model_version: openits/v1
 # matching cheap — the JetStream stream binding, subject permissions, and
 # upstream aggregation all key off the left of the subject. The binding is
 # derived by truncating at the first per-event token, so with the default
-# grammar it is `openits.<region>.<agency>.<agency_unit>.>`.
+# grammar that yields one binding per root:
+# `openits.<region>.<agency>.<agency_unit>.>` and
+# `openits-collector.<region>.<agency>.<agency_unit>.>`.
+#
+# Stream names are DERIVED from those bindings, not configured: with a stream
+# per root a single `stream:` value would be meaningless, and a per-root block
+# would be a second source of truth free to drift from the filters it names.
 #
 #   Service-first / flat ({prefix}.{service}...) — REJECTED AT BOOT. A cabinet
 #     publishes across every service, so there is no static prefix to bind a
@@ -86,10 +99,7 @@ model_version: openits/v1
 # because the binding is derived from the template.
 #
 # subject:
-#   template: "{prefix}.{region}.{agency}.{agency_unit}.{service}.{device_id}.{event}"
-#   stream: EDGE-METRO-ATLANTA-CABINET-042   # defaults to OPENITS-<AGENCY>-<SITE>
-#   vars:
-#     prefix: openits
+#   template: "{namespace}.{region}.{agency}.{agency_unit}.{service}.{device_id}.{event}"
 
 devices:
   # vendor + device_kind select the adapter: registry key "<vendor>-<device_kind>".

@@ -15,8 +15,11 @@ local NATS JetStream using versioned openits-models payloads.
   entirely and return only `sdk/model` types.
 - **The core** diffs snapshots into domain events, tracks device health,
   and publishes on operator-configurable subjects (ADR 0009) — by default
-  the profile's seven-token grammar,
-  `openits.<region>.<agency>.<agency-unit>.<service>.<device-id>.<event>`.
+  the profile's seven-token grammar rooted on the ce-type's namespace:
+  `openits.<region>.<agency>.<agency-unit>.<service>.<device-id>.<event>` for
+  catalog events, `openits-collector.…` for collector health. Separate roots,
+  separate streams — collector-internal traffic and ITS telemetry differ in
+  retention and in who should be able to read them (ADR 0011).
 - **Wire emitters** (`internal/wire/`) are the only code that knows
   openits-models. One package per pinned models release.
 

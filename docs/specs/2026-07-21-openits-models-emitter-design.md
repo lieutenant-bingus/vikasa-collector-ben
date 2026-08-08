@@ -265,4 +265,16 @@ path, no per-emitter mode fork.
   traps and decimal64-as-string on detector occupancy.
 - **Deferred work gained the ce-id/ce-source tiering item.**
 
+**2026-08-08 (later the same day)** — §4's subject decision is amended by
+**ADR 0011**. Writing the Tier 2 conformance assertions exposed that health
+events ride a conformant seven-token `openits.*` subject while carrying
+`openits-collector.*` ce-types, which the profile's ce-type regex rejects — so
+a harness pointed at `openits.>` flags every one of them. Rather than scope the
+claim around that, the ce-type namespace now roots the subject space: catalog
+events on `openits.…`, health on `openits-collector.…`, with one JetStream
+stream per root. The harness false-negative was the trigger, but the durable
+reasons are retention and access control, which one shared stream made
+inexpressible. §4's `{prefix}` token and the single-binding model are
+superseded accordingly.
+
 Tracked in Linear as MON-184 (parent) and MON-196 (the upstream item).
