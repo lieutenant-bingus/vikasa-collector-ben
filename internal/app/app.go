@@ -17,6 +17,7 @@ import (
 	"github.com/Vikasa2M/vikasa-collector/internal/synth"
 	"github.com/Vikasa2M/vikasa-collector/internal/wire"
 	"github.com/Vikasa2M/vikasa-collector/internal/wire/health"
+	"github.com/Vikasa2M/vikasa-collector/internal/wire/openits"
 	"github.com/Vikasa2M/vikasa-collector/sdk/adapter"
 	"github.com/Vikasa2M/vikasa-collector/sdk/model"
 )
@@ -30,10 +31,16 @@ const drainTimeout = 5 * time.Second
 func Run(ctx context.Context, cfg *config.Config, reg *adapter.Registry, natsURL, version string) error {
 	tenant := cfg.Tenant()
 
-	// Emitter chain: first claim wins. Plan 2 prepends the openits-models
-	// emitter selected by cfg.ModelVersion; today only health is wired, so
-	// domain events fall through to the loud-drop path below.
-	emitters := []wire.Emitter{health.NewHealthEmitter()}
+	// Emitter chain: first claim wins. openits goes first so catalog events
+	// are claimed there; health keeps the collector-owned schema (ADR 0007)
+	// and is never claimed by openits.
+	//
+	// Events still reach the loud-drop path below — deliberately. The openits
+	// emitter declines anything it cannot encode faithfully (a controller mode
+	// with no upstream identity, a shared event on an unserved device kind),
+	// so the drop is the visible outcome of a mapping gap rather than evidence
+	// the chain is unwired.
+	emitters := []wire.Emitter{openits.New(cfg.CollectorID), health.NewHealthEmitter()}
 
 	tmpl, err := subject.New(cfg.SubjectConfig(), cfg.Agency, cfg.Site)
 	if err != nil {
@@ -138,8 +145,10 @@ func encodeAndPublish(ctx context.Context, pub *publish.Publisher, tenant cloude
 		}
 		return
 	}
-	// Loud drop: no emitter claims this event (spec §7). With only the
-	// health emitter wired (Plan 1), every domain event lands here.
+	// Loud drop: no emitter claims this event (spec §7). Reaching here now
+	// means a real mapping gap — an event kind with no ce-type, or one the
+	// openits emitter declined because it could not encode it faithfully —
+	// rather than the chain simply being unwired.
 	slog.Warn("event dropped: no emitter for domain event",
 		"event", ev.EventKind(), "device", ev.EventDeviceID())
 }

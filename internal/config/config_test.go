@@ -25,7 +25,10 @@ func write(t *testing.T, content string) string {
 	return p
 }
 
-const validYAML = `
+// baseYAML omits collector_id deliberately: the required-field test needs a
+// fixture that is valid in every other respect, so its failure can only be
+// about the missing field.
+const baseYAML = `
 agency: metro-atlanta
 site: cabinet-042
 model_version: openits/v1
@@ -37,6 +40,8 @@ devices:
     connection:
       snmp: { address: "10.0.0.12:161", community: public }
 `
+
+const validYAML = baseYAML + "collector_id: cabinet-042-collector\n"
 
 func TestLoadValid(t *testing.T) {
 	cfg, err := Load(write(t, validYAML), regWith("ntcip", "asc"))
@@ -61,6 +66,7 @@ func TestLoadDefaultsPollInterval(t *testing.T) {
 agency: metro
 site: cab-1
 model_version: openits/v1
+collector_id: cabinet-042-collector
 devices:
   - { id: asc-1, vendor: ntcip, device_kind: asc, connection: {} }
 `
@@ -80,11 +86,13 @@ func TestLoadRejects(t *testing.T) {
 agency: metro
 site: cab-1
 model_version: openits/v1
+collector_id: cabinet-042-collector
 devices: [{ id: d1, vendor: acme, device_kind: asc, connection: {} }]`,
 		"bad agency token": `
 agency: Metro.Atlanta
 site: cab-1
 model_version: openits/v1
+collector_id: cabinet-042-collector
 devices: [{ id: d1, vendor: ntcip, device_kind: asc, connection: {} }]`,
 		"missing model_version": `
 agency: metro
@@ -94,6 +102,7 @@ devices: [{ id: d1, vendor: ntcip, device_kind: asc, connection: {} }]`,
 agency: metro
 site: cab-1
 model_version: openits/v1
+collector_id: cabinet-042-collector
 devices:
   - { id: d1, vendor: ntcip, device_kind: asc, connection: {} }
   - { id: d1, vendor: ntcip, device_kind: asc, connection: {} }`,
@@ -101,6 +110,7 @@ devices:
 agency: metro
 site: cab-1
 model_version: openits/v1
+collector_id: cabinet-042-collector
 devices: []`,
 	}
 	for name, yaml := range cases {
@@ -130,6 +140,7 @@ func TestLoadSubjectCustom(t *testing.T) {
 agency: metro
 site: cab-1
 model_version: openits/v1
+collector_id: cabinet-042-collector
 subject:
   template: "{prefix}.{region}.{agency}.{service}.{event}.{version}"
   stream: EDGE-METRO-CAB1
@@ -160,6 +171,7 @@ func TestLoadSubjectStreamOnly(t *testing.T) {
 agency: metro
 site: cab-1
 model_version: openits/v1
+collector_id: cabinet-042-collector
 subject:
   stream: EDGE-METRO-CAB1
 devices:
@@ -183,6 +195,7 @@ func TestLoadSubjectTemplateOnly(t *testing.T) {
 agency: metro
 site: cab-1
 model_version: openits/v1
+collector_id: cabinet-042-collector
 subject:
   template: "{prefix}.{agency}.{service}.{event}.{version}"
 devices:
@@ -208,18 +221,21 @@ func TestLoadRejectsBadSubjectTemplate(t *testing.T) {
 agency: metro
 site: cab-1
 model_version: openits/v1
+collector_id: cabinet-042-collector
 subject: { template: "{prefix}.{nope}.{service}.{event}.{version}" }
 devices: [{ id: d1, vendor: ntcip, device_kind: asc, connection: {} }]`,
 		"no static prefix": `
 agency: metro
 site: cab-1
 model_version: openits/v1
+collector_id: cabinet-042-collector
 subject: { template: "{service}.{event}.{version}" }
 devices: [{ id: d1, vendor: ntcip, device_kind: asc, connection: {} }]`,
 		"illegal var token": `
 agency: metro
 site: cab-1
 model_version: openits/v1
+collector_id: cabinet-042-collector
 subject:
   template: "{prefix}.{agency}.{service}.{event}.{version}"
   vars: { prefix: "has.dot" }
@@ -231,5 +247,39 @@ devices: [{ id: d1, vendor: ntcip, device_kind: asc, connection: {} }]`,
 				t.Error("expected boot rejection")
 			}
 		})
+	}
+}
+
+func TestLoadRequiresCollectorID(t *testing.T) {
+	// collector_id is stamped on every published event as observed-by: who
+	// saw this. There is no honest default — deriving it from agency/site
+	// would be silently wrong the moment a cabinet runs two collectors — so
+	// it is required at the trust boundary rather than invented at publish
+	// time.
+	if _, err := Load(write(t, baseYAML), regWith("ntcip", "asc")); err == nil {
+		t.Fatal("Load accepted a config with no collector_id")
+	}
+}
+
+func TestLoadRejectsMalformedCollectorID(t *testing.T) {
+	// Must satisfy the wire's device-id pattern [a-zA-Z0-9_-]+, since it is
+	// carried in observed-by. A dot or space here produces a payload that
+	// fails schema validation at the consumer, long after we could act on it.
+	for _, bad := range []string{"has space", "has.dot", "has/slash", ""} {
+		yaml := baseYAML + "collector_id: \"" + bad + "\"\n"
+		if _, err := Load(write(t, yaml), regWith("ntcip", "asc")); err == nil {
+			t.Errorf("Load accepted collector_id %q", bad)
+		}
+	}
+}
+
+func TestLoadAcceptsValidCollectorID(t *testing.T) {
+	yaml := baseYAML + "collector_id: cabinet-042-collector_1\n"
+	cfg, err := Load(write(t, yaml), regWith("ntcip", "asc"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.CollectorID != "cabinet-042-collector_1" {
+		t.Fatalf("CollectorID = %q", cfg.CollectorID)
 	}
 }

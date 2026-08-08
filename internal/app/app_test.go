@@ -67,6 +67,7 @@ func TestEndToEndHealthEventsReachJetStream(t *testing.T) {
 
 	// Config file.
 	cfgYAML := `
+collector_id: metro-cab-1-collector
 agency: metro
 site: cab-1
 model_version: openits/v1

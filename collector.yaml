@@ -12,14 +12,26 @@
 agency: metro-atlanta
 site: cabinet-042
 
+# Identifies THIS collector as the OBSERVER of the events it publishes. Stamped
+# into every openits payload's `observed-by`, the field that distinguishes "the
+# device reported this" from "a poller inferred it by diffing consecutive
+# reads" — which is what the collector actually does for mode, plan and fault
+# transitions.
+#
+# Required, and deliberately has no default. Deriving it from agency/site would
+# be silently wrong the moment a cabinet runs two collectors, and the mistake
+# would surface as mislabelled provenance in the data lake rather than as a
+# refusal to start. Must match [a-zA-Z0-9_-]+ (the wire's device-id shape).
+collector_id: cabinet-042-collector
+
 # Selects the wire emitter at boot — the ONE place a models version appears.
 # One catalog version per collector instance (ADR 0005); version coexistence
 # happens across the fleet, never inside one process.
 #
-# NOTE: as of Plan 1 no openits-models emitter is wired yet, so this value is
-# validated as non-empty but does not yet select anything. Only collector-owned
-# health events reach JetStream; domain events are dropped with a warning until
-# Plan 2 lands. See README "Status".
+# NOTE: the openits-models emitter is wired, but this value does not yet select
+# between versions — there is only one emitter package while the models pin is
+# lockstep (ADR 0010). It is validated as non-empty so the config contract is
+# already the one version coexistence will need.
 model_version: openits/v1
 
 # Subject grammar is yours (ADR 0009). Omit this block entirely and you get

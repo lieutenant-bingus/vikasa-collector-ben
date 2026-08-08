@@ -6,6 +6,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -35,12 +36,25 @@ type Subject struct {
 
 // Config is the collector instance configuration.
 type Config struct {
-	Agency       string   `yaml:"agency"`
-	Site         string   `yaml:"site"`
+	Agency string `yaml:"agency"`
+	Site   string `yaml:"site"`
+	// CollectorID identifies THIS collector as the observer of the events it
+	// synthesizes. It is stamped into every openits payload's observed-by,
+	// which exists precisely to distinguish "the device reported this" from
+	// "a poller inferred it by diffing". Required, with no default: deriving
+	// it from agency/site would be silently wrong the moment a cabinet runs
+	// two collectors, and the error would surface as mislabelled provenance
+	// in the data lake rather than as a failure to start.
+	CollectorID  string   `yaml:"collector_id"`
 	ModelVersion string   `yaml:"model_version"`
 	Subject      Subject  `yaml:"subject"`
 	Devices      []Device `yaml:"devices"`
 }
+
+// deviceIDRe is the wire's device-id pattern. CollectorID rides in observed-by,
+// which is typed device-id upstream, so a value that violates it produces a
+// payload the consumer rejects long after we could have acted on it.
+var deviceIDRe = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 // Tenant returns the validated-shape tenant identity.
 func (c *Config) Tenant() cloudevents.Tenant {
@@ -83,6 +97,10 @@ func (c *Config) validate(reg *adapter.Registry) error {
 	}
 	if c.ModelVersion == "" {
 		return fmt.Errorf("model_version is required")
+	}
+	if !deviceIDRe.MatchString(c.CollectorID) {
+		return fmt.Errorf("collector_id %q is required and must match %s "+
+			"(it is published as observed-by on every event)", c.CollectorID, deviceIDRe)
 	}
 	// Build the template now so a bad grammar is a boot failure rather than a
 	// 3am unroutable event. The result is rebuilt in app.Run (which also has
