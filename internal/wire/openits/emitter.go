@@ -50,8 +50,22 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 	var msg proto.Message
 	switch v := ev.(type) {
 	case model.ModeChanged:
+		// `current` is a mandatory identityref. A domain mode with no
+		// controller-mode identity upstream cannot be encoded faithfully, so
+		// the event is NOT claimed and falls through to the loud-drop path —
+		// the same rule as an unknown DeviceKind. Never substitute a
+		// near-neighbour identity to make a warning go away.
+		current, ok := controllerModeIdentity(v.To)
+		if !ok {
+			return nil, false, nil
+		}
+		// `prior` is optional ("absent when the device just started up"), so an
+		// unmappable From is left empty rather than blocking the event.
+		prior, _ := controllerModeIdentity(v.From)
 		msg = &commonv1.ModeChanged{
 			SourceDeviceId: v.DeviceID,
+			Prior:          prior,
+			Current:        current,
 		}
 	default:
 		return nil, false, nil
@@ -62,4 +76,34 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 		return nil, false, fmt.Errorf("openits encode %s: %w", ceType, err)
 	}
 	return &wire.Encoded{CEType: ceType, ContentType: contentType, Data: data}, true, nil
+}
+
+// scTypes is the module prefix for signal-control identityref values. Wire
+// identityrefs render as "defining-module:identity-name".
+const scTypes = "openits-signal-control-types:"
+
+// controllerModeIdentity maps a domain controller mode to its upstream
+// identity. ok=false means the domain has a mode the wire model has no
+// identity for, which is a map-or-drop decision the caller must make
+// explicitly rather than guessing.
+//
+// ModeNormal maps to mode-FREE deliberately: upstream collapsed "normal" into
+// "free" because NTCIP and signal technicians treat uncoordinated-actuated
+// operation as a single mode. The mode-normal identity that does exist belongs
+// to openits-dms-types and is a sign display state, not a controller mode.
+//
+// ModeStandby and ModeUnknown have no controller-mode identity at all — the
+// upstream set is coordinated/free/flash/preempt/priority/manual/off. Adding
+// mode-standby upstream is tracked; until then those events are not claimed.
+func controllerModeIdentity(m model.ControllerMode) (string, bool) {
+	switch m {
+	case model.ModeNormal:
+		return scTypes + "mode-free", true
+	case model.ModeFlash:
+		return scTypes + "mode-flash", true
+	case model.ModeOff:
+		return scTypes + "mode-off", true
+	default:
+		return "", false
+	}
 }
