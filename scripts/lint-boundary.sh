@@ -2,10 +2,11 @@
 # Boundary rule (ADR 0002): sdk/ and internal/vendors/ must never depend on
 # the wire model. Only internal/wire/ may.
 #
-# Matched on the REPO name, not a full import path: openits-models declares
-# `module github.com/openits/openits-models` while living at
-# github.com/Vikasa2M/openits-models, and pinning either spelling here would
-# miss the other.
+# Matched on the REPO name, not a full import path. openits-models declares
+# `module github.com/Vikasa2M/openits-models` today, but the model layer is
+# intended to outlive this org — pinning one full import path here would
+# silently stop matching if it ever moves, and a boundary lint that quietly
+# matches nothing reads exactly like a boundary that is being respected.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

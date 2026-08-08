@@ -17,22 +17,57 @@ Two emitter families exist by design:
   JSON bodies, `openits-collector.health.*` ce-types. It does not track
   openits-models releases; leave it alone during pin bumps.
 - `internal/wire/openits` — the openits-models emitter: protobuf bodies,
-  catalog ce-types. Unsuffixed while the pin is lockstep-with-HEAD, since
-  exactly one models version is ever compiled in; it splits into
-  `internal/wire/<version>` at the first tagged pin (ADR 0010). The design
-  is `docs/specs/2026-07-21-openits-models-emitter-design.md` — read it
-  **and its Revisions section** before emitter work; the body was written
-  against v0.2.2 and several items were corrected on 2026-08-08.
+  catalog ce-types. It splits into `internal/wire/<version>` packages once
+  more than one models release has to compile at the same time (ADR 0002's
+  S2). The design is
+  `docs/specs/2026-07-21-openits-models-emitter-design.md` — read it **and
+  its Revisions section**, which records where the body has been overtaken
+  by later models releases.
+
+## Ground truth: probe, don't read
+
+openits-models' prose and its generated code have disagreed more than
+once, and the prose is the one that lies. Before mapping anything, resolve
+the module at the pinned version in a scratch Go module and **run** it —
+construct the message, marshal it, print the bytes. Shapes looking right
+is not a result; a probe that never produced a byte proves nothing.
+
+```bash
+mkdir /tmp/probe && cd /tmp/probe && go mod init probe
+go get github.com/Vikasa2M/openits-models@<the version in our go.mod>
+# then a main.go that builds the message, marshals it, and prints hex
+```
+
+Things that have surprised people, worth checking rather than assuming:
+
+- **Enums may have no `UNSPECIFIED` zero value.** Several start their
+  first real member at 0, so a zero field is a meaningful value, not
+  "unset" — you cannot distinguish them on the wire.
+- **`identityref` leaves are plain `string`** on the generated structs,
+  carrying `defining-module:identity-name`. They are not Go enums, and the
+  identity set is not always what the domain enum's name suggests — check
+  which module defines the identity you mean, since several services
+  define same-named ones.
+- **Some numeric-looking leaves are strings** (YANG `decimal64` renders as
+  a string), so a field the domain holds as an integer may need formatting
+  rather than conversion.
+- **`ce-id-spec.md` ships a test vector.** Reproduce it from the real
+  generated type before trusting any `ce-id` implementation — it exercises
+  the payload encoding and the digest chain together. If it doesn't
+  reproduce, the implementation is wrong, not the vector.
+
+Record what you verify, and against which version, so the next person
+re-probes only what the pin bump could have moved.
 
 ## Rules that make the layer work
 
-- **openits-models is pinned at main HEAD** (pseudo-version) while both
-  repos move in lockstep pre-v1 (ADR 0010, amending 0002) — never a
-  `replace` on a checkout, which would break reproducibility. Tagged pins
-  and versioned emitter packages return at openits-models v1.0.0, or
-  sooner if a consumer outside this team pins it. Version coexistence
-  happens across the fleet (config selects the emitter at boot, ADR 0005),
-  never inside a process.
+- **openits-models is consumed as tagged semver releases** — never a
+  `replace` on a checkout, which would break reproducibility for everyone
+  who doesn't have your working tree. Version coexistence happens across
+  the fleet (config selects the emitter at boot, ADR 0005), never inside a
+  process. Whatever the current pin is, it is a real, immutable module
+  version in `go.mod`; check there rather than assuming, and see ADR 0002
+  and any ADR amending it for the pinning rule in force.
 - **The mapping is dumb by design.** Field-by-field copies, explicit enum
   switches. No reflection, no mapping DSL, no clever generality — a
   reviewer must be able to check each mapping against the two schemas by
@@ -57,23 +92,23 @@ Two emitter families exist by design:
 1. Read the CHANGELOG (or the commit range) and diff its
    `bindings/nats/asyncapi.yaml` ce-type set against the current emitter's
    `CETypes()`.
-2. While the pin is lockstep-with-HEAD (ADR 0010): `go get -u
-   github.com/Vikasa2M/openits-models@main`, adjust mappings/constants
-   in place, and claim any newly-available events that were dropping
-   (check the drop warnings for candidates). No new package — there is
-   only ever one.
-3. Once tagged pins resume: copy the emitter package to
-   `internal/wire/<newversion>` and pin the tag, so both compile side by
-   side (ADR 0002 S2).
-4. Either way, every golden diff is a decision — confirm each against the
-   models change, don't just regenerate. A golden that moved without a
-   mapping edit means the models module changed under you, which during
-   lockstep is the expected way you find out.
+2. Move the pin to the new release, adjust mappings and `ce-dataschema`
+   constants, and claim any newly-available events that were dropping
+   (the drop warnings name the candidates). While only one models release
+   has to compile, edit the existing emitter package in place.
+3. When the fleet needs two releases at once, copy the emitter to
+   `internal/wire/<newversion>` instead, so both compile together (ADR
+   0002's S2). Update the `model_version` default only when the fleet is
+   ready to move; two packages coexisting is the normal state, not a
+   migration to rush.
+4. Re-probe the generated code for anything the release could have moved
+   (see "Ground truth" above) — enum numbering and identityref spellings
+   change without any signal at the Go type level.
 5. Goldens: fixture event in → exact header set + payload bytes out, per
-   mapped event. Regenerate deliberately.
-6. Once there are two emitter packages, update the `model_version` default
-   only when the fleet is ready; both compiling side by side is the normal
-   state (ADR 0002's S2 scenario).
+   mapped event. Every diff is a decision — confirm each against the
+   models change, never regenerate wholesale. **A golden that moved
+   without a mapping edit means the module changed under you**, which is
+   the whole reason the goldens pin bytes rather than shapes.
 
 ## Envelope invariants (all emitters, `internal/publish` + `internal/cloudevents`)
 
