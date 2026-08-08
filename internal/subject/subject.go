@@ -294,6 +294,21 @@ func (t *Template) Bindings(ceTypes []string) ([]string, error) {
 	return out, nil
 }
 
+// ValidateBindable reports whether this template can yield a static stream
+// binding AT ALL — the structural property, independent of which namespaces
+// the emitters actually produce.
+//
+// It exists because the static-prefix guard moved from New() to Bindings()
+// when the namespace became a per-event token, and Bindings needs ce-types
+// that config.Load does not have. Without this, a template that could never
+// bind would survive the config trust boundary and only fail later at stream
+// provisioning. The probe value is irrelevant: the check is about token
+// POSITION, not the namespace's spelling.
+func (t *Template) ValidateBindable() error {
+	_, err := t.bindingFor("namespace-probe")
+	return err
+}
+
 // bindingFor substitutes one namespace and truncates at the first REMAINING
 // per-event token. Substituting first is what lets the static-prefix guard
 // still work now that the leftmost token is itself per-event.

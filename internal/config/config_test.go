@@ -142,9 +142,6 @@ func TestLoadSubjectDefaults(t *testing.T) {
 	if cfg.Subject.Template != "" {
 		t.Errorf("Template = %q, want empty", cfg.Subject.Template)
 	}
-	if got := cfg.StreamName(); got != "OPENITS-METRO-ATLANTA-CABINET-042" {
-		t.Errorf("StreamName() = %q, want OPENITS-METRO-ATLANTA-CABINET-042", got)
-	}
 }
 
 func TestLoadSubjectCustom(t *testing.T) {
@@ -157,7 +154,6 @@ model_version: openits/v1
 collector_id: cabinet-042-collector
 subject:
   template: "{prefix}.{geo}.{agency}.{service}.{event}.{version}"
-  stream: EDGE-METRO-CAB1
   vars:
     prefix: traffic
     geo: southeast
@@ -170,9 +166,6 @@ devices:
 	}
 	if cfg.Subject.Vars["geo"] != "southeast" {
 		t.Errorf("vars not preserved: %+v", cfg.Subject.Vars)
-	}
-	if got := cfg.StreamName(); got != "EDGE-METRO-CAB1" {
-		t.Errorf("StreamName() = %q, want EDGE-METRO-CAB1", got)
 	}
 	sc := cfg.SubjectConfig()
 	if sc.Template != "{prefix}.{geo}.{agency}.{service}.{event}.{version}" {
@@ -189,7 +182,6 @@ site: cab-1
 model_version: openits/v1
 collector_id: cabinet-042-collector
 subject:
-  stream: EDGE-METRO-CAB1
 devices:
   - { id: asc-1, vendor: ntcip, device_kind: asc, connection: {} }
 `
@@ -198,9 +190,6 @@ devices:
 		t.Fatalf("Load: %v", err)
 	}
 	// Setting only stream: custom stream is used, template remains empty (defaults apply).
-	if got := cfg.StreamName(); got != "EDGE-METRO-CAB1" {
-		t.Errorf("StreamName() = %q, want EDGE-METRO-CAB1", got)
-	}
 	if cfg.Subject.Template != "" {
 		t.Errorf("Template = %q, want empty (defaults apply)", cfg.Subject.Template)
 	}
@@ -226,9 +215,6 @@ devices:
 	// Setting only template: custom template is stored, stream defaults to pre-template scheme.
 	if cfg.Subject.Template != "{prefix}.{agency}.{service}.{event}.{version}" {
 		t.Errorf("Template = %q", cfg.Subject.Template)
-	}
-	if got := cfg.StreamName(); got != "OPENITS-METRO-CAB-1" {
-		t.Errorf("StreamName() = %q, want OPENITS-METRO-CAB-1", got)
 	}
 }
 

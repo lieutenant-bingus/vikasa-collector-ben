@@ -6,6 +6,7 @@ package publish
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -28,15 +29,36 @@ type Publisher struct {
 	tmpl *subject.Template
 }
 
-// Connect dials NATS and ensures the cabinet stream exists. The stream's
-// subject filter is derived from the template, so an operator's grammar and
-// the stream that captures it can never disagree.
-func Connect(ctx context.Context, url string, tmpl *subject.Template, streamName string) (*Publisher, error) {
+// StreamNameForBinding derives a stream name from its subject filter, so the
+// two cannot disagree: uppercased, dots to dashes, trailing wildcard dropped.
+// "openits.us-ga.metro.d01.>" becomes "OPENITS-US-GA-METRO-D01".
+//
+// Derived rather than configured because with a stream per namespace a single
+// configured name is meaningless, and a per-namespace config block would be a
+// second source of truth free to disagree with the bindings it is supposed to
+// name. An explicit override stays additive if an operator ever needs one.
+func StreamNameForBinding(binding string) string {
+	trimmed := strings.TrimSuffix(strings.TrimSuffix(binding, ">"), ".")
+	return strings.ToUpper(strings.ReplaceAll(trimmed, ".", "-"))
+}
+
+// Connect dials NATS and ensures one stream per ce-type namespace. Subject
+// filters are derived from the template, so an operator's grammar and the
+// streams that capture it can never disagree.
+//
+// One stream per namespace, not one overall: collector-internal traffic and
+// ITS-domain traffic want different retention and different subject
+// permissions (ADR 0011), and a shared stream makes both inexpressible.
+func Connect(ctx context.Context, url string, tmpl *subject.Template, ceTypes []string) (*Publisher, error) {
 	if tmpl == nil {
 		return nil, fmt.Errorf("publish: subject template is required")
 	}
-	if streamName == "" {
-		return nil, fmt.Errorf("publish: stream name is required")
+	bindings, err := tmpl.Bindings(ceTypes)
+	if err != nil {
+		return nil, err
+	}
+	if len(bindings) == 0 {
+		return nil, fmt.Errorf("publish: no ce-types given, so there is no stream to provision")
 	}
 	nc, err := nats.Connect(url, nats.MaxReconnects(-1))
 	if err != nil {
@@ -47,15 +69,16 @@ func Connect(ctx context.Context, url string, tmpl *subject.Template, streamName
 		nc.Close()
 		return nil, err
 	}
-	_, err = js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
-		Name:       streamName,
-		Subjects:   []string{tmpl.Binding()},
-		Storage:    jetstream.FileStorage,
-		Duplicates: dedupWindow,
-	})
-	if err != nil {
-		nc.Close()
-		return nil, fmt.Errorf("ensure stream: %w", err)
+	for _, b := range bindings {
+		if _, err := js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
+			Name:       StreamNameForBinding(b),
+			Subjects:   []string{b},
+			Storage:    jetstream.FileStorage,
+			Duplicates: dedupWindow,
+		}); err != nil {
+			nc.Close()
+			return nil, fmt.Errorf("ensure stream for %s: %w", b, err)
+		}
 	}
 	return &Publisher{nc: nc, js: js, tmpl: tmpl}, nil
 }

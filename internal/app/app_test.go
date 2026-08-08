@@ -91,7 +91,7 @@ devices:
 	}
 	defer nc.Close()
 	seen := make(chan string, 64)
-	sub, err := nc.Subscribe("openits.us-ga.metro.d01.>", func(m *nats.Msg) {
+	sub, err := nc.Subscribe(">", func(m *nats.Msg) {
 		// Binary mode: the body is the raw payload and the CloudEvents
 		// attributes ride as ce-* headers.
 		if ceType := m.Header.Get("ce-type"); ceType != "" {
@@ -123,7 +123,10 @@ devices:
 		select {
 		case s := <-seen:
 			parts := strings.SplitN(s, "|", 2)
-			if !strings.HasPrefix(parts[0], "openits.us-ga.metro.d01.") {
+			// Both roots are legitimate now; health lives on its own
+			// (ADR 0011). What matters is that everything stays under the
+			// tenant path.
+			if !strings.Contains(parts[0], ".us-ga.metro.d01.") {
 				t.Fatalf("event on unexpected subject %q", parts[0])
 			}
 			if _, tracked := want[parts[1]]; tracked {

@@ -87,7 +87,14 @@ devices:
 		got []observed
 	)
 	mu <- got
-	sub, err := nc.Subscribe("openits.>", func(m *nats.Msg) {
+	// Subscribes to ">" rather than to the two known roots on purpose: a
+	// third namespace appearing unannounced should be visible to these tests,
+	// not filtered out before they run. Messages with no ce-type are the
+	// broker's own JetStream API traffic ($JS.API.*), not collector output.
+	sub, err := nc.Subscribe(">", func(m *nats.Msg) {
+		if m.Header.Get("ce-type") == "" {
+			return
+		}
 		cur := <-mu
 		cur = append(cur, observed{subject: m.Subject, headers: m.Header, body: m.Data})
 		mu <- cur
@@ -116,12 +123,14 @@ func TestTier2ProfileConformance(t *testing.T) {
 
 	sawOpenITS := false
 	for _, m := range msgs {
+		// Tier 2 is assessed over the CATALOG subject space. Collector-owned
+		// health lives on its own root (ADR 0011) and is asserted separately.
+		if !strings.HasPrefix(m.subject, "openits.") {
+			continue
+		}
 		ceType := m.headers.Get("ce-type")
 
 		// --- Subject grammar (TestSubject_SevenTokenShape / _OpenitsPrefix)
-		if !strings.HasPrefix(m.subject, "openits.") {
-			t.Errorf("%s: subject lacks the openits. authority prefix", m.subject)
-		}
 		parts := strings.Split(m.subject, ".")
 		if len(parts) != 7 {
 			t.Errorf("%s: subject has %d tokens, want 7", m.subject, len(parts))
@@ -144,13 +153,6 @@ func TestTier2ProfileConformance(t *testing.T) {
 		}
 
 		// --- ce-type shape (TestCEType_OpenitsFormat)
-		//
-		// Scoped to catalog events on purpose. Collector-owned health events
-		// use the openits-collector.* namespace by design (ADR 0007) so they
-		// stay publishable when the wire model is in flux, and they do NOT
-		// satisfy the profile's ce-type regex. See the test below, which pins
-		// that as a known, deliberate divergence rather than letting it pass
-		// silently here.
 		if strings.HasPrefix(ceType, "openits.") {
 			sawOpenITS = true
 			if !profileCEType.MatchString(ceType) {
@@ -173,46 +175,46 @@ func TestTier2ProfileConformance(t *testing.T) {
 	}
 }
 
-// TestHealthEventsAreKnowinglyOutsideTheProfile pins a divergence rather than
-// asserting conformance.
+// TestHealthEventsAreOffTheCatalogSubjectSpace is what makes the separation
+// real rather than incidental.
 //
-// Health events ride the SAME subject space as catalog events — a conformant
-// seven-token openits.* subject — but carry openits-collector.* ce-types,
-// which the profile's ce-type regex rejects. That is deliberate (ADR 0007:
-// device reachability must stay reportable precisely when the wire model is in
-// flux), but it means a Tier 2 harness pointed at `openits.>` will flag them.
-//
-// Recorded here so the trade-off is a known property with a test naming it,
-// not a surprise the first time someone runs the harness against a live
-// cabinet.
-func TestHealthEventsAreKnowinglyOutsideTheProfile(t *testing.T) {
+// Health carries openits-collector.* ce-types, which the profile's ce-type
+// regex rejects by design (ADR 0007). While health shared the catalog subject
+// root, a Tier 2 harness pointed at `openits.>` flagged every health event as
+// non-conformant. Rooting health on its own namespace removes that false
+// negative — but only for as long as nothing drifts back, which is what this
+// test holds in place.
+func TestHealthEventsAreOffTheCatalogSubjectSpace(t *testing.T) {
 	msgs := runCollectorAndCollect(t, 900*time.Millisecond)
 
-	sawHealth := false
+	var sawCatalog, sawHealth bool
 	for _, m := range msgs {
 		ceType := m.headers.Get("ce-type")
-		if !strings.HasPrefix(ceType, "openits-collector.") {
-			continue
-		}
-		sawHealth = true
-
-		// The subject IS profile-shaped — health is routable alongside
-		// everything else, which is the point of ADR 0009's split between
-		// routing and identity.
-		if n := len(strings.Split(m.subject, ".")); n != 7 {
-			t.Errorf("health subject %q has %d tokens, want 7", m.subject, n)
-		}
-		// The ce-type is NOT, and must not silently become so.
-		if profileCEType.MatchString(ceType) {
-			t.Errorf("health ce-type %q now matches the profile regex; if health "+
-				"joined the catalog that is a real change, not a test fix", ceType)
-		}
-		// It must still omit ce-dataschema: there is no registry entry to name.
-		if ds := m.headers.Get("ce-dataschema"); ds != "" {
-			t.Errorf("health event carries ce-dataschema %q; it has no registry entry", ds)
+		switch {
+		case strings.HasPrefix(ceType, "openits-collector."):
+			sawHealth = true
+			if !strings.HasPrefix(m.subject, "openits-collector.") {
+				t.Errorf("health ce-type %q published on %q, which is inside the catalog space",
+					ceType, m.subject)
+			}
+			// Still profile-SHAPED, just on its own root: health stays
+			// routable and permissionable by the same grammar.
+			if n := len(strings.Split(m.subject, ".")); n != 7 {
+				t.Errorf("health subject %q has %d tokens, want 7", m.subject, n)
+			}
+			if ds := m.headers.Get("ce-dataschema"); ds != "" {
+				t.Errorf("health event carries ce-dataschema %q; it has no registry entry", ds)
+			}
+		case strings.HasPrefix(ceType, "openits."):
+			sawCatalog = true
+			if strings.HasPrefix(m.subject, "openits-collector.") {
+				t.Errorf("catalog ce-type %q published on the health root %q", ceType, m.subject)
+			}
+		default:
+			t.Errorf("unrecognised ce-type namespace: %q", ceType)
 		}
 	}
-	if !sawHealth {
-		t.Fatal("no health events published; this test asserted nothing")
+	if !sawHealth || !sawCatalog {
+		t.Fatalf("need both families to assert the split: health=%v catalog=%v", sawHealth, sawCatalog)
 	}
 }

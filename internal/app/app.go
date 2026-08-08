@@ -47,8 +47,12 @@ func Run(ctx context.Context, cfg *config.Config, reg *adapter.Registry, natsURL
 		return err
 	}
 	// Exhaustive, not sampled: every ce-type any emitter can produce must
-	// render to a legal subject inside the binding. A grammar mistake fails
-	// here, at boot, rather than the first time a rare event fires.
+	// render to a legal subject inside its namespace's binding. A grammar
+	// mistake fails here, at boot, rather than the first time a rare event
+	// fires. The same list drives stream provisioning below, so the streams
+	// and the validated ce-types cannot drift: a namespace with no stream
+	// would publish into a subject space nothing captures, and the events
+	// would vanish with no error at any layer.
 	var ceTypes []string
 	for _, em := range emitters {
 		ceTypes = append(ceTypes, em.CETypes()...)
@@ -57,7 +61,7 @@ func Run(ctx context.Context, cfg *config.Config, reg *adapter.Registry, natsURL
 		return err
 	}
 
-	pub, err := publish.Connect(ctx, natsURL, tmpl, cfg.StreamName())
+	pub, err := publish.Connect(ctx, natsURL, tmpl, ceTypes)
 	if err != nil {
 		return err
 	}

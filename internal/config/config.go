@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"regexp"
-	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -30,7 +29,6 @@ type Device struct {
 // zero value reproduces the pre-template scheme exactly (ADR 0009).
 type Subject struct {
 	Template string            `yaml:"template"`
-	Stream   string            `yaml:"stream"`
 	Vars     map[string]string `yaml:"vars"`
 }
 
@@ -89,15 +87,6 @@ func (c *Config) DeviceIDs() []string {
 	return ids
 }
 
-// StreamName is the JetStream stream to provision. Defaults to the
-// pre-template name so existing deployments keep their stream.
-func (c *Config) StreamName() string {
-	if c.Subject.Stream != "" {
-		return c.Subject.Stream
-	}
-	return "OPENITS-" + strings.ToUpper(c.Agency) + "-" + strings.ToUpper(c.Site)
-}
-
 // Load parses and validates. Any validation failure is fatal at boot.
 func Load(path string, reg *adapter.Registry) (*Config, error) {
 	raw, err := os.ReadFile(path)
@@ -128,7 +117,16 @@ func (c *Config) validate(reg *adapter.Registry) error {
 	// Build the template now so a bad grammar is a boot failure rather than a
 	// 3am unroutable event. The result is rebuilt in app.Run (which also has
 	// the emitter ce-types to validate against); this is the early, cheap half.
-	if _, err := subject.New(c.SubjectConfig(), c.SubjectIdentity()); err != nil {
+	tmpl, err := subject.New(c.SubjectConfig(), c.SubjectIdentity())
+	if err != nil {
+		return err
+	}
+	// Structural check only: whether the grammar can ever yield a static
+	// stream binding. The exhaustive per-ce-type validation happens in
+	// app.Run, which knows what the emitters produce; this is the early,
+	// cheap half that keeps a hopeless template from passing the trust
+	// boundary.
+	if err := tmpl.ValidateBindable(); err != nil {
 		return err
 	}
 	if len(c.Devices) == 0 {
