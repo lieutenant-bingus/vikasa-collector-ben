@@ -9,6 +9,7 @@ package subject
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -23,7 +24,7 @@ import (
 // This replaced a five-token, tenant-first default. Changing it moves every
 // subject AND the derived stream binding, which is only free because there are
 // no deployments — see ADR 0009's consequences.
-const DefaultTemplate = "{prefix}.{region}.{agency}.{agency_unit}.{service}.{device_id}.{event}"
+const DefaultTemplate = "{namespace}.{region}.{agency}.{agency_unit}.{service}.{device_id}.{event}"
 
 // DefaultPrefix is the {prefix} value assumed when config omits it.
 const DefaultPrefix = "openits"
@@ -32,6 +33,7 @@ const DefaultPrefix = "openits"
 // fixed for the process lifetime. The split determines where the stream
 // binding can be truncated (see Binding).
 var perEventNames = map[string]bool{
+	"namespace": true,
 	"service":   true,
 	"event":     true,
 	"version":   true,
@@ -42,7 +44,7 @@ var perEventNames = map[string]bool{
 // "service" would get subjects that disagree with their own ce-types, and it
 // would surface as unroutable events rather than a config error.
 var reservedNames = map[string]bool{
-	"service": true, "event": true, "version": true,
+	"namespace": true, "service": true, "event": true, "version": true,
 	"region": true, "agency": true, "agency_unit": true, "site": true,
 	// device_id is now a real per-event placeholder. It was reserved-but-
 	// unsupported because collector-level events have no device and so could
@@ -79,9 +81,8 @@ type token struct {
 
 // Template is a validated, ready-to-render subject template.
 type Template struct {
-	tokens  []token
-	binding string
-	raw     string
+	tokens []token
+	raw    string
 }
 
 // New validates cfg and returns a Template. Every failure here is a boot
@@ -138,13 +139,7 @@ func New(cfg Config, id Identity) (*Template, error) {
 		return nil, err
 	}
 
-	t := &Template{tokens: toks, raw: raw}
-	b, err := deriveBinding(toks)
-	if err != nil {
-		return nil, err
-	}
-	t.binding = b
-	return t, nil
+	return &Template{tokens: toks, raw: raw}, nil
 }
 
 // parseTokens splits the template on "." and resolves each token. Each token is
@@ -198,7 +193,7 @@ func parseTokens(raw string, vars map[string]string) ([]token, error) {
 // Render produces the subject for one ce-type and device. An empty deviceID
 // means a collector-level event and renders as deviceLessID.
 func (t *Template) Render(ceType, deviceID string) (string, error) {
-	service, event, version, err := decompose(ceType)
+	namespace, service, event, version, err := decompose(ceType)
 	if err != nil {
 		return "", err
 	}
@@ -207,6 +202,8 @@ func (t *Template) Render(ceType, deviceID string) (string, error) {
 		switch tok.perEventVar {
 		case "":
 			parts[i] = tok.literal
+		case "namespace":
+			parts[i] = namespace
 		case "service":
 			parts[i] = service
 		case "event":
@@ -233,20 +230,31 @@ func (t *Template) Render(ceType, deviceID string) (string, error) {
 }
 
 // decompose splits a ce-type into its subject-relevant parts. The first token
-// is the schema namespace (openits vs openits-collector) and is deliberately
-// NOT a subject token: catalog and health events share a subject root, which is
-// what the pre-template scheme did.
-func decompose(ceType string) (service, event, version string, err error) {
+// is the schema namespace — `openits` for catalog events, `openits-collector`
+// for the collector-owned health schema (ADR 0007) — and it IS a subject
+// token: it roots each family in its own space so they can carry different
+// retention and different access control (ADR 0011).
+//
+// It was previously discarded, so both families shared one root. That choice
+// was made for the pre-template scheme, before collector-internal traffic and
+// ITS-domain traffic had any reason to diverge.
+func decompose(ceType string) (namespace, service, event, version string, err error) {
 	parts := strings.Split(ceType, ".")
 	if len(parts) != 4 {
-		return "", "", "", fmt.Errorf("subject: ce-type %q must be <namespace>.<service>.<event>.<version>", ceType)
+		return "", "", "", "", fmt.Errorf("subject: ce-type %q must be <namespace>.<service>.<event>.<version>", ceType)
 	}
 	for _, p := range parts {
 		if p == "" {
-			return "", "", "", fmt.Errorf("subject: ce-type %q has an empty token", ceType)
+			return "", "", "", "", fmt.Errorf("subject: ce-type %q has an empty token", ceType)
 		}
 	}
-	return parts[1], parts[2], parts[3], nil
+	return parts[0], parts[1], parts[2], parts[3], nil
+}
+
+// namespaceOf returns just the ce-type's subject root.
+func namespaceOf(ceType string) (string, error) {
+	ns, _, _, _, err := decompose(ceType)
+	return ns, err
 }
 
 // isLegalToken reports whether s can appear as a single NATS subject token.
@@ -257,9 +265,62 @@ func isLegalToken(s string) bool {
 	return !strings.ContainsAny(s, ".*> \t\n\r")
 }
 
-// Binding is the JetStream stream subject filter that captures everything this
-// template can render.
-func (t *Template) Binding() string { return t.binding }
+// Bindings returns the JetStream subject filters that capture everything this
+// template can render, one per distinct ce-type namespace, sorted.
+//
+// One filter per namespace rather than one overall: the namespace is the
+// leftmost token and varies per event, so a single filter would have to be
+// ">" — which would capture every subject on the server, including other
+// tenants sharing the broker.
+func (t *Template) Bindings(ceTypes []string) ([]string, error) {
+	seen := make(map[string]bool)
+	var out []string
+	for _, ceType := range ceTypes {
+		ns, err := namespaceOf(ceType)
+		if err != nil {
+			return nil, err
+		}
+		if seen[ns] {
+			continue
+		}
+		seen[ns] = true
+		b, err := t.bindingFor(ns)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, b)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// bindingFor substitutes one namespace and truncates at the first REMAINING
+// per-event token. Substituting first is what lets the static-prefix guard
+// still work now that the leftmost token is itself per-event.
+func (t *Template) bindingFor(namespace string) (string, error) {
+	var prefix []string
+	for _, tok := range t.tokens {
+		switch tok.perEventVar {
+		case "":
+			prefix = append(prefix, tok.literal)
+		case "namespace":
+			prefix = append(prefix, namespace)
+		default:
+			if len(prefix) == 0 {
+				return "", fmt.Errorf("subject: template %q has no static prefix — its leftmost token varies per event, "+
+					"so the stream binding would be \">\" and would capture every subject on the server. "+
+					"Put constant tokens (the namespace, region, agency) leftmost", t.raw)
+			}
+			return strings.Join(prefix, ".") + ".>", nil
+		}
+	}
+	if len(prefix) == 0 {
+		return "", fmt.Errorf("subject: template %q rendered an empty binding", t.raw)
+	}
+	// No per-event tokens at all: every event renders the same subject. Legal,
+	// if odd; bind it exactly rather than with a wildcard.
+	return strings.Join(prefix, "."), nil
+}
 
 // ValidateCETypes renders every ce-type against every configured device and
 // checks each produces a legal subject inside the binding. Exhaustive rather
@@ -282,8 +343,16 @@ func (t *Template) ValidateCETypes(ceTypes []string, deviceIDs []string) error {
 					return fmt.Errorf("subject: ce-type %q with device %q renders to %q, which has an illegal token %q", ceType, id, subj, tok)
 				}
 			}
-			if !withinBinding(subj, t.binding) {
-				return fmt.Errorf("subject: ce-type %q with device %q renders to %q, outside the stream binding %q", ceType, id, subj, t.binding)
+			ns, err := namespaceOf(ceType)
+			if err != nil {
+				return err
+			}
+			binding, err := t.bindingFor(ns)
+			if err != nil {
+				return err
+			}
+			if !withinBinding(subj, binding) {
+				return fmt.Errorf("subject: ce-type %q with device %q renders to %q, outside the stream binding %q", ceType, id, subj, binding)
 			}
 		}
 	}

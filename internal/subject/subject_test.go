@@ -22,8 +22,8 @@ func TestDefaultTemplateGolden(t *testing.T) {
 	cases := map[string]string{
 		"openits.signal-control.fault-raised.v1":              "openits.us-tx.metro-atlanta.d07.signal-control.dev-1.fault-raised",
 		"openits.signal-control.operational-status-report.v1": "openits.us-tx.metro-atlanta.d07.signal-control.dev-1.operational-status-report",
-		"openits-collector.health.device-status-changed.v1":   "openits.us-tx.metro-atlanta.d07.health.dev-1.device-status-changed",
-		"openits-collector.health.collector-started.v1":       "openits.us-tx.metro-atlanta.d07.health.dev-1.collector-started",
+		"openits-collector.health.device-status-changed.v1":   "openits-collector.us-tx.metro-atlanta.d07.health.dev-1.device-status-changed",
+		"openits-collector.health.collector-started.v1":       "openits-collector.us-tx.metro-atlanta.d07.health.dev-1.collector-started",
 	}
 	for ceType, want := range cases {
 		got, err := tmpl.Render(ceType, "dev-1")
@@ -195,8 +195,12 @@ func TestBindingDerivation(t *testing.T) {
 			if err != nil {
 				t.Fatalf("New: %v", err)
 			}
-			if got := tmpl.Binding(); got != c.want {
-				t.Errorf("Binding() = %q, want %q", got, c.want)
+			got, err := tmpl.Bindings([]string{"openits.signal-control.fault-raised.v1"})
+			if err != nil {
+				t.Fatalf("Bindings: %v", err)
+			}
+			if len(got) != 1 || got[0] != c.want {
+				t.Errorf("Bindings() = %q, want [%q]", got, c.want)
 			}
 		})
 	}
@@ -205,7 +209,12 @@ func TestBindingDerivation(t *testing.T) {
 // A template leading with a per-event token has no static prefix, so its
 // binding would degrade to ">" — a stream that swallows every subject on the
 // server, including other components'. That must never be provisioned.
-func TestNewRejectsTemplatesWithNoStaticPrefix(t *testing.T) {
+// The guard moved from New() to Bindings(): the namespace is now itself a
+// per-event token, so "does the leftmost token vary" can only be answered
+// after it has been substituted. Both are still boot-time — Bindings is
+// called by publish.Connect during startup — so a bad grammar is still a
+// refusal to start rather than an unroutable event later.
+func TestBindingsRejectTemplatesWithNoStaticPrefix(t *testing.T) {
 	cases := []struct {
 		name string
 		cfg  Config
@@ -215,7 +224,11 @@ func TestNewRejectsTemplatesWithNoStaticPrefix(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			_, err := New(c.cfg, Identity{Region: "us-tx", Agency: "metro-atlanta", AgencyUnit: "d07", Site: "cabinet-042"})
+			tmpl, err := New(c.cfg, Identity{Region: "us-tx", Agency: "metro-atlanta", AgencyUnit: "d07", Site: "cabinet-042"})
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			_, err = tmpl.Bindings([]string{"openits.signal-control.fault-raised.v1"})
 			if err == nil {
 				t.Fatal("template with no static prefix must be rejected")
 			}
@@ -346,18 +359,27 @@ func TestRenderDeviceLessEventUsesCollector(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
-	want := "openits.us-tx.txdot.d07.health.collector.collector-started"
+	want := "openits-collector.us-tx.txdot.d07.health.collector.collector-started"
 	if got != want {
 		t.Errorf("Render = %q, want %q", got, want)
 	}
 }
 
 func TestBindingTruncatesAtTheFirstPerEventToken(t *testing.T) {
-	// The stream binding must be static. service is the first per-event token
-	// in the default grammar, so the binding stops before it.
+	// The stream binding must be static. In the default grammar the namespace
+	// is substituted and `service` is then the first remaining per-event
+	// token, so each root's binding stops before it.
 	tmpl, _ := New(Config{}, Identity{Region: "us-tx", Agency: "txdot", AgencyUnit: "d07", Site: "cab-1"})
-	if got, want := tmpl.Binding(), "openits.us-tx.txdot.d07.>"; got != want {
-		t.Errorf("Binding = %q, want %q", got, want)
+	got, err := tmpl.Bindings([]string{
+		"openits.signal-control.fault-raised.v1",
+		"openits-collector.health.collector-started.v1",
+	})
+	if err != nil {
+		t.Fatalf("Bindings: %v", err)
+	}
+	want := []string{"openits-collector.us-tx.txdot.d07.>", "openits.us-tx.txdot.d07.>"}
+	if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("Bindings = %q, want %q", got, want)
 	}
 }
 
@@ -386,5 +408,78 @@ func TestVarsMayNotRedefineTheNewReservedNames(t *testing.T) {
 		if err == nil {
 			t.Errorf("vars redefining %q was accepted", name)
 		}
+	}
+}
+
+func TestRenderRootsOnTheCETypeNamespace(t *testing.T) {
+	// The ce-type's first token IS the subject root. Catalog and health events
+	// therefore land on sibling roots without the template needing to know
+	// either name.
+	tmpl, err := New(Config{}, Identity{Region: "us-tx", Agency: "txdot", AgencyUnit: "d07", Site: "cab-1"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	for _, tc := range []struct{ ceType, deviceID, want string }{
+		{"openits.signal-control.fault-raised.v1", "i35-exit-214",
+			"openits.us-tx.txdot.d07.signal-control.i35-exit-214.fault-raised"},
+		{"openits-collector.health.collector-started.v1", "",
+			"openits-collector.us-tx.txdot.d07.health.collector.collector-started"},
+		{"openits-collector.health.device-status-changed.v1", "asc-1",
+			"openits-collector.us-tx.txdot.d07.health.asc-1.device-status-changed"},
+	} {
+		got, err := tmpl.Render(tc.ceType, tc.deviceID)
+		if err != nil {
+			t.Fatalf("Render(%q): %v", tc.ceType, err)
+		}
+		if got != tc.want {
+			t.Errorf("Render(%q) = %q, want %q", tc.ceType, got, tc.want)
+		}
+		if n := len(strings.Split(got, ".")); n != 7 {
+			t.Errorf("Render(%q) produced %d tokens, want 7: %q", tc.ceType, n, got)
+		}
+	}
+}
+
+func TestBindingsAreOnePerNamespace(t *testing.T) {
+	tmpl, err := New(Config{}, Identity{Region: "us-tx", Agency: "txdot", AgencyUnit: "d07", Site: "cab-1"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	got, err := tmpl.Bindings([]string{
+		"openits.signal-control.fault-raised.v1",
+		"openits.dms.mode-changed.v1", // same namespace: must not duplicate
+		"openits-collector.health.collector-started.v1",
+	})
+	if err != nil {
+		t.Fatalf("Bindings: %v", err)
+	}
+	want := []string{
+		"openits-collector.us-tx.txdot.d07.>",
+		"openits.us-tx.txdot.d07.>",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("Bindings() = %q, want %q", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("Bindings()[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestBindingsRejectATemplateWithNoStaticPrefix(t *testing.T) {
+	// A leftmost per-event token other than namespace leaves nothing static to
+	// bind on, so the stream filter would be ">" and would capture every
+	// subject on the server — including other tenants sharing the broker. That
+	// guard predates this change and must survive it: namespace is now
+	// leftmost AND per-event, so the check has to run after namespace
+	// substitution rather than at template-parse time.
+	tmpl, err := New(Config{Template: "{service}.{namespace}.{event}"},
+		Identity{Region: "us-tx", Agency: "txdot", AgencyUnit: "d07", Site: "cab-1"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if _, err := tmpl.Bindings([]string{"openits.signal-control.fault-raised.v1"}); err == nil {
+		t.Error("a template whose leftmost token varies per event must be rejected")
 	}
 }
