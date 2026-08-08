@@ -5,23 +5,28 @@ import (
 	"testing"
 )
 
-// The default template must reproduce the pre-template subjects exactly.
-// These strings are the back-compat contract, moved verbatim from
-// cloudevents.TestSubjectForGolden. If you are editing these values, stop:
-// the change is wrong.
-func TestDefaultTemplateReproducesLegacyBytes(t *testing.T) {
-	tmpl, err := New(Config{}, "metro-atlanta", "cabinet-042")
+// The default template's exact output, per ce-type. These strings are the
+// contract: a consumer's subscription wildcards encode this token layout, so
+// changing them silently breaks subscribers. If you are editing these values,
+// the change had better be a deliberate grammar reset with the stream
+// reprovisioned to match — see ADR 0009's consequences and the Plan 2 spec.
+//
+// This replaced a five-token tenant-first golden when the profile grammar
+// became the default; that reset was free only because there were no
+// deployments.
+func TestDefaultTemplateGolden(t *testing.T) {
+	tmpl, err := New(Config{}, Identity{Region: "us-tx", Agency: "metro-atlanta", AgencyUnit: "d07", Site: "cabinet-042"})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	cases := map[string]string{
-		"openits.signal-control.fault-raised.v1":              "openits.metro-atlanta.cabinet-042.signal-control.fault-raised.v1",
-		"openits.signal-control.operational-status-report.v1": "openits.metro-atlanta.cabinet-042.signal-control.operational-status-report.v1",
-		"openits-collector.health.device-status-changed.v1":   "openits.metro-atlanta.cabinet-042.health.device-status-changed.v1",
-		"openits-collector.health.collector-started.v1":       "openits.metro-atlanta.cabinet-042.health.collector-started.v1",
+		"openits.signal-control.fault-raised.v1":              "openits.us-tx.metro-atlanta.d07.signal-control.dev-1.fault-raised",
+		"openits.signal-control.operational-status-report.v1": "openits.us-tx.metro-atlanta.d07.signal-control.dev-1.operational-status-report",
+		"openits-collector.health.device-status-changed.v1":   "openits.us-tx.metro-atlanta.d07.health.dev-1.device-status-changed",
+		"openits-collector.health.collector-started.v1":       "openits.us-tx.metro-atlanta.d07.health.dev-1.collector-started",
 	}
 	for ceType, want := range cases {
-		got, err := tmpl.Render(ceType)
+		got, err := tmpl.Render(ceType, "dev-1")
 		if err != nil {
 			t.Fatalf("Render(%q): %v", ceType, err)
 		}
@@ -47,8 +52,8 @@ func TestCustomLayouts(t *testing.T) {
 		{
 			name: "more tokens: region + environment",
 			cfg: Config{
-				Template: "{prefix}.{region}.{agency}.{site}.{env}.{service}.{event}.{version}",
-				Vars:     map[string]string{"prefix": "traffic", "region": "southeast", "env": "prod"},
+				Template: "{prefix}.{geo}.{agency}.{site}.{env}.{service}.{event}.{version}",
+				Vars:     map[string]string{"prefix": "traffic", "geo": "southeast", "env": "prod"},
 			},
 			ceType: "openits.signal-control.fault-raised.v1",
 			want:   "traffic.southeast.metro-atlanta.cabinet-042.prod.signal-control.fault-raised.v1",
@@ -71,11 +76,11 @@ func TestCustomLayouts(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			tmpl, err := New(c.cfg, "metro-atlanta", "cabinet-042")
+			tmpl, err := New(c.cfg, Identity{Region: "us-tx", Agency: "metro-atlanta", AgencyUnit: "d07", Site: "cabinet-042"})
 			if err != nil {
 				t.Fatalf("New: %v", err)
 			}
-			got, err := tmpl.Render(c.ceType)
+			got, err := tmpl.Render(c.ceType, "dev-1")
 			if err != nil {
 				t.Fatalf("Render: %v", err)
 			}
@@ -104,11 +109,10 @@ func TestNewRejects(t *testing.T) {
 		{"empty placeholder", Config{Template: "{}.{service}.{event}.{version}"}},
 		{"unbalanced brace", Config{Template: "{prefix.{service}.{event}.{version}"}},
 		{"empty token", Config{Template: "{agency}..{service}.{event}.{version}"}},
-		{"device_id is not supported in v1", Config{Template: "{agency}.{device_id}.{service}.{event}.{version}"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if _, err := New(c.cfg, "metro-atlanta", "cabinet-042"); err == nil {
+			if _, err := New(c.cfg, Identity{Region: "us-tx", Agency: "metro-atlanta", AgencyUnit: "d07", Site: "cabinet-042"}); err == nil {
 				t.Fatalf("New(%+v) should have been rejected", c.cfg)
 			}
 		})
@@ -136,7 +140,7 @@ func TestNewRejectsInvalidAgencyAndSite(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if _, err := New(Config{}, c.agency, c.site); err == nil {
+			if _, err := New(Config{}, Identity{Region: "us-tx", Agency: c.agency, AgencyUnit: "d07", Site: c.site}); err == nil {
 				t.Fatalf("New(Config{}, %q, %q) should have been rejected", c.agency, c.site)
 			}
 		})
@@ -144,7 +148,7 @@ func TestNewRejectsInvalidAgencyAndSite(t *testing.T) {
 }
 
 func TestRenderRejectsMalformedCEType(t *testing.T) {
-	tmpl, err := New(Config{}, "metro", "cab-1")
+	tmpl, err := New(Config{}, Identity{Region: "us-tx", Agency: "metro", AgencyUnit: "d07", Site: "cab-1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +158,7 @@ func TestRenderRejectsMalformedCEType(t *testing.T) {
 		"fault-raised", // 1 token
 		"",
 	} {
-		if _, err := tmpl.Render(bad); err == nil {
+		if _, err := tmpl.Render(bad, "dev-1"); err == nil {
 			t.Errorf("Render(%q) should have been rejected", bad)
 		}
 	}
@@ -169,13 +173,13 @@ func TestBindingDerivation(t *testing.T) {
 		{
 			name: "default truncates at {service}",
 			cfg:  Config{},
-			want: "openits.metro-atlanta.cabinet-042.>",
+			want: "openits.us-tx.metro-atlanta.d07.>",
 		},
 		{
 			name: "deep tenancy keeps more static prefix",
 			cfg: Config{
-				Template: "{prefix}.{region}.{agency}.{site}.{service}.{event}.{version}",
-				Vars:     map[string]string{"prefix": "traffic", "region": "southeast"},
+				Template: "{prefix}.{geo}.{agency}.{site}.{service}.{event}.{version}",
+				Vars:     map[string]string{"prefix": "traffic", "geo": "southeast"},
 			},
 			want: "traffic.southeast.metro-atlanta.cabinet-042.>",
 		},
@@ -187,7 +191,7 @@ func TestBindingDerivation(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			tmpl, err := New(c.cfg, "metro-atlanta", "cabinet-042")
+			tmpl, err := New(c.cfg, Identity{Region: "us-tx", Agency: "metro-atlanta", AgencyUnit: "d07", Site: "cabinet-042"})
 			if err != nil {
 				t.Fatalf("New: %v", err)
 			}
@@ -211,7 +215,7 @@ func TestNewRejectsTemplatesWithNoStaticPrefix(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			_, err := New(c.cfg, "metro-atlanta", "cabinet-042")
+			_, err := New(c.cfg, Identity{Region: "us-tx", Agency: "metro-atlanta", AgencyUnit: "d07", Site: "cabinet-042"})
 			if err == nil {
 				t.Fatal("template with no static prefix must be rejected")
 			}
@@ -223,7 +227,7 @@ func TestNewRejectsTemplatesWithNoStaticPrefix(t *testing.T) {
 }
 
 func TestValidateCETypes(t *testing.T) {
-	tmpl, err := New(Config{}, "metro-atlanta", "cabinet-042")
+	tmpl, err := New(Config{}, Identity{Region: "us-tx", Agency: "metro-atlanta", AgencyUnit: "d07", Site: "cabinet-042"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,11 +235,11 @@ func TestValidateCETypes(t *testing.T) {
 		"openits-collector.health.collector-started.v1",
 		"openits.signal-control.fault-raised.v1",
 	}
-	if err := tmpl.ValidateCETypes(ok); err != nil {
+	if err := tmpl.ValidateCETypes(ok, nil); err != nil {
 		t.Fatalf("ValidateCETypes(%v): %v", ok, err)
 	}
 	// A malformed ce-type must be caught at boot, not when it first publishes.
-	if err := tmpl.ValidateCETypes([]string{"openits.signal-control.fault-raised"}); err == nil {
+	if err := tmpl.ValidateCETypes([]string{"openits.signal-control.fault-raised"}, nil); err == nil {
 		t.Fatal("malformed ce-type must be rejected")
 	}
 }
@@ -245,15 +249,15 @@ func TestValidateCETypes(t *testing.T) {
 // with an illegal token. The illegal-token loop in ValidateCETypes is the
 // only thing that catches this — Render itself happily produces the subject.
 func TestValidateCETypesRejectsIllegalRenderedToken(t *testing.T) {
-	tmpl, err := New(Config{}, "metro-atlanta", "cabinet-042")
+	tmpl, err := New(Config{}, Identity{Region: "us-tx", Agency: "metro-atlanta", AgencyUnit: "d07", Site: "cabinet-042"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	bad := []string{"openits.sig nal.fault-raised.v1"}
-	if _, err := tmpl.Render(bad[0]); err != nil {
+	if _, err := tmpl.Render(bad[0], "dev-1"); err != nil {
 		t.Fatalf("Render(%q) should succeed (decompose does not check legality): %v", bad[0], err)
 	}
-	err = tmpl.ValidateCETypes(bad)
+	err = tmpl.ValidateCETypes(bad, nil)
 	if err == nil {
 		t.Fatalf("ValidateCETypes(%v) should have rejected the illegal rendered token", bad)
 	}
@@ -306,5 +310,81 @@ func TestWithinBinding(t *testing.T) {
 				t.Errorf("withinBinding(%q, %q) = %v, want %v", c.subj, c.binding, got, c.want)
 			}
 		})
+	}
+}
+
+func TestDefaultTemplateIsTheSevenTokenProfileGrammar(t *testing.T) {
+	// The profile's grammar, and the shape its conformance harness asserts:
+	// openits.{geo}.{agency}.{agency-unit}.{service}.{controller-id}.{event}
+	// Note there is no {version} token — the ce-type carries the major
+	// version, so repeating it in the subject would be a second source of
+	// truth that can disagree with the first.
+	tmpl, err := New(Config{}, Identity{Region: "us-tx", Agency: "txdot", AgencyUnit: "d07", Site: "cab-1"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	got, err := tmpl.Render("openits.signal-control.fault-raised.v1", "i35-exit-214")
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	want := "openits.us-tx.txdot.d07.signal-control.i35-exit-214.fault-raised"
+	if got != want {
+		t.Errorf("Render = %q, want %q", got, want)
+	}
+	if n := len(strings.Split(got, ".")); n != 7 {
+		t.Errorf("subject has %d tokens, want 7: %q", n, got)
+	}
+}
+
+func TestRenderDeviceLessEventUsesCollector(t *testing.T) {
+	// Collector-level events (the boot event) have no device. {device_id} was
+	// previously rejected outright BECAUSE of them; rendering the literal
+	// "collector" is what lets the token graduate, so every event the
+	// collector can emit has a legal subject.
+	tmpl, _ := New(Config{}, Identity{Region: "us-tx", Agency: "txdot", AgencyUnit: "d07", Site: "cab-1"})
+	got, err := tmpl.Render("openits-collector.health.collector-started.v1", "")
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	want := "openits.us-tx.txdot.d07.health.collector.collector-started"
+	if got != want {
+		t.Errorf("Render = %q, want %q", got, want)
+	}
+}
+
+func TestBindingTruncatesAtTheFirstPerEventToken(t *testing.T) {
+	// The stream binding must be static. service is the first per-event token
+	// in the default grammar, so the binding stops before it.
+	tmpl, _ := New(Config{}, Identity{Region: "us-tx", Agency: "txdot", AgencyUnit: "d07", Site: "cab-1"})
+	if got, want := tmpl.Binding(), "openits.us-tx.txdot.d07.>"; got != want {
+		t.Errorf("Binding = %q, want %q", got, want)
+	}
+}
+
+func TestValidateCETypesIsExhaustiveOverDevices(t *testing.T) {
+	// Every ce-type × every configured device must render a legal subject.
+	// A device id carrying a dot would silently add a token and land the event
+	// outside the binding; catching it here makes it a boot failure.
+	tmpl, _ := New(Config{}, Identity{Region: "us-tx", Agency: "txdot", AgencyUnit: "d07", Site: "cab-1"})
+	ceTypes := []string{"openits.signal-control.fault-raised.v1"}
+
+	if err := tmpl.ValidateCETypes(ceTypes, []string{"good-1", "good-2"}); err != nil {
+		t.Errorf("legal device ids rejected: %v", err)
+	}
+	if err := tmpl.ValidateCETypes(ceTypes, []string{"good-1", "bad.id"}); err == nil {
+		t.Error("a device id containing a dot must be rejected: it adds a subject token")
+	}
+	if err := tmpl.ValidateCETypes(ceTypes, []string{"wild*"}); err == nil {
+		t.Error("a device id containing a wildcard must be rejected")
+	}
+}
+
+func TestVarsMayNotRedefineTheNewReservedNames(t *testing.T) {
+	for _, name := range []string{"region", "agency_unit", "device_id"} {
+		_, err := New(Config{Vars: map[string]string{name: "x"}},
+			Identity{Region: "us-tx", Agency: "txdot", AgencyUnit: "d07", Site: "cab-1"})
+		if err == nil {
+			t.Errorf("vars redefining %q was accepted", name)
+		}
 	}
 }

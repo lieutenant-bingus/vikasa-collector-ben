@@ -32,7 +32,7 @@ func TestPublishRoundTripAndDedup(t *testing.T) {
 	ns := startNATS(t)
 	ctx := context.Background()
 
-	tmpl, err := subject.New(subject.Config{}, "metro", "cab-1")
+	tmpl, err := subject.New(subject.Config{}, subject.Identity{Region: "us-ga", Agency: "metro", AgencyUnit: "d01", Site: "cab-1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,10 +53,10 @@ func TestPublishRoundTripAndDedup(t *testing.T) {
 	})
 
 	// Publish the identical envelope twice: dedup must keep exactly one.
-	if err := p.Publish(ctx, env, ceType); err != nil {
+	if err := p.Publish(ctx, env, ceType, "cab-1"); err != nil {
 		t.Fatalf("Publish 1: %v", err)
 	}
-	if err := p.Publish(ctx, env, ceType); err != nil {
+	if err := p.Publish(ctx, env, ceType, "cab-1"); err != nil {
 		t.Fatalf("Publish 2: %v", err)
 	}
 
@@ -87,7 +87,7 @@ func TestPublishRoundTripAndDedup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Next: %v", err)
 	}
-	wantSubject := "openits.metro.cab-1.health.collector-started.v1"
+	wantSubject := "openits.us-ga.metro.d01.health.cab-1.collector-started"
 	if msg.Subject() != wantSubject {
 		t.Fatalf("subject = %q, want %q", msg.Subject(), wantSubject)
 	}
@@ -115,9 +115,9 @@ func TestPublishUsesCustomTemplate(t *testing.T) {
 	ctx := context.Background()
 
 	tmpl, err := subject.New(subject.Config{
-		Template: "{prefix}.{region}.{agency}.{service}.{event}.{version}",
-		Vars:     map[string]string{"prefix": "traffic", "region": "southeast"},
-	}, "metro", "cab-1")
+		Template: "{prefix}.{geo}.{agency}.{service}.{event}.{version}",
+		Vars:     map[string]string{"prefix": "traffic", "geo": "southeast"},
+	}, subject.Identity{Region: "us-ga", Agency: "metro", AgencyUnit: "d01", Site: "cab-1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func TestPublishUsesCustomTemplate(t *testing.T) {
 		OccurredAt:  at,
 		Data:        []byte(`{"version":"dev"}`),
 	})
-	if err := p.Publish(ctx, env, ceType); err != nil {
+	if err := p.Publish(ctx, env, ceType, "cab-1"); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
 

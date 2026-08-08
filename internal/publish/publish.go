@@ -85,8 +85,8 @@ func Headers(env cloudevents.Envelope) nats.Header {
 }
 
 // Publish writes one envelope in CloudEvents binary mode.
-func (p *Publisher) Publish(ctx context.Context, env cloudevents.Envelope, ceType string) error {
-	subj, err := p.tmpl.Render(ceType)
+func (p *Publisher) Publish(ctx context.Context, env cloudevents.Envelope, ceType, deviceID string) error {
+	subj, err := p.tmpl.Render(ceType, deviceID)
 	if err != nil {
 		return err
 	}

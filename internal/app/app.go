@@ -42,7 +42,7 @@ func Run(ctx context.Context, cfg *config.Config, reg *adapter.Registry, natsURL
 	// the chain is unwired.
 	emitters := []wire.Emitter{openits.New(cfg.CollectorID), health.NewHealthEmitter()}
 
-	tmpl, err := subject.New(cfg.SubjectConfig(), cfg.Agency, cfg.Site)
+	tmpl, err := subject.New(cfg.SubjectConfig(), cfg.SubjectIdentity())
 	if err != nil {
 		return err
 	}
@@ -53,7 +53,7 @@ func Run(ctx context.Context, cfg *config.Config, reg *adapter.Registry, natsURL
 	for _, em := range emitters {
 		ceTypes = append(ceTypes, em.CETypes()...)
 	}
-	if err := tmpl.ValidateCETypes(ceTypes); err != nil {
+	if err := tmpl.ValidateCETypes(ceTypes, cfg.DeviceIDs()); err != nil {
 		return err
 	}
 
@@ -157,7 +157,7 @@ func encodeAndPublish(ctx context.Context, pub *publish.Publisher, tenant cloude
 			Data:        enc.Data,
 			Identity:    enc.Identity,
 		})
-		if err := pub.Publish(ctx, env, enc.CEType); err != nil {
+		if err := pub.Publish(ctx, env, enc.CEType, ev.EventDeviceID()); err != nil {
 			slog.Error("publish failed", "type", enc.CEType, "err", err)
 		}
 		return

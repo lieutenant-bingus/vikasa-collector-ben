@@ -46,44 +46,50 @@ collector_id: cabinet-042-collector
 # already the one version coexistence will need.
 model_version: openits/v1
 
-# Subject grammar is yours (ADR 0009). Omit this block entirely and you get
-# the default below, which is what the collector published before templates
-# existed:
+# Subject grammar is yours (ADR 0009). Omit this block entirely and you get the
+# OpenITS NATS profile's seven-token grammar, which is what the profile's
+# conformance harness asserts:
 #
 #   subject:
-#     template: "{prefix}.{agency}.{site}.{service}.{event}.{version}"
+#     template: "{prefix}.{region}.{agency}.{agency_unit}.{service}.{device_id}.{event}"
 #     vars: { prefix: openits }
 #
 # Placeholders are either instance-constants — anything under `vars`, plus
-# `agency` and `site` — or per-event values decomposed from the ce-type:
-# `service`, `event`, `version` (which carries its literal "v", e.g. "v1").
-# Reserved names (agency, site, service, event, version, device_id) cannot be
-# redefined in vars.
+# `region`, `agency`, `agency_unit` and `site` — or per-event values:
+# `service`, `event` and `version` decomposed from the ce-type, plus
+# `device_id`. Device-less events (the boot event) render `device_id` as the
+# literal "collector", so every event the collector can emit has a legal
+# subject and the token count never varies.
+#
+# Note there is no `{version}` in the default: the ce-type already carries the
+# major version, and repeating it here would be a second source of truth free
+# to disagree with the first. `{version}` stays available if you want it.
+#
+# Reserved names (region, agency, agency_unit, site, service, event, version,
+# device_id) cannot be redefined in vars — an operator var shadowing one would
+# produce subjects that disagree with the collector's own identity, and it
+# would surface as unroutable events rather than a config error.
 #
 # Rule of thumb: COARSEST, MOST STABLE TOKENS LEFTMOST. NATS makes prefix
 # matching cheap — the JetStream stream binding, subject permissions, and
-# upstream aggregation all key off the left of the subject.
+# upstream aggregation all key off the left of the subject. The binding is
+# derived by truncating at the first per-event token, so with the default
+# grammar it is `openits.<region>.<agency>.<agency_unit>.>`.
 #
-#   Tenant-first (default) — clean per-cabinet stream binding; per-site NATS
-#     auth falls out naturally. Cross-fleet subscription by event type needs
-#     mid-pattern wildcards that hardcode tenancy depth.
-#   Deep tenancy ({prefix}.{region}.{agency}.{site}...) — region-level
-#     aggregation and auth; every subscriber pattern encodes the depth.
 #   Service-first / flat ({prefix}.{service}...) — REJECTED AT BOOT. A cabinet
 #     publishes across every service, so there is no static prefix to bind a
 #     stream on and the binding would capture every subject on the server.
 #
-# Two warnings: adding a token later silently breaks subscribers whose
+# Two warnings: adding or removing a token silently breaks subscribers whose
 # wildcards encoded the old depth, so choose depth up front; and changing the
 # grammar of a running cabinet generally means provisioning a new stream,
 # because the binding is derived from the template.
 #
 # subject:
-#   template: "{prefix}.{region}.{agency}.{site}.{service}.{event}.{version}"
+#   template: "{prefix}.{region}.{agency}.{agency_unit}.{service}.{device_id}.{event}"
 #   stream: EDGE-METRO-ATLANTA-CABINET-042   # defaults to OPENITS-<AGENCY>-<SITE>
 #   vars:
 #     prefix: openits
-#     region: southeast
 
 devices:
   # vendor + device_kind select the adapter: registry key "<vendor>-<device_kind>".

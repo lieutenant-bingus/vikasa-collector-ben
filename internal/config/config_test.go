@@ -156,11 +156,11 @@ site: cab-1
 model_version: openits/v1
 collector_id: cabinet-042-collector
 subject:
-  template: "{prefix}.{region}.{agency}.{service}.{event}.{version}"
+  template: "{prefix}.{geo}.{agency}.{service}.{event}.{version}"
   stream: EDGE-METRO-CAB1
   vars:
     prefix: traffic
-    region: southeast
+    geo: southeast
 devices:
   - { id: asc-1, vendor: ntcip, device_kind: asc, connection: {} }
 `
@@ -168,14 +168,14 @@ devices:
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if cfg.Subject.Vars["region"] != "southeast" {
+	if cfg.Subject.Vars["geo"] != "southeast" {
 		t.Errorf("vars not preserved: %+v", cfg.Subject.Vars)
 	}
 	if got := cfg.StreamName(); got != "EDGE-METRO-CAB1" {
 		t.Errorf("StreamName() = %q, want EDGE-METRO-CAB1", got)
 	}
 	sc := cfg.SubjectConfig()
-	if sc.Template != "{prefix}.{region}.{agency}.{service}.{event}.{version}" {
+	if sc.Template != "{prefix}.{geo}.{agency}.{service}.{event}.{version}" {
 		t.Errorf("SubjectConfig().Template = %q", sc.Template)
 	}
 }

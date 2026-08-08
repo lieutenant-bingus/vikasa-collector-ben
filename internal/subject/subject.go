@@ -12,9 +12,18 @@ import (
 	"strings"
 )
 
-// DefaultTemplate reproduces the pre-template subject scheme exactly. Config
-// that omits a subject block gets this, so existing deployments are unaffected.
-const DefaultTemplate = "{prefix}.{agency}.{site}.{service}.{event}.{version}"
+// DefaultTemplate is the OpenITS NATS profile's seven-token grammar, which the
+// profile's conformance harness asserts by shape.
+//
+// There is deliberately no {version} token: the ce-type already carries the
+// major version, and repeating it in the subject would be a second source of
+// truth free to disagree with the first. {version} stays available to operator
+// templates that want it.
+//
+// This replaced a five-token, tenant-first default. Changing it moves every
+// subject AND the derived stream binding, which is only free because there are
+// no deployments — see ADR 0009's consequences.
+const DefaultTemplate = "{prefix}.{region}.{agency}.{agency_unit}.{service}.{device_id}.{event}"
 
 // DefaultPrefix is the {prefix} value assumed when config omits it.
 const DefaultPrefix = "openits"
@@ -23,9 +32,10 @@ const DefaultPrefix = "openits"
 // fixed for the process lifetime. The split determines where the stream
 // binding can be truncated (see Binding).
 var perEventNames = map[string]bool{
-	"service": true,
-	"event":   true,
-	"version": true,
+	"service":   true,
+	"event":     true,
+	"version":   true,
+	"device_id": true,
 }
 
 // Reserved names may not be redefined in vars. An operator who redefined
@@ -33,11 +43,11 @@ var perEventNames = map[string]bool{
 // would surface as unroutable events rather than a config error.
 var reservedNames = map[string]bool{
 	"service": true, "event": true, "version": true,
-	"agency": true, "site": true,
-	// device_id is reserved but unsupported in v1: collector-level events
-	// (collector-started) have no device, so any template using it could never
-	// render a legal subject for them. Reserved so a future version can add it
-	// without colliding with an operator's var of the same name.
+	"region": true, "agency": true, "agency_unit": true, "site": true,
+	// device_id is now a real per-event placeholder. It was reserved-but-
+	// unsupported because collector-level events have no device and so could
+	// never render a legal subject; rendering them as the literal "collector"
+	// is what resolved that.
 	"device_id": true,
 }
 
@@ -46,6 +56,20 @@ type Config struct {
 	Template string            // "" means DefaultTemplate
 	Vars     map[string]string // operator-defined instance-constants
 }
+
+// Identity is the instance-constant tenant identity available to templates.
+type Identity struct {
+	Region     string
+	Agency     string
+	AgencyUnit string
+	Site       string
+}
+
+// deviceLessID is what {device_id} renders for events with no device. The
+// collector is the subject of its own boot event, so naming it "collector"
+// keeps the token count constant rather than producing a short subject that
+// falls outside the binding.
+const deviceLessID = "collector"
 
 // token is one dot-separated element: either a literal or a single placeholder.
 type token struct {
@@ -63,32 +87,32 @@ type Template struct {
 // New validates cfg and returns a Template. Every failure here is a boot
 // failure by design: config is the trust boundary, and a subject typo must
 // not surface at 3am as an unroutable event.
-func New(cfg Config, agency, site string) (*Template, error) {
+func New(cfg Config, id Identity) (*Template, error) {
 	raw := cfg.Template
 	if raw == "" {
 		raw = DefaultTemplate
 	}
 
-	// Validate agency and site parameters. isLegalToken is only the
-	// subject-level floor (bars ".", "*", ">", and whitespace) — it permits
-	// things like "/" and uppercase that would corrupt the CE `source` URI
-	// (cloudevents.SourceFor embeds agency/site verbatim as //agency/site/...).
-	// agency/site additionally must satisfy the stricter ^[a-z0-9][a-z0-9-]*$
-	// rule enforced by cloudevents.Tenant.Validate, which config.Load runs
-	// before ever calling subject.New. That makes config.Load the
-	// authoritative gate for these two values: a *config.Config built without
-	// going through config.Load bypasses the stricter check and could reach
-	// here with an agency/site that passes isLegalToken but would corrupt
-	// `source`. Deliberately not duplicating the stricter regex here — that
-	// would couple this package to cloudevents for a rule it doesn't own.
-	if !isLegalToken(agency) {
-		return nil, fmt.Errorf("subject: agency = %q is not a legal NATS token (no %q, %q, %q or whitespace, and must be non-empty)", agency, ".", "*", ">")
-	}
-	if !isLegalToken(site) {
-		return nil, fmt.Errorf("subject: site = %q is not a legal NATS token (no %q, %q, %q or whitespace, and must be non-empty)", site, ".", "*", ">")
+	// isLegalToken is only the subject-level floor (bars ".", "*", ">", and
+	// whitespace). It permits "/" and uppercase, which would be fine in a
+	// subject but corrupt the CE source URN, so the identity tokens must ALSO
+	// satisfy the stricter ^[a-z0-9][a-z0-9-]*$ rule that
+	// cloudevents.Tenant.Validate enforces — which config.Load runs before
+	// ever calling here. That makes config.Load the authoritative gate: a
+	// *config.Config built without it bypasses the stricter check and could
+	// reach here with a value that renders a legal subject and an unparseable
+	// URN. Deliberately not duplicating the stricter regex, which would couple
+	// this package to cloudevents for a rule it does not own.
+	for _, f := range []struct{ name, value string }{
+		{"region", id.Region}, {"agency", id.Agency},
+		{"agency_unit", id.AgencyUnit}, {"site", id.Site},
+	} {
+		if !isLegalToken(f.value) {
+			return nil, fmt.Errorf("subject: %s = %q is not a legal NATS token (no %q, %q, %q or whitespace, and must be non-empty)", f.name, f.value, ".", "*", ">")
+		}
 	}
 
-	// Resolve instance-constants: operator vars plus agency/site.
+	// Resolve instance-constants: operator vars plus the identity tokens.
 	vars := make(map[string]string, len(cfg.Vars)+3)
 	for k, v := range cfg.Vars {
 		if reservedNames[k] {
@@ -104,8 +128,10 @@ func New(cfg Config, agency, site string) (*Template, error) {
 	if _, ok := vars["prefix"]; !ok {
 		vars["prefix"] = DefaultPrefix
 	}
-	vars["agency"] = agency
-	vars["site"] = site
+	vars["region"] = id.Region
+	vars["agency"] = id.Agency
+	vars["agency_unit"] = id.AgencyUnit
+	vars["site"] = id.Site
 
 	toks, err := parseTokens(raw, vars)
 	if err != nil {
@@ -156,9 +182,6 @@ func parseTokens(raw string, vars map[string]string) ([]token, error) {
 		if name == "" {
 			return nil, fmt.Errorf("subject: template %q has an empty placeholder", raw)
 		}
-		if name == "device_id" {
-			return nil, fmt.Errorf("subject: {device_id} is not supported: collector-level events have no device, so such a template could never render a legal subject for them")
-		}
 		if perEventNames[name] {
 			out = append(out, token{perEventVar: name})
 			continue
@@ -172,8 +195,9 @@ func parseTokens(raw string, vars map[string]string) ([]token, error) {
 	return out, nil
 }
 
-// Render produces the subject for one ce-type.
-func (t *Template) Render(ceType string) (string, error) {
+// Render produces the subject for one ce-type and device. An empty deviceID
+// means a collector-level event and renders as deviceLessID.
+func (t *Template) Render(ceType, deviceID string) (string, error) {
 	service, event, version, err := decompose(ceType)
 	if err != nil {
 		return "", err
@@ -189,6 +213,20 @@ func (t *Template) Render(ceType string) (string, error) {
 			parts[i] = event
 		case "version":
 			parts[i] = version
+		case "device_id":
+			id := deviceID
+			if id == "" {
+				id = deviceLessID
+			}
+			// Checked HERE, before substitution, not on the joined subject.
+			// A device id containing a dot would merge into the rendered
+			// string as two perfectly legal tokens — the subject would just
+			// silently gain a token, land outside the binding, and read as
+			// valid to anything inspecting it afterwards.
+			if !isLegalToken(id) {
+				return "", fmt.Errorf("subject: device id %q is not a legal NATS token (no %q, %q, %q or whitespace)", id, ".", "*", ">")
+			}
+			parts[i] = id
 		}
 	}
 	return strings.Join(parts, "."), nil
@@ -223,23 +261,30 @@ func isLegalToken(s string) bool {
 // template can render.
 func (t *Template) Binding() string { return t.binding }
 
-// ValidateCETypes renders every ce-type the collector can emit and checks each
-// produces a legal subject inside the binding. Exhaustive rather than sampled:
-// this is what turns a subject typo into a boot failure instead of a 3am
-// unroutable event.
-func (t *Template) ValidateCETypes(ceTypes []string) error {
+// ValidateCETypes renders every ce-type against every configured device and
+// checks each produces a legal subject inside the binding. Exhaustive rather
+// than sampled, across BOTH axes: this is what turns a subject typo — or a
+// device id carrying a dot, which would silently add a token and land the
+// event outside the binding — into a boot failure instead of a 3am unroutable
+// event.
+func (t *Template) ValidateCETypes(ceTypes []string, deviceIDs []string) error {
+	// Device-less events are always possible (the boot event), so the empty id
+	// is checked alongside every configured device.
+	ids := append([]string{""}, deviceIDs...)
 	for _, ceType := range ceTypes {
-		subj, err := t.Render(ceType)
-		if err != nil {
-			return fmt.Errorf("subject: template %q cannot render ce-type %q: %w", t.raw, ceType, err)
-		}
-		for _, tok := range strings.Split(subj, ".") {
-			if !isLegalToken(tok) {
-				return fmt.Errorf("subject: ce-type %q renders to %q, which has an illegal token %q", ceType, subj, tok)
+		for _, id := range ids {
+			subj, err := t.Render(ceType, id)
+			if err != nil {
+				return fmt.Errorf("subject: template %q cannot render ce-type %q: %w", t.raw, ceType, err)
 			}
-		}
-		if !withinBinding(subj, t.binding) {
-			return fmt.Errorf("subject: ce-type %q renders to %q, outside the stream binding %q", ceType, subj, t.binding)
+			for _, tok := range strings.Split(subj, ".") {
+				if !isLegalToken(tok) {
+					return fmt.Errorf("subject: ce-type %q with device %q renders to %q, which has an illegal token %q", ceType, id, subj, tok)
+				}
+			}
+			if !withinBinding(subj, t.binding) {
+				return fmt.Errorf("subject: ce-type %q with device %q renders to %q, outside the stream binding %q", ceType, id, subj, t.binding)
+			}
 		}
 	}
 	return nil

@@ -73,6 +73,22 @@ func (c *Config) SubjectConfig() subject.Config {
 	return subject.Config{Template: c.Subject.Template, Vars: c.Subject.Vars}
 }
 
+// SubjectIdentity is the subject-package view of the tenant identity.
+func (c *Config) SubjectIdentity() subject.Identity {
+	return subject.Identity{
+		Region: c.Region, Agency: c.Agency, AgencyUnit: c.AgencyUnit, Site: c.Site,
+	}
+}
+
+// DeviceIDs lists every configured device, for exhaustive subject validation.
+func (c *Config) DeviceIDs() []string {
+	ids := make([]string, 0, len(c.Devices))
+	for _, d := range c.Devices {
+		ids = append(ids, d.ID)
+	}
+	return ids
+}
+
 // StreamName is the JetStream stream to provision. Defaults to the
 // pre-template name so existing deployments keep their stream.
 func (c *Config) StreamName() string {
@@ -112,7 +128,7 @@ func (c *Config) validate(reg *adapter.Registry) error {
 	// Build the template now so a bad grammar is a boot failure rather than a
 	// 3am unroutable event. The result is rebuilt in app.Run (which also has
 	// the emitter ce-types to validate against); this is the early, cheap half.
-	if _, err := subject.New(c.SubjectConfig(), c.Agency, c.Site); err != nil {
+	if _, err := subject.New(c.SubjectConfig(), c.SubjectIdentity()); err != nil {
 		return err
 	}
 	if len(c.Devices) == 0 {
