@@ -15,7 +15,8 @@ local NATS JetStream using versioned openits-models payloads.
   entirely and return only `sdk/model` types.
 - **The core** diffs snapshots into domain events, tracks device health,
   and publishes on operator-configurable subjects (ADR 0009) — by default
-  `openits.<agency>.<site>.<service>.<event>.v1`.
+  the profile's seven-token grammar,
+  `openits.<region>.<agency>.<agency-unit>.<service>.<device-id>.<event>`.
 - **Wire emitters** (`internal/wire/`) are the only code that knows
   openits-models. One package per pinned models release.
 
@@ -25,13 +26,17 @@ Why it's built this way: see `docs/adr/`. Full design:
 ## Status
 
 Gen-2 rebuild in progress. Working today: `ntcip-asc` adapter (fixtures +
-live SNMP), signal-status synth, collector-owned health events end-to-end
-to JetStream. Not yet wired: openits-models emitter (Plan 2), additional
-facets and vendors (Plan 3+).
+live SNMP), signal-status synth, and the full publish path — domain events
+map to openits-models payloads and reach JetStream as CloudEvents in the
+NATS reference profile's Tier 2 shape (binary mode, deterministic ULID
+`ce-id`, seven-token subjects). Not yet wired: additional facets and
+vendors (Plan 3+).
 
-Because only the health emitter is wired, domain events (status reports,
-plan changes, …) reach the emitter chain, find no claimant, and are dropped
-with a warning. That is expected until Plan 2 lands.
+Events can still be dropped with a warning, and that is the designed
+behaviour rather than a gap: the emitter declines anything it cannot
+encode faithfully — a controller mode with no upstream identity, a shared
+event on a device kind it does not serve — instead of substituting a
+near-neighbour. A visible drop beats a wrong value on the bus.
 
 ## Run
 
