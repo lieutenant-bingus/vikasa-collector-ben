@@ -1,6 +1,12 @@
 package openits
 
-import "github.com/Vikasa2M/vikasa-collector/sdk/model"
+import (
+	"fmt"
+
+	dmsv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/dms/v1"
+
+	"github.com/Vikasa2M/vikasa-collector/sdk/model"
+)
 
 // Identity module prefixes. Wire identityref leaves are plain strings
 // rendered as "defining-module:identity-name", so every mapped value is a
@@ -140,5 +146,61 @@ func dmsDisplayStateIdentity(s model.DMSDisplayState) (string, bool) {
 		return dmsTypes + "mode-unknown", true
 	default:
 		return "", false
+	}
+}
+
+// occupancyPercent renders tenths-of-a-percent as the wire's decimal64 string.
+// The domain carries tenths as an integer precisely so nothing is lost in
+// transit; the wire wants "12.5". Always one decimal place, so zero renders
+// "0.0" rather than "0" — a decimal64 with fraction-digits 1 is written with
+// its fraction present.
+func occupancyPercent(tenths uint16) string {
+	return fmt.Sprintf("%d.%d", tenths/10, tenths%10)
+}
+
+// memoryTypeFor maps the domain memory bank to the wire enum. Explicit switch,
+// not a cast: MemoryUnknown is the domain zero but UNSPECIFIED is the wire
+// zero, and those agreeing today is a coincidence worth not depending on.
+func memoryTypeFor(m model.MessageMemoryType) dmsv1.MessageMemoryType {
+	switch m {
+	case model.MemoryPermanent:
+		return dmsv1.MessageMemoryType_MESSAGE_MEMORY_TYPE_PERMANENT
+	case model.MemoryChangeable:
+		return dmsv1.MessageMemoryType_MESSAGE_MEMORY_TYPE_CHANGEABLE
+	case model.MemoryVolatile:
+		return dmsv1.MessageMemoryType_MESSAGE_MEMORY_TYPE_VOLATILE
+	case model.MemorySchedule:
+		return dmsv1.MessageMemoryType_MESSAGE_MEMORY_TYPE_SCHEDULE
+	case model.MemoryBlank:
+		return dmsv1.MessageMemoryType_MESSAGE_MEMORY_TYPE_BLANK
+	default:
+		return dmsv1.MessageMemoryType_MESSAGE_MEMORY_TYPE_UNSPECIFIED
+	}
+}
+
+// errorTypeFor maps the domain MULTI error to the wire enum.
+//
+// SyntaxErrorNone is the awkward one. dmsv1.ErrorType has no "none" member and
+// its zero is SYNTAX, so a domain None would encode as a *syntax error* if
+// this were a cast — asserting a specific failure the sign never reported. It
+// maps to OTHER instead: the event only exists because activation failed, so
+// "failed, cause unreported" is true where "syntax error" is not. Same shape
+// of decision as the fault-category fallback.
+func errorTypeFor(e model.MultiSyntaxError) dmsv1.ErrorType {
+	switch e {
+	case model.SyntaxErrorSyntax:
+		return dmsv1.ErrorType_ERROR_TYPE_SYNTAX
+	case model.SyntaxErrorUnsupportedTag:
+		return dmsv1.ErrorType_ERROR_TYPE_UNSUPPORTED_TAG
+	case model.SyntaxErrorFontNotFound:
+		return dmsv1.ErrorType_ERROR_TYPE_FONT_NOT_FOUND
+	case model.SyntaxErrorGraphicNotFound:
+		return dmsv1.ErrorType_ERROR_TYPE_GRAPHIC_NOT_FOUND
+	case model.SyntaxErrorTooLong:
+		return dmsv1.ErrorType_ERROR_TYPE_TOO_LONG
+	case model.SyntaxErrorHardware:
+		return dmsv1.ErrorType_ERROR_TYPE_HARDWARE
+	default:
+		return dmsv1.ErrorType_ERROR_TYPE_OTHER
 	}
 }

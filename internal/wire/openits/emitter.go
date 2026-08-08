@@ -5,12 +5,16 @@ package openits
 
 import (
 	"fmt"
+	"sort"
 	"sync"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	commonv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/common/v1"
+	dmsv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/dms/v1"
+	scv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/signal_control/v1"
 
 	"github.com/Vikasa2M/vikasa-collector/internal/wire"
 	"github.com/Vikasa2M/vikasa-collector/sdk/model"
@@ -81,9 +85,42 @@ var ceTypeFor = map[key]string{
 	// from, not by separate ce-types.
 	{"control-mode-changed", "dms"}:  "openits.dms.mode-changed.v1",
 	{"display-state-changed", "dms"}: "openits.dms.mode-changed.v1",
+
+	{"fault-cleared", "asc"}: "openits.signal-control.fault-cleared.v1",
+	{"fault-cleared", "dms"}: "openits.dms.fault-cleared.v1",
+
+	{"plan-changed", "asc"}:              "openits.signal-control.plan-applied.v1",
+	{"operational-status-report", "asc"}: "openits.signal-control.operational-status-report.v1",
+	{"preemption-activated", "asc"}:      "openits.signal-control.preemption-activated.v1",
+	{"preemption-cleared", "asc"}:        "openits.signal-control.preemption-cleared.v1",
+	{"detector-report", "asc"}:           "openits.signal-control.detector-report.v1",
+
+	{"message-activation-failed", "dms"}: "openits.dms.message-activation-failed.v1",
 }
 
-func (e *emitter) CETypes() []string { return nil }
+// CETypes returns every ce-type this emitter can produce, sorted and deduped.
+//
+// Derived from ceTypeFor rather than maintained alongside it. The two cannot
+// drift, which matters more than it looks: boot validation renders this list
+// through the operator's subject template to prove every ce-type routes to a
+// legal subject, so a hand-kept list that omitted an entry would leave that
+// ce-type unchecked and surface as an unroutable event at 3am instead of a
+// refusal to start.
+//
+// Deduping is required, not cosmetic: the two DMS mode axes deliberately share
+// one ce-type, so the routing table has more entries than there are ce-types.
+func (e *emitter) CETypes() []string {
+	seen := make(map[string]bool, len(ceTypeFor))
+	out := make([]string, 0, len(ceTypeFor))
+	for _, ceType := range ceTypeFor {
+		if !seen[ceType] {
+			seen[ceType] = true
+			out = append(out, ceType)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
 
 func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 	ceType, ok := ceTypeFor[key{ev.EventKind(), ev.EventDeviceKind()}]
@@ -142,6 +179,115 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 			Severity:       severityFor(v.Severity),
 			Description:    v.Description,
 		}
+	case model.FaultCleared:
+		kind, ok := faultKindIdentity(model.CategoryUnknown, v.DeviceKind)
+		if !ok {
+			return nil, false, nil
+		}
+		msg = &commonv1.FaultCleared{
+			// A clear carries no category of its own — the domain FaultCleared
+			// has only the id, because the differ identifies it by set
+			// difference. The service base identity is the honest `kind`:
+			// consumers correlate raise and clear on (source-device-id,
+			// fault-id), not on kind.
+			Kind:           kind,
+			SourceDeviceId: v.DeviceID,
+			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
+			ObservedBy:     e.collectorID,
+			Sequence:       e.nextSequence(v.DeviceID),
+			FaultId:        v.FaultID,
+		}
+
+	case model.PlanChanged:
+		// PlanApplied names only the plan now in force. FromPlanID is DROPPED:
+		// there is no wire field for it, and the transition is recoverable from
+		// consecutive events. Recorded here as the map-or-drop decision it is.
+		msg = &scv1.PlanApplied{
+			Kind:           scTypes + "sc-coordination-event-kind",
+			SourceDeviceId: v.DeviceID,
+			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
+			ObservedBy:     e.collectorID,
+			Sequence:       e.nextSequence(v.DeviceID),
+			PlanId:         v.ToPlanID,
+		}
+
+	case model.OperationalStatusReport:
+		// Same decline rule as ModeChanged: `mode` asserts a specific state, so
+		// a mode with no upstream identity cannot be reported honestly.
+		mode, ok := controllerModeIdentity(v.Mode)
+		if !ok {
+			return nil, false, nil
+		}
+		// ActivePlanID is DROPPED: the wire OperationalStatusReport has no plan
+		// field. It is not lost to consumers — plan-applied carries it.
+		msg = &scv1.OperationalStatusReport{
+			Kind:           scTypes + "sc-mode-event-kind",
+			SourceDeviceId: v.DeviceID,
+			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
+			ObservedBy:     e.collectorID,
+			Sequence:       e.nextSequence(v.DeviceID),
+			Mode:           mode,
+			FlashActive:    v.InConflictFlash,
+		}
+
+	case model.PreemptionActivated:
+		// preempt_number and type have no domain source yet; left unset rather
+		// than invented. The adapter that learns them can fill them later
+		// without a wire change, since both are additive-optional.
+		msg = &scv1.PreemptionActivated{
+			Kind:           scTypes + "sc-preemption-event-kind",
+			SourceDeviceId: v.DeviceID,
+			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
+			ObservedBy:     e.collectorID,
+			Sequence:       e.nextSequence(v.DeviceID),
+			SourceId:       v.Source,
+		}
+
+	case model.PreemptionCleared:
+		msg = &scv1.PreemptionCleared{
+			Kind:           scTypes + "sc-preemption-event-kind",
+			SourceDeviceId: v.DeviceID,
+			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
+			ObservedBy:     e.collectorID,
+			Sequence:       e.nextSequence(v.DeviceID),
+		}
+
+	case model.DetectorReport:
+		dets := make([]*scv1.DetectorReportDetector, 0, len(v.Readings))
+		for _, r := range v.Readings {
+			dets = append(dets, &scv1.DetectorReportDetector{
+				DetectorId: r.Channel,
+				Volume:     r.VolumeDelta,
+				Occupancy:  occupancyPercent(r.OccupancyTenths),
+			})
+		}
+		msg = &scv1.DetectorReport{
+			Kind:           scTypes + "sc-detector-event-kind",
+			SourceDeviceId: v.DeviceID,
+			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
+			ObservedBy:     e.collectorID,
+			Sequence:       e.nextSequence(v.DeviceID),
+			IntervalStart:  timestamppb.New(v.IntervalStart.UTC()),
+			// The domain carries true elapsed time; the wire constrains the
+			// interval to whole seconds. Round ONCE, here at the edge, rather
+			// than pre-breaking the domain to match the wire.
+			IntervalDurationS: uint32((v.IntervalDuration + 500*time.Millisecond) / time.Second),
+			Detector:          dets,
+		}
+
+	case model.DMSMessageActivationFailed:
+		msg = &dmsv1.MessageActivationFailed{
+			Kind:                dmsTypes + "dms-message-activation-failed",
+			SourceDeviceId:      v.DeviceID,
+			OccurredAt:          timestamppb.New(v.OccurredAt.UTC()),
+			ObservedBy:          e.collectorID,
+			Sequence:            e.nextSequence(v.DeviceID),
+			AttemptedMemoryType: memoryTypeFor(v.MemoryType),
+			AttemptedSlotNumber: v.Slot,
+			ErrorType:           errorTypeFor(v.Error),
+			ErrorPosition:       v.ErrorPosition,
+		}
+
 	default:
 		return nil, false, nil
 	}

@@ -10,6 +10,8 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	commonv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/common/v1"
+	dmsv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/dms/v1"
+	scv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/signal_control/v1"
 
 	"github.com/Vikasa2M/vikasa-collector/sdk/model"
 )
@@ -371,5 +373,202 @@ func TestEncode_DMSControlUnknown_IsNotClaimed(t *testing.T) {
 	}
 	if ok {
 		t.Error("emitter claimed a control mode with no upstream identity")
+	}
+}
+
+// encodeOK is the generic "claim it and hand me the bytes" helper.
+func encodeOK(t *testing.T, ev model.Event, into proto.Message) string {
+	t.Helper()
+	enc, ok, err := New("cabinet-poller-1").Encode(ev)
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+	if !ok {
+		t.Fatalf("emitter did not claim %s on a %s device", ev.EventKind(), ev.EventDeviceKind())
+	}
+	if err := proto.Unmarshal(enc.Data, into); err != nil {
+		t.Fatalf("payload did not unmarshal: %v", err)
+	}
+	return enc.CEType
+}
+
+func TestEncode_FaultCleared_RoutesByDeviceKindToo(t *testing.T) {
+	for deviceKind, want := range map[string]string{
+		"asc": "openits.signal-control.fault-cleared.v1",
+		"dms": "openits.dms.fault-cleared.v1",
+	} {
+		var got commonv1.FaultCleared
+		ceType := encodeOK(t, model.FaultCleared{
+			Base: base("dev-1", deviceKind), FaultID: "mmu-fault",
+		}, &got)
+		if ceType != want {
+			t.Errorf("%s: ce-type = %q, want %q", deviceKind, ceType, want)
+		}
+		if got.GetFaultId() != "mmu-fault" {
+			t.Errorf("%s: fault_id = %q", deviceKind, got.GetFaultId())
+		}
+	}
+}
+
+func TestEncode_PlanChanged_MapsToPlanApplied(t *testing.T) {
+	var got scv1.PlanApplied
+	ceType := encodeOK(t, model.PlanChanged{
+		Base: base("asc-1", "asc"), FromPlanID: 2, ToPlanID: 5,
+	}, &got)
+
+	if want := "openits.signal-control.plan-applied.v1"; ceType != want {
+		t.Errorf("ce-type = %q, want %q", ceType, want)
+	}
+	// PlanApplied carries only the plan now in force. FromPlanID has no wire
+	// home and is dropped — the transition is implicit in the event stream.
+	if got.GetPlanId() != 5 {
+		t.Errorf("plan_id = %d, want 5", got.GetPlanId())
+	}
+}
+
+func TestEncode_OperationalStatusReport_MapsModeAndFlash(t *testing.T) {
+	var got scv1.OperationalStatusReport
+	ceType := encodeOK(t, model.OperationalStatusReport{
+		Base: base("asc-1", "asc"), Mode: model.ModeFlash,
+		InConflictFlash: true, ActivePlanID: 3,
+	}, &got)
+
+	if want := "openits.signal-control.operational-status-report.v1"; ceType != want {
+		t.Errorf("ce-type = %q, want %q", ceType, want)
+	}
+	if want := "openits-signal-control-types:mode-flash"; got.GetMode() != want {
+		t.Errorf("mode = %q, want %q", got.GetMode(), want)
+	}
+	if !got.GetFlashActive() {
+		t.Error("flash_active = false, want true")
+	}
+}
+
+func TestEncode_PreemptionPair(t *testing.T) {
+	var act scv1.PreemptionActivated
+	if ceType := encodeOK(t, model.PreemptionActivated{
+		Base: base("asc-1", "asc"), Source: "rail-1",
+	}, &act); ceType != "openits.signal-control.preemption-activated.v1" {
+		t.Errorf("activated ce-type = %q", ceType)
+	}
+	if act.GetSourceId() != "rail-1" {
+		t.Errorf("source_id = %q, want rail-1", act.GetSourceId())
+	}
+
+	var clr scv1.PreemptionCleared
+	if ceType := encodeOK(t, model.PreemptionCleared{
+		Base: base("asc-1", "asc"),
+	}, &clr); ceType != "openits.signal-control.preemption-cleared.v1" {
+		t.Errorf("cleared ce-type = %q", ceType)
+	}
+}
+
+func TestEncode_DetectorReport_RoundsIntervalAndFormatsOccupancy(t *testing.T) {
+	var got scv1.DetectorReport
+	ceType := encodeOK(t, model.DetectorReport{
+		Base:             base("asc-1", "asc"),
+		IntervalStart:    time.Date(2026, 7, 22, 11, 59, 30, 0, time.UTC),
+		IntervalDuration: 30500 * time.Millisecond,
+		Readings: []model.DetectorReading{
+			{Channel: 1, VolumeDelta: 42, OccupancyTenths: 125},
+			{Channel: 2, VolumeDelta: 0, OccupancyTenths: 0},
+		},
+	}, &got)
+
+	if want := "openits.signal-control.detector-report.v1"; ceType != want {
+		t.Errorf("ce-type = %q, want %q", ceType, want)
+	}
+	// The wire constrains interval to whole seconds; the domain carries the
+	// true elapsed time. Rounding happens here, once, at the edge.
+	if got.GetIntervalDurationS() != 31 {
+		t.Errorf("interval_duration_s = %d, want 31 (30.5s rounded)", got.GetIntervalDurationS())
+	}
+	if len(got.GetDetector()) != 2 {
+		t.Fatalf("detector count = %d, want 2", len(got.GetDetector()))
+	}
+	// Occupancy is a YANG decimal64, so a string on the wire — 125 tenths is
+	// "12.5" percent, not the integer 125.
+	if w := "12.5"; got.GetDetector()[0].GetOccupancy() != w {
+		t.Errorf("occupancy = %q, want %q", got.GetDetector()[0].GetOccupancy(), w)
+	}
+	if got.GetDetector()[0].GetVolume() != 42 {
+		t.Errorf("volume = %d, want 42", got.GetDetector()[0].GetVolume())
+	}
+	if w := "0.0"; got.GetDetector()[1].GetOccupancy() != w {
+		t.Errorf("zero occupancy = %q, want %q", got.GetDetector()[1].GetOccupancy(), w)
+	}
+}
+
+func TestEncode_DMSMessageActivationFailed(t *testing.T) {
+	var got dmsv1.MessageActivationFailed
+	ceType := encodeOK(t, model.DMSMessageActivationFailed{
+		Base:          base("dms-1", "dms"),
+		MemoryType:    model.MemoryChangeable,
+		Slot:          7,
+		Error:         model.SyntaxErrorFontNotFound,
+		ErrorPosition: 12,
+	}, &got)
+
+	if want := "openits.dms.message-activation-failed.v1"; ceType != want {
+		t.Errorf("ce-type = %q, want %q", ceType, want)
+	}
+	if got.GetAttemptedMemoryType() != dmsv1.MessageMemoryType_MESSAGE_MEMORY_TYPE_CHANGEABLE {
+		t.Errorf("memory_type = %v", got.GetAttemptedMemoryType())
+	}
+	if got.GetAttemptedSlotNumber() != 7 {
+		t.Errorf("slot = %d, want 7", got.GetAttemptedSlotNumber())
+	}
+	if got.GetErrorType() != dmsv1.ErrorType_ERROR_TYPE_FONT_NOT_FOUND {
+		t.Errorf("error_type = %v", got.GetErrorType())
+	}
+	if got.GetErrorPosition() != 12 {
+		t.Errorf("error_position = %d, want 12", got.GetErrorPosition())
+	}
+}
+
+func TestCETypes_IsCompleteSortedAndDeduped(t *testing.T) {
+	got := New("cabinet-poller-1").CETypes()
+
+	want := []string{
+		"openits.dms.fault-cleared.v1",
+		"openits.dms.fault-raised.v1",
+		"openits.dms.message-activation-failed.v1",
+		"openits.dms.mode-changed.v1",
+		"openits.signal-control.detector-report.v1",
+		"openits.signal-control.fault-cleared.v1",
+		"openits.signal-control.fault-raised.v1",
+		"openits.signal-control.mode-changed.v1",
+		"openits.signal-control.operational-status-report.v1",
+		"openits.signal-control.plan-applied.v1",
+		"openits.signal-control.preemption-activated.v1",
+		"openits.signal-control.preemption-cleared.v1",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("CETypes() has %d entries, want %d:\n got: %q\nwant: %q", len(got), len(want), got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("CETypes()[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+	if !sort.StringsAreSorted(got) {
+		t.Errorf("CETypes() is not sorted: %q", got)
+	}
+}
+
+func TestCETypes_CoversEveryRoutableCEType(t *testing.T) {
+	// Under-reporting here defeats boot validation SILENTLY: app.Run renders
+	// every reported ce-type through the operator's subject template to prove
+	// each one routes to a legal subject. A ce-type the emitter can produce but
+	// does not report is one that was never checked, and it surfaces at 3am as
+	// an unroutable event rather than at boot.
+	reported := make(map[string]bool)
+	for _, ct := range New("cabinet-poller-1").CETypes() {
+		reported[ct] = true
+	}
+	for k, ceType := range ceTypeFor {
+		if !reported[ceType] {
+			t.Errorf("ceTypeFor[%v] = %q is routable but absent from CETypes()", k, ceType)
+		}
 	}
 }
