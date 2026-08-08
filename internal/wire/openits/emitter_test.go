@@ -225,3 +225,66 @@ func TestEncode_SequenceIsSafeUnderConcurrentDevices(t *testing.T) {
 		}
 	}
 }
+
+// decodeFaultRaised encodes ev and unmarshals the wire payload back.
+func decodeFaultRaised(t *testing.T, ev model.Event) (*commonv1.FaultRaised, string) {
+	t.Helper()
+	enc, ok, err := New("cabinet-poller-1").Encode(ev)
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+	if !ok {
+		t.Fatalf("emitter did not claim %s on a %s device", ev.EventKind(), ev.EventDeviceKind())
+	}
+	var got commonv1.FaultRaised
+	if err := proto.Unmarshal(enc.Data, &got); err != nil {
+		t.Fatalf("payload is not a valid common/v1.FaultRaised: %v", err)
+	}
+	return &got, enc.CEType
+}
+
+func TestEncode_SharedFaultEvent_RoutesByDeviceKind(t *testing.T) {
+	// THE reason dispatch is keyed on the tuple. One domain type, one proto
+	// message, two ce-types — discriminated only by DeviceKind. Keying on
+	// EventKind alone would collapse these two rows into one.
+	fault := func(deviceKind string) model.FaultRaised {
+		return model.FaultRaised{
+			Base:     base("dev-1", deviceKind),
+			FaultID:  "mmu-fault",
+			Severity: model.SeverityCritical,
+			Category: model.CategoryConflict,
+		}
+	}
+
+	if _, ceType := decodeFaultRaised(t, fault("asc")); ceType != "openits.signal-control.fault-raised.v1" {
+		t.Errorf("asc fault ce-type = %q, want openits.signal-control.fault-raised.v1", ceType)
+	}
+	if _, ceType := decodeFaultRaised(t, fault("dms")); ceType != "openits.dms.fault-raised.v1" {
+		t.Errorf("dms fault ce-type = %q, want openits.dms.fault-raised.v1", ceType)
+	}
+}
+
+func TestEncode_FaultRaised_MapsSeverityAndCategory(t *testing.T) {
+	got, _ := decodeFaultRaised(t, model.FaultRaised{
+		Base:        base("asc-main-and-5th", "asc"),
+		FaultID:     "mmu-fault",
+		Severity:    model.SeverityCritical,
+		Category:    model.CategoryConflict,
+		Description: "conflict monitor tripped",
+	})
+
+	if got.GetFaultId() != "mmu-fault" {
+		t.Errorf("fault_id = %q, want mmu-fault", got.GetFaultId())
+	}
+	if got.GetSeverity() != commonv1.FaultSeverity_FAULT_SEVERITY_CRITICAL {
+		t.Errorf("severity = %v, want CRITICAL", got.GetSeverity())
+	}
+	// Category is where FaultCategory lands: `kind` is a mandatory identityref
+	// naming the fault class, per-service.
+	if want := "openits-signal-control-types:sc-fault-conflict"; got.GetKind() != want {
+		t.Errorf("kind = %q, want %q", got.GetKind(), want)
+	}
+	if got.GetDescription() != "conflict monitor tripped" {
+		t.Errorf("description = %q", got.GetDescription())
+	}
+}

@@ -72,6 +72,8 @@ type key struct{ event, deviceKind string }
 // ceTypeFor is the complete domain→ce-type routing table.
 var ceTypeFor = map[key]string{
 	{"mode-changed", "asc"}: "openits.signal-control.mode-changed.v1",
+	{"fault-raised", "asc"}: "openits.signal-control.fault-raised.v1",
+	{"fault-raised", "dms"}: "openits.dms.fault-raised.v1",
 }
 
 func (e *emitter) CETypes() []string { return nil }
@@ -106,6 +108,25 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 			Prior:          prior,
 			Current:        current,
 		}
+	case model.FaultRaised:
+		// Unlike modes, an unmappable category does NOT decline the event —
+		// faultKindIdentity falls back to the service base identity. It only
+		// fails for a device kind this emitter does not serve, which the
+		// ce-type lookup above has already excluded.
+		kind, ok := faultKindIdentity(v.Category, v.DeviceKind)
+		if !ok {
+			return nil, false, nil
+		}
+		msg = &commonv1.FaultRaised{
+			Kind:           kind,
+			SourceDeviceId: v.DeviceID,
+			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
+			ObservedBy:     e.collectorID,
+			Sequence:       e.nextSequence(v.DeviceID),
+			FaultId:        v.FaultID,
+			Severity:       severityFor(v.Severity),
+			Description:    v.Description,
+		}
 	default:
 		return nil, false, nil
 	}
@@ -117,32 +138,22 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 	return &wire.Encoded{CEType: ceType, ContentType: contentType, Data: data}, true, nil
 }
 
-// scTypes is the module prefix for signal-control identityref values. Wire
-// identityrefs render as "defining-module:identity-name".
-const scTypes = "openits-signal-control-types:"
-
-// controllerModeIdentity maps a domain controller mode to its upstream
-// identity. ok=false means the domain has a mode the wire model has no
-// identity for, which is a map-or-drop decision the caller must make
-// explicitly rather than guessing.
-//
-// ModeNormal maps to mode-FREE deliberately: upstream collapsed "normal" into
-// "free" because NTCIP and signal technicians treat uncoordinated-actuated
-// operation as a single mode. The mode-normal identity that does exist belongs
-// to openits-dms-types and is a sign display state, not a controller mode.
-//
-// ModeStandby and ModeUnknown have no controller-mode identity at all — the
-// upstream set is coordinated/free/flash/preempt/priority/manual/off. Adding
-// mode-standby upstream is tracked; until then those events are not claimed.
-func controllerModeIdentity(m model.ControllerMode) (string, bool) {
-	switch m {
-	case model.ModeNormal:
-		return scTypes + "mode-free", true
-	case model.ModeFlash:
-		return scTypes + "mode-flash", true
-	case model.ModeOff:
-		return scTypes + "mode-off", true
+// severityFor maps the domain severity to the wire enum. Written as an
+// explicit switch, not a numeric cast: the values happen to line up 1:1 today
+// (commonv1 has no UNSPECIFIED, so INFO=0..CRITICAL=4 matches the domain), but
+// a cast would silently follow any upstream renumbering, which is exactly the
+// churn ADR 0002 exists to contain.
+func severityFor(s model.FaultSeverity) commonv1.FaultSeverity {
+	switch s {
+	case model.SeverityWarning:
+		return commonv1.FaultSeverity_FAULT_SEVERITY_WARNING
+	case model.SeverityMinor:
+		return commonv1.FaultSeverity_FAULT_SEVERITY_MINOR
+	case model.SeverityMajor:
+		return commonv1.FaultSeverity_FAULT_SEVERITY_MAJOR
+	case model.SeverityCritical:
+		return commonv1.FaultSeverity_FAULT_SEVERITY_CRITICAL
 	default:
-		return "", false
+		return commonv1.FaultSeverity_FAULT_SEVERITY_INFO
 	}
 }
