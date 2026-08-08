@@ -5,11 +5,23 @@
 # connection block, or tenant tokens that could corrupt subject grammar
 # (spec §6 — config is the trust boundary).
 
-# Tenant identity. Stamped on every event: spliced into the NATS subject
-# (openits.<agency>.<site>....) and into the CloudEvent source
-# (//<agency>/<site>/<device-id>). Both must match ^[a-z0-9][a-z0-9-]*$ —
-# a dot or wildcard here would corrupt the subject, so it is rejected at boot.
+# Tenant identity. region/agency/agency_unit are the OpenITS profile's identity
+# triple and appear in the CloudEvent source URN on every event:
+#
+#   urn:openits:<entity-kind>:<region>:<agency>:<agency_unit>:<device-id>
+#
+# site is NOT in the URN. It stays because the collector still uses it for
+# stream naming and health context, and because a device-less event (the boot
+# event) needs an id for the collector itself.
+#
+# All four must match ^[a-z0-9][a-z0-9-]*$. A dot would corrupt the subject and
+# a colon would corrupt the URN, so both are rejected at boot rather than
+# producing events nobody can route or parse. Note the source URN is
+# load-bearing beyond routing: ce-id is derived from its literal bytes, so
+# changing any of these values changes the id of every event published after.
+region: us-ga
 agency: metro-atlanta
+agency_unit: d01
 site: cabinet-042
 
 # Identifies THIS collector as the OBSERVER of the events it publishes. Stamped

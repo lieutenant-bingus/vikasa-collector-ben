@@ -36,8 +36,13 @@ type Subject struct {
 
 // Config is the collector instance configuration.
 type Config struct {
-	Agency string `yaml:"agency"`
-	Site   string `yaml:"site"`
+	// Region, Agency and AgencyUnit are the profile's identity triple and
+	// appear in every ce-source URN. Site is not in the URN; it stays because
+	// the collector still uses it for stream naming and health context.
+	Region     string `yaml:"region"`
+	Agency     string `yaml:"agency"`
+	AgencyUnit string `yaml:"agency_unit"`
+	Site       string `yaml:"site"`
 	// CollectorID identifies THIS collector as the observer of the events it
 	// synthesizes. It is stamped into every openits payload's observed-by,
 	// which exists precisely to distinguish "the device reported this" from
@@ -58,7 +63,9 @@ var deviceIDRe = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 // Tenant returns the validated-shape tenant identity.
 func (c *Config) Tenant() cloudevents.Tenant {
-	return cloudevents.Tenant{Agency: c.Agency, Site: c.Site}
+	return cloudevents.Tenant{
+		Region: c.Region, Agency: c.Agency, AgencyUnit: c.AgencyUnit, Site: c.Site,
+	}
 }
 
 // SubjectConfig is the subject-package view of this config.

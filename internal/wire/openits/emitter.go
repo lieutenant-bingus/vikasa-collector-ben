@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	commonv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/common/v1"
@@ -296,11 +297,16 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 	if err != nil {
 		return nil, false, fmt.Errorf("openits encode %s: %w", ceType, err)
 	}
+	identity, err := identityBytes(msg)
+	if err != nil {
+		return nil, false, fmt.Errorf("openits identity %s: %w", ceType, err)
+	}
 	return &wire.Encoded{
 		CEType:      ceType,
 		ContentType: contentType,
 		Data:        data,
 		DataSchema:  dataSchemaFor[ceType],
+		Identity:    identity,
 	}, true, nil
 }
 
@@ -337,4 +343,28 @@ func (e *emitter) modeChanged(b model.Base, kind, prior, current string) *common
 		Prior:          prior,
 		Current:        current,
 	}
+}
+
+// producerAssigned names the event-header leaves that describe the OBSERVATION
+// rather than the occurrence, and so must not feed the deterministic ce-id.
+var producerAssigned = []string{"sequence", "observed_by"}
+
+// identityBytes marshals msg with the producer-assigned leaves cleared.
+//
+// Done generically via protoreflect rather than as a per-message type switch.
+// That is a deliberate exception to this package's no-reflection rule, which
+// exists to keep the domain-to-wire MAPPING dumb and reviewable. This is not a
+// mapping — it is one projection applied uniformly to every payload, and a
+// type switch would be a maintenance trap: adding a message type and
+// forgetting its case would silently break restart-invariance, with no failing
+// mapping to notice and nothing wrong-looking in the emitted bytes.
+func identityBytes(msg proto.Message) ([]byte, error) {
+	clone := proto.Clone(msg)
+	fields := clone.ProtoReflect().Descriptor().Fields()
+	for _, name := range producerAssigned {
+		if fd := fields.ByName(protoreflect.Name(name)); fd != nil {
+			clone.ProtoReflect().Clear(fd)
+		}
+	}
+	return proto.MarshalOptions{Deterministic: true}.Marshal(clone)
 }

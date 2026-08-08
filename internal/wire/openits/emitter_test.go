@@ -625,3 +625,53 @@ func TestDataSchema_CoversEveryCEType(t *testing.T) {
 		}
 	}
 }
+
+func TestEncode_IdentityExcludesProducerAssignedLeaves(t *testing.T) {
+	// ce-id is derived from Identity, not Data. Two encodings of the SAME
+	// occurrence differ in sequence (the counter advances) and would otherwise
+	// produce different ids, destroying restart-invariance and replay dedup.
+	em := New("cabinet-poller-1")
+	ev := model.ModeChanged{
+		Base: base("asc-1", "asc"), From: model.ModeFlash, To: model.ModeNormal,
+	}
+
+	first, _, _ := em.Encode(ev)
+	second, _, _ := em.Encode(ev)
+
+	if string(first.Data) == string(second.Data) {
+		t.Fatal("precondition: the two encodings should differ, because sequence advanced")
+	}
+	if string(first.Identity) != string(second.Identity) {
+		t.Errorf("identity differs across encodings of one occurrence:\n %x\n %x",
+			first.Identity, second.Identity)
+	}
+
+	// Identity must still carry the substance — clearing bookkeeping is not
+	// licence to hash an empty message.
+	var id commonv1.ModeChanged
+	if err := proto.Unmarshal(first.Identity, &id); err != nil {
+		t.Fatalf("identity is not a valid payload: %v", err)
+	}
+	if id.GetCurrent() != "openits-signal-control-types:mode-free" {
+		t.Errorf("identity lost the event's substance: current = %q", id.GetCurrent())
+	}
+	if id.GetSequence() != 0 || id.GetObservedBy() != "" {
+		t.Errorf("identity retained producer-assigned leaves: sequence=%d observed_by=%q",
+			id.GetSequence(), id.GetObservedBy())
+	}
+}
+
+func TestEncode_IdentityIsSensitiveToRealChanges(t *testing.T) {
+	// The flip side: clearing bookkeeping must not blur genuinely different
+	// events into one id.
+	em := New("cabinet-poller-1")
+	a, _, _ := em.Encode(model.ModeChanged{
+		Base: base("asc-1", "asc"), From: model.ModeFlash, To: model.ModeNormal,
+	})
+	b, _, _ := em.Encode(model.ModeChanged{
+		Base: base("asc-1", "asc"), From: model.ModeFlash, To: model.ModeOff,
+	})
+	if string(a.Identity) == string(b.Identity) {
+		t.Error("different transitions produced the same identity")
+	}
+}

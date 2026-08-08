@@ -5,7 +5,6 @@ package publish
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -61,19 +60,37 @@ func Connect(ctx context.Context, url string, tmpl *subject.Template, streamName
 	return &Publisher{nc: nc, js: js, tmpl: tmpl}, nil
 }
 
-// Publish writes one envelope with Nats-Msg-Id = envelope ID for dedup.
+// Headers renders an envelope as CloudEvents binary-mode headers: every
+// attribute becomes a ce-* header and the body stays the raw encoded payload.
+//
+// Nats-Msg-Id carries the same value as ce-id so JetStream's own dedup window
+// keys on the event identity rather than on a second, unrelated id.
+//
+// ce-dataschema is omitted entirely when empty rather than sent blank: the
+// collector-owned health schema (ADR 0007) has no registry entry to point at,
+// and an empty attribute would claim it does.
+func Headers(env cloudevents.Envelope) nats.Header {
+	h := nats.Header{}
+	h.Set("ce-specversion", env.SpecVersion)
+	h.Set("ce-id", env.ID)
+	h.Set("ce-source", env.Source)
+	h.Set("ce-type", env.Type)
+	h.Set("ce-time", env.Time.UTC().Format(time.RFC3339Nano))
+	h.Set("ce-datacontenttype", env.DataContentType)
+	if env.DataSchema != "" {
+		h.Set("ce-dataschema", env.DataSchema)
+	}
+	h.Set("Nats-Msg-Id", env.ID)
+	return h
+}
+
+// Publish writes one envelope in CloudEvents binary mode.
 func (p *Publisher) Publish(ctx context.Context, env cloudevents.Envelope, ceType string) error {
 	subj, err := p.tmpl.Render(ceType)
 	if err != nil {
 		return err
 	}
-	data, err := json.Marshal(env)
-	if err != nil {
-		return fmt.Errorf("marshal envelope: %w", err)
-	}
-	msg := &nats.Msg{Subject: subj, Data: data}
-	msg.Header = nats.Header{}
-	msg.Header.Set("Nats-Msg-Id", env.ID)
+	msg := &nats.Msg{Subject: subj, Data: env.Data, Header: Headers(env)}
 
 	var lastErr error
 	for attempt := 0; attempt < publishAttempts; attempt++ {

@@ -138,8 +138,25 @@ func encodeAndPublish(ctx context.Context, pub *publish.Publisher, tenant cloude
 		if !ok {
 			continue
 		}
-		env := cloudevents.New(enc.CEType, cloudevents.SourceFor(tenant, ev.EventDeviceID()),
-			ev.EventOccurredAt(), enc.ContentType, enc.Data)
+		source := cloudevents.SourceFor(tenant, ev.EventDeviceKind(), ev.EventDeviceID())
+		if source == "" {
+			// No entity-kind mapping for this device kind. Publishing would
+			// mean inventing a URN shape upstream does not define, and ce-id
+			// hashes that string, so the invention would be baked into every
+			// id. Drop it as loudly as an unclaimed event.
+			slog.Warn("event dropped: no ce-source entity kind for device kind",
+				"event", ev.EventKind(), "device_kind", ev.EventDeviceKind(), "device", ev.EventDeviceID())
+			return
+		}
+		env := cloudevents.New(cloudevents.Event{
+			CEType:      enc.CEType,
+			Source:      source,
+			ContentType: enc.ContentType,
+			DataSchema:  enc.DataSchema,
+			OccurredAt:  ev.EventOccurredAt(),
+			Data:        enc.Data,
+			Identity:    enc.Identity,
+		})
 		if err := pub.Publish(ctx, env, enc.CEType); err != nil {
 			slog.Error("publish failed", "type", enc.CEType, "err", err)
 		}

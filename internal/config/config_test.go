@@ -29,7 +29,9 @@ func write(t *testing.T, content string) string {
 // fixture that is valid in every other respect, so its failure can only be
 // about the missing field.
 const baseYAML = `
+region: us-ga
 agency: metro-atlanta
+agency_unit: d01
 site: cabinet-042
 model_version: openits/v1
 devices:
@@ -63,7 +65,9 @@ func TestLoadValid(t *testing.T) {
 
 func TestLoadDefaultsPollInterval(t *testing.T) {
 	yaml := `
+region: us-ga
 agency: metro
+agency_unit: d01
 site: cab-1
 model_version: openits/v1
 collector_id: cabinet-042-collector
@@ -83,7 +87,9 @@ func TestLoadRejects(t *testing.T) {
 	reg := regWith("ntcip", "asc")
 	cases := map[string]string{
 		"unknown adapter": `
+region: us-ga
 agency: metro
+agency_unit: d01
 site: cab-1
 model_version: openits/v1
 collector_id: cabinet-042-collector
@@ -95,11 +101,15 @@ model_version: openits/v1
 collector_id: cabinet-042-collector
 devices: [{ id: d1, vendor: ntcip, device_kind: asc, connection: {} }]`,
 		"missing model_version": `
+region: us-ga
 agency: metro
+agency_unit: d01
 site: cab-1
 devices: [{ id: d1, vendor: ntcip, device_kind: asc, connection: {} }]`,
 		"duplicate device id": `
+region: us-ga
 agency: metro
+agency_unit: d01
 site: cab-1
 model_version: openits/v1
 collector_id: cabinet-042-collector
@@ -107,7 +117,9 @@ devices:
   - { id: d1, vendor: ntcip, device_kind: asc, connection: {} }
   - { id: d1, vendor: ntcip, device_kind: asc, connection: {} }`,
 		"no devices": `
+region: us-ga
 agency: metro
+agency_unit: d01
 site: cab-1
 model_version: openits/v1
 collector_id: cabinet-042-collector
@@ -137,7 +149,9 @@ func TestLoadSubjectDefaults(t *testing.T) {
 
 func TestLoadSubjectCustom(t *testing.T) {
 	yaml := `
+region: us-ga
 agency: metro
+agency_unit: d01
 site: cab-1
 model_version: openits/v1
 collector_id: cabinet-042-collector
@@ -168,7 +182,9 @@ devices:
 
 func TestLoadSubjectStreamOnly(t *testing.T) {
 	yaml := `
+region: us-ga
 agency: metro
+agency_unit: d01
 site: cab-1
 model_version: openits/v1
 collector_id: cabinet-042-collector
@@ -192,7 +208,9 @@ devices:
 
 func TestLoadSubjectTemplateOnly(t *testing.T) {
 	yaml := `
+region: us-ga
 agency: metro
+agency_unit: d01
 site: cab-1
 model_version: openits/v1
 collector_id: cabinet-042-collector
@@ -218,21 +236,27 @@ devices:
 func TestLoadRejectsBadSubjectTemplate(t *testing.T) {
 	cases := map[string]string{
 		"unknown placeholder": `
+region: us-ga
 agency: metro
+agency_unit: d01
 site: cab-1
 model_version: openits/v1
 collector_id: cabinet-042-collector
 subject: { template: "{prefix}.{nope}.{service}.{event}.{version}" }
 devices: [{ id: d1, vendor: ntcip, device_kind: asc, connection: {} }]`,
 		"no static prefix": `
+region: us-ga
 agency: metro
+agency_unit: d01
 site: cab-1
 model_version: openits/v1
 collector_id: cabinet-042-collector
 subject: { template: "{service}.{event}.{version}" }
 devices: [{ id: d1, vendor: ntcip, device_kind: asc, connection: {} }]`,
 		"illegal var token": `
+region: us-ga
 agency: metro
+agency_unit: d01
 site: cab-1
 model_version: openits/v1
 collector_id: cabinet-042-collector

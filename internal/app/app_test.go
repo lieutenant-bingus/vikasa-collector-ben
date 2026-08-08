@@ -3,7 +3,6 @@ package app
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"os"
@@ -68,7 +67,9 @@ func TestEndToEndHealthEventsReachJetStream(t *testing.T) {
 	// Config file.
 	cfgYAML := `
 collector_id: metro-cab-1-collector
+region: us-ga
 agency: metro
+agency_unit: d01
 site: cab-1
 model_version: openits/v1
 devices:
@@ -91,9 +92,10 @@ devices:
 	defer nc.Close()
 	seen := make(chan string, 64)
 	sub, err := nc.Subscribe("openits.metro.cab-1.>", func(m *nats.Msg) {
-		var env cloudevents.Envelope
-		if json.Unmarshal(m.Data, &env) == nil {
-			seen <- m.Subject + "|" + env.Type
+		// Binary mode: the body is the raw payload and the CloudEvents
+		// attributes ride as ce-* headers.
+		if ceType := m.Header.Get("ce-type"); ceType != "" {
+			seen <- m.Subject + "|" + ceType
 		}
 	})
 	if err != nil {
