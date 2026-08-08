@@ -97,3 +97,48 @@ func faultKindIdentity(c model.FaultCategory, deviceKind string) (string, bool) 
 		return "", false
 	}
 }
+
+// dmsControlModeIdentity maps who is driving the sign. There is no "unknown"
+// member upstream (local/external/central/central-override/simulation/other),
+// and dms-control-other means "a vendor-specific mode not covered above" —
+// a different claim from "we do not know" — so ControlUnknown is declined
+// rather than folded into it.
+func dmsControlModeIdentity(m model.DMSControlMode) (string, bool) {
+	switch m {
+	case model.ControlLocal:
+		return dmsTypes + "dms-control-local", true
+	case model.ControlExternal:
+		return dmsTypes + "dms-control-external", true
+	case model.ControlCentral:
+		return dmsTypes + "dms-control-central", true
+	case model.ControlCentralOverride:
+		return dmsTypes + "dms-control-central-override", true
+	case model.ControlSimulation:
+		return dmsTypes + "dms-control-simulation", true
+	case model.ControlOther:
+		return dmsTypes + "dms-control-other", true
+	default:
+		return "", false
+	}
+}
+
+// dmsDisplayStateIdentity maps what the sign is showing, onto the sign-mode
+// identity set. Unlike controller mode and DMS control mode, sign-mode DOES
+// define mode-unknown, so every domain value is expressible and none are
+// declined.
+func dmsDisplayStateIdentity(s model.DMSDisplayState) (string, bool) {
+	switch s {
+	case model.DisplayOff:
+		return dmsTypes + "mode-off", true
+	case model.DisplayBlank:
+		return dmsTypes + "mode-blank", true
+	case model.DisplayTest:
+		return dmsTypes + "mode-test", true
+	case model.DisplayNormal:
+		return dmsTypes + "mode-normal", true
+	case model.DisplayUnknown:
+		return dmsTypes + "mode-unknown", true
+	default:
+		return "", false
+	}
+}

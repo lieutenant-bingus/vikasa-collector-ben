@@ -74,6 +74,13 @@ var ceTypeFor = map[key]string{
 	{"mode-changed", "asc"}: "openits.signal-control.mode-changed.v1",
 	{"fault-raised", "asc"}: "openits.signal-control.fault-raised.v1",
 	{"fault-raised", "dms"}: "openits.dms.fault-raised.v1",
+
+	// Both DMS mode axes share ONE ce-type. dms-mode-event-kind is documented
+	// as spanning dms-control-mode and the sign-mode display state alike, so
+	// the two are discriminated by which identity set prior/current are drawn
+	// from, not by separate ce-types.
+	{"control-mode-changed", "dms"}:  "openits.dms.mode-changed.v1",
+	{"display-state-changed", "dms"}: "openits.dms.mode-changed.v1",
 }
 
 func (e *emitter) CETypes() []string { return nil }
@@ -99,15 +106,23 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 		// `prior` is optional ("absent when the device just started up"), so an
 		// unmappable From is left empty rather than blocking the event.
 		prior, _ := controllerModeIdentity(v.From)
-		msg = &commonv1.ModeChanged{
-			Kind:           scTypes + "sc-mode-event-kind",
-			SourceDeviceId: v.DeviceID,
-			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
-			ObservedBy:     e.collectorID,
-			Sequence:       e.nextSequence(v.DeviceID),
-			Prior:          prior,
-			Current:        current,
+		msg = e.modeChanged(v.Base, scTypes+"sc-mode-event-kind", prior, current)
+	case model.DMSControlModeChanged:
+		current, ok := dmsControlModeIdentity(v.To)
+		if !ok {
+			return nil, false, nil
 		}
+		prior, _ := dmsControlModeIdentity(v.From)
+		msg = e.modeChanged(v.Base, dmsTypes+"dms-mode-event-kind", prior, current)
+
+	case model.DMSDisplayStateChanged:
+		current, ok := dmsDisplayStateIdentity(v.To)
+		if !ok {
+			return nil, false, nil
+		}
+		prior, _ := dmsDisplayStateIdentity(v.From)
+		msg = e.modeChanged(v.Base, dmsTypes+"dms-mode-event-kind", prior, current)
+
 	case model.FaultRaised:
 		// Unlike modes, an unmappable category does NOT decline the event —
 		// faultKindIdentity falls back to the service base identity. It only
@@ -155,5 +170,20 @@ func severityFor(s model.FaultSeverity) commonv1.FaultSeverity {
 		return commonv1.FaultSeverity_FAULT_SEVERITY_CRITICAL
 	default:
 		return commonv1.FaultSeverity_FAULT_SEVERITY_INFO
+	}
+}
+
+// modeChanged builds the shared common/v1.ModeChanged. Three domain events map
+// onto it — controller mode, DMS control mode, DMS display state — differing
+// only in `kind` and which identity set prior/current are drawn from.
+func (e *emitter) modeChanged(b model.Base, kind, prior, current string) *commonv1.ModeChanged {
+	return &commonv1.ModeChanged{
+		Kind:           kind,
+		SourceDeviceId: b.DeviceID,
+		OccurredAt:     timestamppb.New(b.OccurredAt.UTC()),
+		ObservedBy:     e.collectorID,
+		Sequence:       e.nextSequence(b.DeviceID),
+		Prior:          prior,
+		Current:        current,
 	}
 }

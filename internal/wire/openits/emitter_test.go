@@ -288,3 +288,88 @@ func TestEncode_FaultRaised_MapsSeverityAndCategory(t *testing.T) {
 		t.Errorf("description = %q", got.GetDescription())
 	}
 }
+
+func decodeDMSMode(t *testing.T, ev model.Event) (*commonv1.ModeChanged, string) {
+	t.Helper()
+	enc, ok, err := New("cabinet-poller-1").Encode(ev)
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+	if !ok {
+		t.Fatalf("emitter did not claim %s on a %s device", ev.EventKind(), ev.EventDeviceKind())
+	}
+	var got commonv1.ModeChanged
+	if err := proto.Unmarshal(enc.Data, &got); err != nil {
+		t.Fatalf("payload is not a valid common/v1.ModeChanged: %v", err)
+	}
+	return &got, enc.CEType
+}
+
+func TestEncode_BothDMSModeAxes_ShareOneCEType(t *testing.T) {
+	// dms-mode-event-kind is documented as spanning BOTH dms-control-mode
+	// (who is driving) and the sign-mode display state (off/blank/test/normal).
+	// So control-mode and display-state changes are two axes of one ce-type,
+	// discriminated by which identity set prior/current are drawn from — not
+	// two ce-types, and not one of them dropped.
+	ctrl, ctrlType := decodeDMSMode(t, model.DMSControlModeChanged{
+		Base: base("dms-i35-mm214", "dms"),
+		From: model.ControlCentral,
+		To:   model.ControlLocal,
+	})
+	disp, dispType := decodeDMSMode(t, model.DMSDisplayStateChanged{
+		Base: base("dms-i35-mm214", "dms"),
+		From: model.DisplayNormal,
+		To:   model.DisplayBlank,
+	})
+
+	const want = "openits.dms.mode-changed.v1"
+	if ctrlType != want || dispType != want {
+		t.Errorf("ce-types = %q / %q, want both %q", ctrlType, dispType, want)
+	}
+	if w := "openits-dms-types:dms-mode-event-kind"; ctrl.GetKind() != w || disp.GetKind() != w {
+		t.Errorf("kind = %q / %q, want both %q", ctrl.GetKind(), disp.GetKind(), w)
+	}
+	if w := "openits-dms-types:dms-control-local"; ctrl.GetCurrent() != w {
+		t.Errorf("control current = %q, want %q", ctrl.GetCurrent(), w)
+	}
+	if w := "openits-dms-types:dms-control-central"; ctrl.GetPrior() != w {
+		t.Errorf("control prior = %q, want %q", ctrl.GetPrior(), w)
+	}
+	if w := "openits-dms-types:mode-blank"; disp.GetCurrent() != w {
+		t.Errorf("display current = %q, want %q", disp.GetCurrent(), w)
+	}
+	if w := "openits-dms-types:mode-normal"; disp.GetPrior() != w {
+		t.Errorf("display prior = %q, want %q", disp.GetPrior(), w)
+	}
+}
+
+func TestEncode_DMSDisplayUnknown_IsMappable(t *testing.T) {
+	// Unlike controller mode, sign-mode HAS a mode-unknown identity, so an
+	// unknown display state is expressible and must not be declined.
+	got, _ := decodeDMSMode(t, model.DMSDisplayStateChanged{
+		Base: base("dms-i35-mm214", "dms"),
+		From: model.DisplayNormal,
+		To:   model.DisplayUnknown,
+	})
+	if w := "openits-dms-types:mode-unknown"; got.GetCurrent() != w {
+		t.Errorf("current = %q, want %q", got.GetCurrent(), w)
+	}
+}
+
+func TestEncode_DMSControlUnknown_IsNotClaimed(t *testing.T) {
+	// dms-control-mode has no "unknown" member: local/external/central/
+	// central-override/simulation/other. dms-control-other means "a
+	// vendor-specific mode not covered above", which is NOT the same claim as
+	// "we don't know", so an unknown control mode is declined.
+	_, ok, err := New("cabinet-poller-1").Encode(model.DMSControlModeChanged{
+		Base: base("dms-i35-mm214", "dms"),
+		From: model.ControlCentral,
+		To:   model.ControlUnknown,
+	})
+	if err != nil {
+		t.Fatalf("Encode returned error: %v", err)
+	}
+	if ok {
+		t.Error("emitter claimed a control mode with no upstream identity")
+	}
+}
