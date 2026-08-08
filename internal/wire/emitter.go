@@ -11,6 +11,12 @@ type Encoded struct {
 	CEType      string
 	ContentType string
 	Data        []byte
+
+	// DataSchema is the ce-dataschema URL: the immutable schema-registry
+	// snapshot this body validates against. Empty for emitters whose schema
+	// is collector-owned (ADR 0007 health), which deliberately omit the
+	// attribute rather than point at a registry they are not in.
+	DataSchema string
 }
 
 // Emitter maps domain events to wire payloads. ok=false (with nil error)

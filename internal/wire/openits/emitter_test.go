@@ -572,3 +572,56 @@ func TestCETypes_CoversEveryRoutableCEType(t *testing.T) {
 		}
 	}
 }
+
+func TestEncode_CarriesDataSchemaPinnedToDefiningEventsModule(t *testing.T) {
+	// ce-dataschema keys on the module that DEFINES the notification and that
+	// module's revision — never a base or types module the payload happens to
+	// compose. mode-changed and fault-raised are defined in the shared
+	// openits-common-*-events modules, so a signal-control event points at a
+	// common module, which looks wrong until you know the rule.
+	for _, tc := range []struct {
+		name string
+		ev   model.Event
+		want string
+	}{{
+		"asc mode-changed is defined by common-mode-events",
+		model.ModeChanged{Base: base("asc-1", "asc"), From: model.ModeFlash, To: model.ModeNormal},
+		"https://schemas.open-its.org/openits-common-mode-events/2026-07-21/",
+	}, {
+		"dms mode-changed shares that same defining module",
+		model.DMSDisplayStateChanged{Base: base("dms-1", "dms"), From: model.DisplayNormal, To: model.DisplayBlank},
+		"https://schemas.open-its.org/openits-common-mode-events/2026-07-21/",
+	}, {
+		"fault-raised is defined by common-fault-events",
+		model.FaultRaised{Base: base("asc-1", "asc"), FaultID: "f1"},
+		"https://schemas.open-its.org/openits-common-fault-events/2026-07-21/",
+	}, {
+		"plan-applied is defined by signal-control-events",
+		model.PlanChanged{Base: base("asc-1", "asc"), ToPlanID: 1},
+		"https://schemas.open-its.org/openits-signal-control-events/2026-07-21/",
+	}, {
+		"message-activation-failed is defined by dms-events, at its own revision",
+		model.DMSMessageActivationFailed{Base: base("dms-1", "dms")},
+		"https://schemas.open-its.org/openits-dms-events/2026-07-23/",
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			enc, ok, err := New("cabinet-poller-1").Encode(tc.ev)
+			if err != nil || !ok {
+				t.Fatalf("Encode: ok=%v err=%v", ok, err)
+			}
+			if enc.DataSchema != tc.want {
+				t.Errorf("ce-dataschema = %q, want %q", enc.DataSchema, tc.want)
+			}
+		})
+	}
+}
+
+func TestDataSchema_CoversEveryCEType(t *testing.T) {
+	// A ce-type with no constant would publish without ce-dataschema, which
+	// the profile requires. Catching that here beats catching it per-event.
+	for _, ceType := range New("x").CETypes() {
+		if dataSchemaFor[ceType] == "" {
+			t.Errorf("ce-type %q has no ce-dataschema constant", ceType)
+		}
+	}
+}

@@ -296,7 +296,12 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 	if err != nil {
 		return nil, false, fmt.Errorf("openits encode %s: %w", ceType, err)
 	}
-	return &wire.Encoded{CEType: ceType, ContentType: contentType, Data: data}, true, nil
+	return &wire.Encoded{
+		CEType:      ceType,
+		ContentType: contentType,
+		Data:        data,
+		DataSchema:  dataSchemaFor[ceType],
+	}, true, nil
 }
 
 // severityFor maps the domain severity to the wire enum. Written as an

@@ -204,3 +204,41 @@ func errorTypeFor(e model.MultiSyntaxError) dmsv1.ErrorType {
 		return dmsv1.ErrorType_ERROR_TYPE_OTHER
 	}
 }
+
+// registryBase is the schema-registry root the profile's ce-dataschema URLs
+// resolve against.
+const registryBase = "https://schemas.open-its.org/"
+
+// dataSchemaFor maps each ce-type to its ce-dataschema URL.
+//
+// The URL keys on the module that DEFINES the notification and that module's
+// revision — never on a base or types module the payload happens to compose.
+// That is why signal-control's mode-changed and fault-raised point at
+// openits-common-*-events: those modules define the notifications, and
+// signal-control merely reuses them. It reads like a mistake and is not.
+//
+// Revisions are per-module, so they do NOT move in lockstep: dms-events is at
+// a later revision than the others because it changed and they did not.
+// Upstream deliberately refuses to cut no-op revisions just to keep a set of
+// constants aligned.
+//
+// Hard-coded because openits-models ships no Go catalog API. That is the
+// intended trade: a pin bump shows up as a reviewable diff of these constants
+// rather than as a silent behaviour change, and the goldens lock them.
+var dataSchemaFor = map[string]string{
+	"openits.signal-control.mode-changed.v1": registryBase + "openits-common-mode-events/2026-07-21/",
+	"openits.dms.mode-changed.v1":            registryBase + "openits-common-mode-events/2026-07-21/",
+
+	"openits.signal-control.fault-raised.v1":  registryBase + "openits-common-fault-events/2026-07-21/",
+	"openits.signal-control.fault-cleared.v1": registryBase + "openits-common-fault-events/2026-07-21/",
+	"openits.dms.fault-raised.v1":             registryBase + "openits-common-fault-events/2026-07-21/",
+	"openits.dms.fault-cleared.v1":            registryBase + "openits-common-fault-events/2026-07-21/",
+
+	"openits.signal-control.plan-applied.v1":              registryBase + "openits-signal-control-events/2026-07-21/",
+	"openits.signal-control.operational-status-report.v1": registryBase + "openits-signal-control-events/2026-07-21/",
+	"openits.signal-control.preemption-activated.v1":      registryBase + "openits-signal-control-events/2026-07-21/",
+	"openits.signal-control.preemption-cleared.v1":        registryBase + "openits-signal-control-events/2026-07-21/",
+	"openits.signal-control.detector-report.v1":           registryBase + "openits-signal-control-events/2026-07-21/",
+
+	"openits.dms.message-activation-failed.v1": registryBase + "openits-dms-events/2026-07-23/",
+}
