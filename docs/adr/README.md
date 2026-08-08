@@ -15,5 +15,6 @@ immutable once accepted; reversals get a new ADR that supersedes the old.
 | [0007](0007-collector-owned-health-schema.md) | Collector-owned health event schema |
 | [0008](0008-fixture-golden-testing-bar.md) | Fixture-golden testing bar for adapters |
 | [0009](0009-configurable-subject-templates.md) | Operator-configurable subject templates (supersedes 0006's grammar) |
+| [0010](0010-openits-models-lockstep-pre-v1.md) | Track openits-models HEAD in lockstep until v1 (amends 0002's pinning clause) |
 
 Companion spec: `../specs/2026-07-12-greenfield-collector-architecture-design.md`

@@ -20,14 +20,18 @@ go run ./cmd/collector -config collector.yaml
 - Adapters (`internal/vendors/`) and `sdk/` produce **only `sdk/model`
   types**. They must not import openits-models — only `internal/wire`
   may (ADR 0002; `scripts/lint-boundary.sh` fails the build otherwise).
-- openits-models is consumed as **tagged releases only**, never a
-  `replace` directive (ADR 0002, 0005).
+- openits-models is pinned at **main HEAD** (pseudo-version) while both
+  repos move in lockstep pre-v1 — never a `replace` directive (ADR 0010,
+  amending 0002). Tagged pins and versioned emitter packages return at
+  openits-models v1.0.0, or sooner if an outside consumer pins it.
 - The synth engine's iron rule: **absence of evidence is never a state
   change.** Failed or absent facet reads emit nothing and keep previous
   state. Don't write differs or adapters that violate this.
 - Subjects are operator-configurable routing (ADR 0009); the CloudEvents
-  envelope (`ce-type`, `ce-source`, content-addressed `ce-id`) is
-  identity and stays canonical. Never derive one from the other.
+  envelope (`ce-type`, `ce-source`, deterministic `ce-id`) is identity
+  and stays canonical. Never derive one from the other. The `ce-id`
+  derivation is openits-models' contract, not ours — see its
+  `ce-id-spec.md`; deterministic does not mean "a bare content hash."
 
 ## Task guides
 
