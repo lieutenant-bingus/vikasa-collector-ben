@@ -91,9 +91,21 @@ Proposed meaning: booted, config accepted, and **at least one successful device
 poll**. That last clause is what makes it real — it is the difference between
 "the binary runs on this host" and "this cabinet is collecting."
 
-Open: exposure mechanism. A local HTTP endpoint is the obvious choice and works
-identically under systemd healthchecks and IOx. A file or exit-code contract is
-smaller but harder to gate on. Needs a decision before Phase 1.
+**RESOLVED** — see `docs/specs/2026-08-09-management-surface-design.md` for the
+full surface. HTTP on loopback, `/readyz` `/livez` `/status`, with `sd_notify`
+as an optional systemd-native tightening rather than a replacement.
+
+Two things that only surfaced when the design was worked through properly:
+
+- **Readiness must LATCH.** If it can go false and the supervisor restarts on
+  unready, a comms outage that takes every device offline produces a restart
+  loop — the collector killed repeatedly for a fault it did not cause, during
+  the exact window an operator needs it reporting. Readiness answers "did this
+  version prove itself"; ongoing device health is what `DeviceStatusChanged`
+  is for. Liveness is a separate, unlatched signal used only for restarts.
+- **Startup grace must exceed twice the longest poll interval**, because the
+  first poll arrives no sooner than the interval plus the runner's start
+  jitter. Too tight and every deployment looks like a failed one.
 
 ### D2 — One artifact or two? — RESOLVED: two, NATS alongside
 
