@@ -9,6 +9,7 @@ import (
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 
+	cctvv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/cctv/v1"
 	commonv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/common/v1"
 	dmsv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/dms/v1"
 	pcpv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/perception/v1"
@@ -192,6 +193,28 @@ var goldenCases = []struct {
 		dataSchema: "https://schemas.open-its.org/openits-common-fault-events/2026-07-21/",
 		dataHex:    "0a086c696461722d30311208626c6f636b6167651a0608c0e182d3062210636162696e65742d706f6c6c65722d3130019a06346f70656e6974732d70657263657074696f6e2d74797065733a70657263657074696f6e2d6661756c742d6576656e742d6b696e64",
 		identHex:   "0a086c696461722d30311208626c6f636b6167651a0608c0e182d3069a06346f70656e6974732d70657263657074696f6e2d74797065733a70657263657074696f6e2d6661756c742d6576656e742d6b696e64",
+	},
+	{
+		name: "cctv mode-changed",
+		ev: model.CCTVControlModeChanged{
+			Base: gbase("cam-03", "cctv"),
+			From: model.CCTVControlCentral, To: model.CCTVControlLocal,
+		},
+		ceType:     "openits.cctv.mode-changed.v1",
+		dataSchema: "https://schemas.open-its.org/openits-common-mode-events/2026-07-21/",
+		dataHex:    "0a0663616d2d303312276f70656e6974732d636374762d74797065733a636374762d636f6e74726f6c2d63656e7472616c1a256f70656e6974732d636374762d74797065733a636374762d636f6e74726f6c2d6c6f63616c2a0608c0e182d3063210636162696e65742d706f6c6c65722d3140019a06276f70656e6974732d636374762d74797065733a636374762d6d6f64652d6576656e742d6b696e64",
+		identHex:   "0a0663616d2d303312276f70656e6974732d636374762d74797065733a636374762d636f6e74726f6c2d63656e7472616c1a256f70656e6974732d636374762d74797065733a636374762d636f6e74726f6c2d6c6f63616c2a0608c0e182d3069a06276f70656e6974732d636374762d74797065733a636374762d6d6f64652d6576656e742d6b696e64",
+	},
+	{
+		name: "cctv tour-state-changed",
+		ev: model.CCTVTourStateChanged{
+			Base: gbase("cam-03", "cctv"), TourID: 4,
+			From: model.TourRunning, To: model.TourPaused,
+		},
+		ceType:     "openits.cctv.tour-state-changed.v1",
+		dataSchema: "https://schemas.open-its.org/openits-cctv-events/2026-08-05/",
+		dataHex:    "0804100118022210636162696e65742d706f6c6c65722d312a0608c0e182d3063801420663616d2d30339a062a6f70656e6974732d636374762d74797065733a636374762d746f75722d73746174652d6368616e676564",
+		identHex:   "0804100118022a0608c0e182d306420663616d2d30339a062a6f70656e6974732d636374762d74797065733a636374762d746f75722d73746174652d6368616e676564",
 	},
 	{
 		name: "perception zone-incident-detected",
@@ -399,6 +422,8 @@ func emptyMessageFor(ceType string) proto.Message {
 		return &pcpv1.ZoneIncidentCleared{}
 	case "openits.perception.zone-interval-report.v1":
 		return &pcpv1.ZoneIntervalReport{}
+	case "openits.cctv.tour-state-changed.v1":
+		return &cctvv1.TourStateChanged{}
 	case "openits.signal-control.plan-applied.v1":
 		return &scv1.PlanApplied{}
 	case "openits.signal-control.operational-status-report.v1":

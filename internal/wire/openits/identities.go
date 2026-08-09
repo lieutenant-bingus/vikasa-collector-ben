@@ -3,6 +3,7 @@ package openits
 import (
 	"fmt"
 
+	cctvv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/cctv/v1"
 	dmsv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/dms/v1"
 	pcpv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/perception/v1"
 	tsv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/traffic_sensor/v1"
@@ -201,6 +202,43 @@ func dmsDisplayStateIdentity(s model.DMSDisplayState) (string, bool) {
 // its fraction present.
 func occupancyPercent(tenths uint16) string {
 	return fmt.Sprintf("%d.%d", tenths/10, tenths%10)
+}
+
+// cctvControlModeIdentity maps who is driving the camera. The upstream set is
+// central / local / central-override / other with NO unknown member — the same
+// shape as dms-control-mode — so an unknown mode is declined rather than
+// folded into "other", which is a positive claim about the camera.
+func cctvControlModeIdentity(m model.CCTVControlMode) (string, bool) {
+	switch m {
+	case model.CCTVControlCentral:
+		return cctvTypes + "cctv-control-central", true
+	case model.CCTVControlLocal:
+		return cctvTypes + "cctv-control-local", true
+	case model.CCTVControlCentralOverride:
+		return cctvTypes + "cctv-control-central-override", true
+	case model.CCTVControlOther:
+		return cctvTypes + "cctv-control-other", true
+	default:
+		return "", false
+	}
+}
+
+// tourRunStateFor maps a tour's run state to the wire enum.
+//
+// ok=false for TourUnknown: the wire's zero is STOPPED with no unspecified
+// member, so encoding an unknown state would assert the tour is stopped — a
+// claim the camera never made, and one an operator would act on.
+func tourRunStateFor(s model.TourRunState) (cctvv1.TourRunState, bool) {
+	switch s {
+	case model.TourStopped:
+		return cctvv1.TourRunState_TOUR_RUN_STATE_STOPPED, true
+	case model.TourRunning:
+		return cctvv1.TourRunState_TOUR_RUN_STATE_RUNNING, true
+	case model.TourPaused:
+		return cctvv1.TourRunState_TOUR_RUN_STATE_PAUSED, true
+	default:
+		return 0, false
+	}
 }
 
 // incidentTypeIdentity and objectClassIdentity map the domain's closed enums
@@ -402,4 +440,7 @@ var dataSchemaFor = map[string]string{
 	"openits.perception.zone-incident-updated.v1":  registryBase + "openits-perception-events/2026-07-21/",
 	"openits.perception.zone-incident-cleared.v1":  registryBase + "openits-perception-events/2026-07-21/",
 	"openits.perception.zone-interval-report.v1":   registryBase + "openits-perception-events/2026-07-21/",
+
+	"openits.cctv.mode-changed.v1":       registryBase + "openits-common-mode-events/2026-07-21/",
+	"openits.cctv.tour-state-changed.v1": registryBase + "openits-cctv-events/2026-08-05/",
 }

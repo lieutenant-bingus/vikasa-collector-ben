@@ -13,6 +13,7 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	cctvv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/cctv/v1"
 	commonv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/common/v1"
 	dmsv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/dms/v1"
 	pcpv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/perception/v1"
@@ -108,6 +109,9 @@ var ceTypeFor = map[key]string{
 	{"zone-incident-updated", "perception"}:  "openits.perception.zone-incident-updated.v1",
 	{"zone-incident-cleared", "perception"}:  "openits.perception.zone-incident-cleared.v1",
 	{"zone-interval-report", "perception"}:   "openits.perception.zone-interval-report.v1",
+
+	{"cctv-control-mode-changed", "cctv"}: "openits.cctv.mode-changed.v1",
+	{"cctv-tour-state-changed", "cctv"}:   "openits.cctv.tour-state-changed.v1",
 
 	{"plan-changed", "asc"}:              "openits.signal-control.plan-applied.v1",
 	{"operational-status-report", "asc"}: "openits.signal-control.operational-status-report.v1",
@@ -293,6 +297,35 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 			// than pre-breaking the domain to match the wire.
 			IntervalDurationS: uint32((v.IntervalDuration + 500*time.Millisecond) / time.Second),
 			Detector:          dets,
+		}
+
+	case model.CCTVControlModeChanged:
+		current, ok := cctvControlModeIdentity(v.To)
+		if !ok {
+			return nil, false, nil
+		}
+		prior, _ := cctvControlModeIdentity(v.From)
+		msg = e.modeChanged(v.Base, cctvTypes+"cctv-mode-event-kind", prior, current)
+
+	case model.CCTVTourStateChanged:
+		to, ok := tourRunStateFor(v.To)
+		if !ok {
+			return nil, false, nil
+		}
+		// previous_state has no "unknown" either, so a tour whose prior state
+		// we never observed encodes as STOPPED. That is only reachable if a
+		// differ emitted a transition from an unknown state, which this one
+		// does not — new tours stay silent until they have a known prior.
+		from, _ := tourRunStateFor(v.From)
+		msg = &cctvv1.TourStateChanged{
+			Kind:           cctvTypes + "cctv-tour-state-changed",
+			SourceDeviceId: v.DeviceID,
+			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
+			ObservedBy:     e.collectorID,
+			Sequence:       e.nextSequence(v.DeviceID),
+			TourId:         v.TourID,
+			PreviousState:  from,
+			CurrentState:   to,
 		}
 
 	case model.ZoneIncidentDetected:

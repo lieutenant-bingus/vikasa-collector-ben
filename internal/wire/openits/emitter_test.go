@@ -9,6 +9,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	cctvv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/cctv/v1"
 	commonv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/common/v1"
 	dmsv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/dms/v1"
 	pcpv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/perception/v1"
@@ -534,6 +535,8 @@ func TestCETypes_IsCompleteSortedAndDeduped(t *testing.T) {
 	want := []string{
 		"openits.cctv.fault-cleared.v1",
 		"openits.cctv.fault-raised.v1",
+		"openits.cctv.mode-changed.v1",
+		"openits.cctv.tour-state-changed.v1",
 		"openits.dms.fault-cleared.v1",
 		"openits.dms.fault-raised.v1",
 		"openits.dms.message-activation-failed.v1",
@@ -933,5 +936,79 @@ func TestEncode_ZoneIntervalReport(t *testing.T) {
 	cc := z.GetClassCount()
 	if len(cc) != 1 || cc[0].GetClass() != "openits-perception-types:object-truck" || cc[0].GetCount() != 4 {
 		t.Errorf("class counts = %+v", cc)
+	}
+}
+
+func TestEncode_CCTVControlModeChanged(t *testing.T) {
+	var got commonv1.ModeChanged
+	ceType := encodeOK(t, model.CCTVControlModeChanged{
+		Base: base("cam-03", "cctv"),
+		From: model.CCTVControlCentral, To: model.CCTVControlLocal,
+	}, &got)
+
+	if want := "openits.cctv.mode-changed.v1"; ceType != want {
+		t.Errorf("ce-type = %q, want %q", ceType, want)
+	}
+	if want := "openits-cctv-types:cctv-mode-event-kind"; got.GetKind() != want {
+		t.Errorf("kind = %q, want %q", got.GetKind(), want)
+	}
+	if want := "openits-cctv-types:cctv-control-central"; got.GetPrior() != want {
+		t.Errorf("prior = %q, want %q", got.GetPrior(), want)
+	}
+	if want := "openits-cctv-types:cctv-control-local"; got.GetCurrent() != want {
+		t.Errorf("current = %q, want %q", got.GetCurrent(), want)
+	}
+}
+
+func TestEncode_CCTVControlUnknownIsNotClaimed(t *testing.T) {
+	// cctv-control-mode has no "unknown" member, exactly like dms-control-mode.
+	// cctv-control-other means "a vendor mode not covered above" — a positive
+	// claim about the camera, not an admission of ignorance.
+	_, ok, err := New("cabinet-poller-1").Encode(model.CCTVControlModeChanged{
+		Base: base("cam-03", "cctv"),
+		From: model.CCTVControlCentral, To: model.CCTVControlUnknown,
+	})
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	if ok {
+		t.Error("emitter claimed a control mode with no upstream identity")
+	}
+}
+
+func TestEncode_CCTVTourStateChanged(t *testing.T) {
+	var got cctvv1.TourStateChanged
+	ceType := encodeOK(t, model.CCTVTourStateChanged{
+		Base: base("cam-03", "cctv"), TourID: 4,
+		From: model.TourRunning, To: model.TourPaused,
+	}, &got)
+
+	if want := "openits.cctv.tour-state-changed.v1"; ceType != want {
+		t.Errorf("ce-type = %q, want %q", ceType, want)
+	}
+	if want := "openits-cctv-types:cctv-tour-state-changed"; got.GetKind() != want {
+		t.Errorf("kind = %q, want %q", got.GetKind(), want)
+	}
+	if got.GetTourId() != 4 {
+		t.Errorf("tour_id = %d, want 4", got.GetTourId())
+	}
+	if got.GetPreviousState() != cctvv1.TourRunState_TOUR_RUN_STATE_RUNNING ||
+		got.GetCurrentState() != cctvv1.TourRunState_TOUR_RUN_STATE_PAUSED {
+		t.Errorf("states = %v -> %v", got.GetPreviousState(), got.GetCurrentState())
+	}
+}
+
+func TestEncode_CCTVTourUnknownStateIsNotClaimed(t *testing.T) {
+	// TourRunState's wire zero is STOPPED with no unspecified, so an unknown
+	// state would encode as a positive claim that the tour is stopped.
+	_, ok, err := New("cabinet-poller-1").Encode(model.CCTVTourStateChanged{
+		Base: base("cam-03", "cctv"), TourID: 4,
+		From: model.TourRunning, To: model.TourUnknown,
+	})
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	if ok {
+		t.Error("emitter claimed an unknown tour state; the wire would render it as stopped")
 	}
 }

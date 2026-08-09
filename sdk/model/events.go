@@ -218,3 +218,22 @@ type ZoneIntervalReport struct {
 }
 
 func (ZoneIntervalReport) EventKind() string { return "zone-interval-report" }
+
+// CCTVControlModeChanged fires when control of a camera moves between central,
+// local and override.
+type CCTVControlModeChanged struct {
+	Base
+	From, To CCTVControlMode
+}
+
+func (CCTVControlModeChanged) EventKind() string { return "cctv-control-mode-changed" }
+
+// CCTVTourStateChanged fires when one preset tour starts, stops or pauses.
+// Tours are independent: two tours changing in one poll produce two events.
+type CCTVTourStateChanged struct {
+	Base
+	TourID   uint32
+	From, To TourRunState
+}
+
+func (CCTVTourStateChanged) EventKind() string { return "cctv-tour-state-changed" }
