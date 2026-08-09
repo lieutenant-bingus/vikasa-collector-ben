@@ -183,6 +183,43 @@ any implementation can do it.
 - Halt on cohort failure. This is the capability no host executor provides and
   the reason the plane exists.
 
+### When IOx comes back: second repo, or fork?
+
+Raised as a live option and worth framing now so it is decided rather than
+rediscovered. **A fork and the two-layer split are alternatives, not
+complements** — the split exists precisely to avoid a fork, so keeping both
+means paying for insurance already decided against. If a fork is chosen, drop
+the split and simplify.
+
+The question that decides it: **is the difference in the code, or only in how
+the code is packaged and connected?**
+
+Expected to be the latter, in which case a separate `-iox` repo that consumes
+the collector as an image and adds Cisco packaging is strictly better than a
+source fork:
+
+- **Packaging** (`package.yaml`, `ioxclient`, the app bundle) is a CI target
+  over the same source, the same relationship the Linux deployment recipes
+  have.
+- **"No cabinet-local broker, buffer in process, connect straight to a hub"**
+  is a publisher MODE, not a different collector — and one Linux cabinets
+  without local storage may want too.
+- **A smaller binary** for a tight app slot is what the adapter registry
+  already provides: a `cmd/` entrypoint registering fewer vendors, or build
+  tags. Not a reason to fork.
+
+Why a source fork is the expensive answer: every adapter, every emitter
+mapping, every ce-id correction lands twice, forever. For a project whose value
+is being *the* open reference implementation, two collectors both claiming that
+title is close to self-defeating, and the drift surfaces exactly where it hurts
+most — in wire output, the thing the standard exists to make uniform.
+
+A fork is right only if IOx forces something structurally incompatible with
+this codebase. That seems unlikely — IOx runs containers, and a static Go
+binary is close to ideal for a constrained app slot — but it is a measurement,
+not an assumption, and it belongs in the IOx spike rather than being settled
+here.
+
 ### Phase 4 — IOx executor *(deferred)*
 
 Same `cohort → desired version` contract, different executor. Deferred, not
