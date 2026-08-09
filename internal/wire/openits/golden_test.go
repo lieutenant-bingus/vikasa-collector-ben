@@ -2,6 +2,7 @@ package openits
 
 import (
 	"encoding/hex"
+	"strings"
 	"testing"
 	"time"
 
@@ -135,6 +136,62 @@ var goldenCases = []struct {
 		identHex:   "0a05646d732d31120b706978656c2d726f772d331a0608c0e182d3069a06266f70656e6974732d646d732d74797065733a646d732d6661756c742d6576656e742d6b696e64",
 	},
 	{
+		name: "cctv fault-raised",
+		ev: model.FaultRaised{Base: gbase("cam-03", "cctv"), FaultID: "video-loss",
+			Severity: model.SeverityMajor, Category: model.CategoryCommunication},
+		ceType:     "openits.cctv.fault-raised.v1",
+		dataSchema: "https://schemas.open-its.org/openits-common-fault-events/2026-07-21/",
+		dataHex:    "0a0663616d2d3033120a766964656f2d6c6f737318032a0608c0e182d3063210636162696e65742d706f6c6c65722d3140019a06236f70656e6974732d636374762d74797065733a636374762d6661756c742d636f6d6d73",
+		identHex:   "0a0663616d2d3033120a766964656f2d6c6f737318032a0608c0e182d3069a06236f70656e6974732d636374762d74797065733a636374762d6661756c742d636f6d6d73",
+	},
+	{
+		name:       "cctv fault-cleared",
+		ev:         model.FaultCleared{Base: gbase("cam-03", "cctv"), FaultID: "video-loss"},
+		ceType:     "openits.cctv.fault-cleared.v1",
+		dataSchema: "https://schemas.open-its.org/openits-common-fault-events/2026-07-21/",
+		dataHex:    "0a0663616d2d3033120a766964656f2d6c6f73731a0608c0e182d3062210636162696e65742d706f6c6c65722d3130019a06286f70656e6974732d636374762d74797065733a636374762d6661756c742d6576656e742d6b696e64",
+		identHex:   "0a0663616d2d3033120a766964656f2d6c6f73731a0608c0e182d3069a06286f70656e6974732d636374762d74797065733a636374762d6661756c742d6576656e742d6b696e64",
+	},
+	{
+		name: "traffic-sensor fault-raised",
+		ev: model.FaultRaised{Base: gbase("ts-01", "traffic-sensor"), FaultID: "rf-degraded",
+			Severity: model.SeverityMinor, Category: model.CategoryPower},
+		ceType:     "openits.traffic-sensor.fault-raised.v1",
+		dataSchema: "https://schemas.open-its.org/openits-common-fault-events/2026-07-21/",
+		dataHex:    "0a0574732d3031120b72662d646567726164656418022a0608c0e182d3063210636162696e65742d706f6c6c65722d3140019a06376f70656e6974732d747261666669632d73656e736f722d74797065733a747261666669632d73656e736f722d6661756c742d706f776572",
+		identHex:   "0a0574732d3031120b72662d646567726164656418022a0608c0e182d3069a06376f70656e6974732d747261666669632d73656e736f722d74797065733a747261666669632d73656e736f722d6661756c742d706f776572",
+	},
+	{
+		name:       "traffic-sensor fault-cleared",
+		ev:         model.FaultCleared{Base: gbase("ts-01", "traffic-sensor"), FaultID: "rf-degraded"},
+		ceType:     "openits.traffic-sensor.fault-cleared.v1",
+		dataSchema: "https://schemas.open-its.org/openits-common-fault-events/2026-07-21/",
+		dataHex:    "0a0574732d3031120b72662d64656772616465641a0608c0e182d3062210636162696e65742d706f6c6c65722d3130019a063c6f70656e6974732d747261666669632d73656e736f722d74797065733a747261666669632d73656e736f722d6661756c742d6576656e742d6b696e64",
+		identHex:   "0a0574732d3031120b72662d64656772616465641a0608c0e182d3069a063c6f70656e6974732d747261666669632d73656e736f722d74797065733a747261666669632d73656e736f722d6661756c742d6576656e742d6b696e64",
+	},
+	{
+		name: "perception fault-raised",
+		// Blockage is the archetypal lidar fault and the domain has no category
+		// for it, so this golden pins the FALLBACK path rather than dressing up
+		// a mapping that does not exist. Mapping it to CategoryEnvironment would
+		// have produced perception-fault-temperature — a confident, wrong claim
+		// about a sensor that is dirty, not hot.
+		ev: model.FaultRaised{Base: gbase("lidar-01", "perception"), FaultID: "blockage",
+			Severity: model.SeverityMajor, Category: model.CategoryUnknown},
+		ceType:     "openits.perception.fault-raised.v1",
+		dataSchema: "https://schemas.open-its.org/openits-common-fault-events/2026-07-21/",
+		dataHex:    "0a086c696461722d30311208626c6f636b61676518032a0608c0e182d3063210636162696e65742d706f6c6c65722d3140019a06346f70656e6974732d70657263657074696f6e2d74797065733a70657263657074696f6e2d6661756c742d6576656e742d6b696e64",
+		identHex:   "0a086c696461722d30311208626c6f636b61676518032a0608c0e182d3069a06346f70656e6974732d70657263657074696f6e2d74797065733a70657263657074696f6e2d6661756c742d6576656e742d6b696e64",
+	},
+	{
+		name:       "perception fault-cleared",
+		ev:         model.FaultCleared{Base: gbase("lidar-01", "perception"), FaultID: "blockage"},
+		ceType:     "openits.perception.fault-cleared.v1",
+		dataSchema: "https://schemas.open-its.org/openits-common-fault-events/2026-07-21/",
+		dataHex:    "0a086c696461722d30311208626c6f636b6167651a0608c0e182d3062210636162696e65742d706f6c6c65722d3130019a06346f70656e6974732d70657263657074696f6e2d74797065733a70657263657074696f6e2d6661756c742d6576656e742d6b696e64",
+		identHex:   "0a086c696461722d30311208626c6f636b6167651a0608c0e182d3069a06346f70656e6974732d70657263657074696f6e2d74797065733a70657263657074696f6e2d6661756c742d6576656e742d6b696e64",
+	},
+	{
 		name: "dms message-activation-failed",
 		ev: model.DMSMessageActivationFailed{Base: gbase("dms-1", "dms"),
 			MemoryType: model.MemoryChangeable, Slot: 7,
@@ -239,13 +296,20 @@ func unmarshalFor(ceType string, b []byte) (proto.Message, error) {
 }
 
 func emptyMessageFor(ceType string) proto.Message {
-	switch ceType {
-	case "openits.signal-control.mode-changed.v1", "openits.dms.mode-changed.v1":
+	// The shared families match by suffix rather than by exhaustive ce-type.
+	// fault-raised/cleared and mode-changed are declared once upstream and
+	// reused across every service, so an exhaustive list here would need a new
+	// case per service for a message shape that never changes — and forgetting
+	// one panics the generator rather than failing a mapping.
+	switch {
+	case strings.HasSuffix(ceType, ".mode-changed.v1"):
 		return &commonv1.ModeChanged{}
-	case "openits.signal-control.fault-raised.v1", "openits.dms.fault-raised.v1":
+	case strings.HasSuffix(ceType, ".fault-raised.v1"):
 		return &commonv1.FaultRaised{}
-	case "openits.signal-control.fault-cleared.v1", "openits.dms.fault-cleared.v1":
+	case strings.HasSuffix(ceType, ".fault-cleared.v1"):
 		return &commonv1.FaultCleared{}
+	}
+	switch ceType {
 	case "openits.signal-control.plan-applied.v1":
 		return &scv1.PlanApplied{}
 	case "openits.signal-control.operational-status-report.v1":

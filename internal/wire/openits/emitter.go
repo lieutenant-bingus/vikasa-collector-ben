@@ -90,6 +90,16 @@ var ceTypeFor = map[key]string{
 	{"fault-cleared", "asc"}: "openits.signal-control.fault-cleared.v1",
 	{"fault-cleared", "dms"}: "openits.dms.fault-cleared.v1",
 
+	// The shared fault family extends to every device kind the collector
+	// serves, without any new domain surface: model.FaultSet and the fault
+	// differ carry no device kind, so this is routing alone.
+	{"fault-raised", "cctv"}:            "openits.cctv.fault-raised.v1",
+	{"fault-cleared", "cctv"}:           "openits.cctv.fault-cleared.v1",
+	{"fault-raised", "traffic-sensor"}:  "openits.traffic-sensor.fault-raised.v1",
+	{"fault-cleared", "traffic-sensor"}: "openits.traffic-sensor.fault-cleared.v1",
+	{"fault-raised", "perception"}:      "openits.perception.fault-raised.v1",
+	{"fault-cleared", "perception"}:     "openits.perception.fault-cleared.v1",
+
 	{"plan-changed", "asc"}:              "openits.signal-control.plan-applied.v1",
 	{"operational-status-report", "asc"}: "openits.signal-control.operational-status-report.v1",
 	{"preemption-activated", "asc"}:      "openits.signal-control.preemption-activated.v1",

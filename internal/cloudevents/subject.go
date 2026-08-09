@@ -56,6 +56,17 @@ func entityKindFor(deviceKind string) (string, bool) {
 		return "controller", true
 	case "dms":
 		return "sign", true
+	case "cctv":
+		return "cctv", true
+	case "traffic-sensor":
+		return "traffic-sensor", true
+	case "perception":
+		// A camera doing analytics is a perception entity, not a cctv one:
+		// upstream's own conformance mock is
+		// urn:openits:perception:...:eb-travel-lanes-cam-03. Entity kind
+		// follows the event family, not the chassis, so one physical camera
+		// can legitimately appear as both.
+		return "perception", true
 	case "":
 		// Collector-level events (collector-started) have no device; the
 		// collector itself is the entity.

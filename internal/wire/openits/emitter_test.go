@@ -530,10 +530,14 @@ func TestCETypes_IsCompleteSortedAndDeduped(t *testing.T) {
 	got := New("cabinet-poller-1").CETypes()
 
 	want := []string{
+		"openits.cctv.fault-cleared.v1",
+		"openits.cctv.fault-raised.v1",
 		"openits.dms.fault-cleared.v1",
 		"openits.dms.fault-raised.v1",
 		"openits.dms.message-activation-failed.v1",
 		"openits.dms.mode-changed.v1",
+		"openits.perception.fault-cleared.v1",
+		"openits.perception.fault-raised.v1",
 		"openits.signal-control.detector-report.v1",
 		"openits.signal-control.fault-cleared.v1",
 		"openits.signal-control.fault-raised.v1",
@@ -542,6 +546,8 @@ func TestCETypes_IsCompleteSortedAndDeduped(t *testing.T) {
 		"openits.signal-control.plan-applied.v1",
 		"openits.signal-control.preemption-activated.v1",
 		"openits.signal-control.preemption-cleared.v1",
+		"openits.traffic-sensor.fault-cleared.v1",
+		"openits.traffic-sensor.fault-raised.v1",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("CETypes() has %d entries, want %d:\n got: %q\nwant: %q", len(got), len(want), got, want)
@@ -673,5 +679,61 @@ func TestEncode_IdentityIsSensitiveToRealChanges(t *testing.T) {
 	})
 	if string(a.Identity) == string(b.Identity) {
 		t.Error("different transitions produced the same identity")
+	}
+}
+
+func TestEncode_SharedFaultsRouteForEveryServedDeviceKind(t *testing.T) {
+	// model.FaultSet and the fault differ carry no device kind — it arrives
+	// from the snapshot — so fault coverage for a new device kind is a
+	// routing-table change, not new domain surface. This is what lets the
+	// model->NATS path be complete before any adapter exists.
+	for _, tc := range []struct{ deviceKind, raised, cleared string }{
+		{"asc", "openits.signal-control.fault-raised.v1", "openits.signal-control.fault-cleared.v1"},
+		{"dms", "openits.dms.fault-raised.v1", "openits.dms.fault-cleared.v1"},
+		{"cctv", "openits.cctv.fault-raised.v1", "openits.cctv.fault-cleared.v1"},
+		{"traffic-sensor", "openits.traffic-sensor.fault-raised.v1", "openits.traffic-sensor.fault-cleared.v1"},
+		{"perception", "openits.perception.fault-raised.v1", "openits.perception.fault-cleared.v1"},
+	} {
+		t.Run(tc.deviceKind, func(t *testing.T) {
+			var raised commonv1.FaultRaised
+			if ct := encodeOK(t, model.FaultRaised{
+				Base: base("dev-1", tc.deviceKind), FaultID: "f1",
+				Severity: model.SeverityMajor, Category: model.CategoryCommunication,
+			}, &raised); ct != tc.raised {
+				t.Errorf("raised ce-type = %q, want %q", ct, tc.raised)
+			}
+			// kind is mandatory, so every served kind needs a real identity.
+			if raised.GetKind() == "" {
+				t.Error("fault-raised carries no kind identity")
+			}
+			var cleared commonv1.FaultCleared
+			if ct := encodeOK(t, model.FaultCleared{
+				Base: base("dev-1", tc.deviceKind), FaultID: "f1",
+			}, &cleared); ct != tc.cleared {
+				t.Errorf("cleared ce-type = %q, want %q", ct, tc.cleared)
+			}
+		})
+	}
+}
+
+func TestFaultKindIdentity_UnmappedCategoryFallsBackPerService(t *testing.T) {
+	// The domain's FaultCategory vocabulary was designed for signals and
+	// signs — conflict, cabinet, lamp, pixel. It has nothing for video loss,
+	// occlusion, or pose drift, so most faults on the new device kinds land on
+	// the service BASE identity. That is the honest rendering ("a fault, class
+	// unmapped"), not a gap to paper over with a near-neighbour.
+	for deviceKind, want := range map[string]string{
+		"cctv":           "openits-cctv-types:cctv-fault-event-kind",
+		"traffic-sensor": "openits-traffic-sensor-types:traffic-sensor-fault-event-kind",
+		"perception":     "openits-perception-types:perception-fault-event-kind",
+	} {
+		got, ok := faultKindIdentity(model.CategoryConflict, deviceKind)
+		if !ok {
+			t.Errorf("%s: no fault identity at all", deviceKind)
+			continue
+		}
+		if got != want {
+			t.Errorf("%s: kind = %q, want %q", deviceKind, got, want)
+		}
 	}
 }

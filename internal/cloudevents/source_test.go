@@ -54,3 +54,19 @@ func TestTenantValidate_RejectsTokensThatCorruptTheURN(t *testing.T) {
 		}
 	}
 }
+
+func TestSourceFor_EntityKindsForTheLabDeviceKinds(t *testing.T) {
+	tenant := Tenant{Region: "us-tx", Agency: "txdot", AgencyUnit: "d07", Site: "cab-1"}
+	for deviceKind, want := range map[string]string{
+		"cctv":           "urn:openits:cctv:us-tx:txdot:d07:cam-03",
+		"traffic-sensor": "urn:openits:traffic-sensor:us-tx:txdot:d07:cam-03",
+		// A camera doing analytics is a perception entity, not a cctv one —
+		// entity kind follows the event family, not the chassis, so one
+		// physical camera can legitimately appear as both.
+		"perception": "urn:openits:perception:us-tx:txdot:d07:cam-03",
+	} {
+		if got := SourceFor(tenant, deviceKind, "cam-03"); got != want {
+			t.Errorf("%s: SourceFor = %q, want %q", deviceKind, got, want)
+		}
+	}
+}

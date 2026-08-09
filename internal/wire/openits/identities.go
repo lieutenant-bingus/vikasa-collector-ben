@@ -12,8 +12,11 @@ import (
 // rendered as "defining-module:identity-name", so every mapped value is a
 // constant here rather than a generated enum.
 const (
-	scTypes  = "openits-signal-control-types:"
-	dmsTypes = "openits-dms-types:"
+	scTypes         = "openits-signal-control-types:"
+	dmsTypes        = "openits-dms-types:"
+	cctvTypes       = "openits-cctv-types:"
+	trafficSenTypes = "openits-traffic-sensor-types:"
+	perceptionTypes = "openits-perception-types:"
 )
 
 // controllerModeIdentity maps a domain controller mode to its upstream
@@ -81,6 +84,46 @@ func faultKindIdentity(c model.FaultCategory, deviceKind string) (string, bool) 
 			// environment): meaningless on a controller, so the base rather
 			// than a cross-service identity that would misdescribe the fault.
 			return scTypes + "sc-fault-event-kind", true
+		}
+	case "cctv":
+		// The domain's category vocabulary predates this service: it has
+		// nothing for video loss, focus, iris, or position feedback, which is
+		// most of what a camera actually reports. Only the genuinely shared
+		// causes map; the rest fall back, honestly, to the base.
+		switch c {
+		case model.CategoryCommunication:
+			return cctvTypes + "cctv-fault-comms", true
+		case model.CategoryEnvironment:
+			return cctvTypes + "cctv-fault-enclosure", true
+		default:
+			return cctvTypes + "cctv-fault-event-kind", true
+		}
+	case "traffic-sensor":
+		switch c {
+		case model.CategoryPower:
+			return trafficSenTypes + "traffic-sensor-fault-power", true
+		case model.CategoryCommunication:
+			return trafficSenTypes + "traffic-sensor-fault-communication", true
+		case model.CategoryEnvironment:
+			return trafficSenTypes + "traffic-sensor-fault-temperature", true
+		default:
+			// Deliberately NOT mapping CategoryDetector here. The service has
+			// stuck-on, chattering and no-activity, which are three distinct
+			// detector pathologies; picking one for a category that means
+			// "something detector-ish" would assert a specific failure the
+			// device never reported.
+			return trafficSenTypes + "traffic-sensor-fault-event-kind", true
+		}
+	case "perception":
+		switch c {
+		case model.CategoryPower:
+			return perceptionTypes + "perception-fault-power", true
+		case model.CategoryCommunication:
+			return perceptionTypes + "perception-fault-communication", true
+		case model.CategoryEnvironment:
+			return perceptionTypes + "perception-fault-temperature", true
+		default:
+			return perceptionTypes + "perception-fault-event-kind", true
 		}
 	case "dms":
 		switch c {
@@ -233,6 +276,16 @@ var dataSchemaFor = map[string]string{
 	"openits.signal-control.fault-cleared.v1": registryBase + "openits-common-fault-events/2026-07-21/",
 	"openits.dms.fault-raised.v1":             registryBase + "openits-common-fault-events/2026-07-21/",
 	"openits.dms.fault-cleared.v1":            registryBase + "openits-common-fault-events/2026-07-21/",
+
+	// Same defining module for every service: fault-raised/cleared are
+	// declared once in openits-common-fault-events and reused, which is why
+	// six different services share one ce-dataschema.
+	"openits.cctv.fault-raised.v1":            registryBase + "openits-common-fault-events/2026-07-21/",
+	"openits.cctv.fault-cleared.v1":           registryBase + "openits-common-fault-events/2026-07-21/",
+	"openits.traffic-sensor.fault-raised.v1":  registryBase + "openits-common-fault-events/2026-07-21/",
+	"openits.traffic-sensor.fault-cleared.v1": registryBase + "openits-common-fault-events/2026-07-21/",
+	"openits.perception.fault-raised.v1":      registryBase + "openits-common-fault-events/2026-07-21/",
+	"openits.perception.fault-cleared.v1":     registryBase + "openits-common-fault-events/2026-07-21/",
 
 	"openits.signal-control.plan-applied.v1":              registryBase + "openits-signal-control-events/2026-07-21/",
 	"openits.signal-control.operational-status-report.v1": registryBase + "openits-signal-control-events/2026-07-21/",
