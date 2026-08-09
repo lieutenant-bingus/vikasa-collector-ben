@@ -11,6 +11,7 @@ import (
 
 	commonv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/common/v1"
 	dmsv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/dms/v1"
+	pcpv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/perception/v1"
 	scv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/signal_control/v1"
 	tsv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/traffic_sensor/v1"
 
@@ -539,6 +540,9 @@ func TestCETypes_IsCompleteSortedAndDeduped(t *testing.T) {
 		"openits.dms.mode-changed.v1",
 		"openits.perception.fault-cleared.v1",
 		"openits.perception.fault-raised.v1",
+		"openits.perception.zone-incident-cleared.v1",
+		"openits.perception.zone-incident-detected.v1",
+		"openits.perception.zone-incident-updated.v1",
 		"openits.signal-control.detector-report.v1",
 		"openits.signal-control.fault-cleared.v1",
 		"openits.signal-control.fault-raised.v1",
@@ -804,5 +808,90 @@ func TestEncode_UnreportedSpeedIsOmittedNotZero(t *testing.T) {
 	}, &stopped)
 	if s := stopped.GetLane()[0].GetSpeedAverageKmh(); s != "0.00" {
 		t.Errorf("reported zero speed rendered as %q, want \"0.00\"", s)
+	}
+}
+
+func TestEncode_ZoneIncidentLifecycle(t *testing.T) {
+	incident := model.ZoneIncident{
+		IncidentID: "i-1", ZoneID: "zone-a",
+		Type: model.IncidentWrongWayVehicle, Severity: model.IncidentMajor,
+		ObjectClass: model.ObjectTruck, ConfidencePercent: 92,
+		SpeedHundredthsKPH: 4250, SpeedReported: true, TrackID: 7, TrackEpoch: 2,
+	}
+
+	var det pcpv1.ZoneIncidentDetected
+	if ct := encodeOK(t, model.ZoneIncidentDetected{
+		Base: base("lidar-01", "perception"), ZoneIncident: incident,
+	}, &det); ct != "openits.perception.zone-incident-detected.v1" {
+		t.Errorf("detected ce-type = %q", ct)
+	}
+	if want := "openits-perception-types:pcp-zone-incident-detected"; det.GetKind() != want {
+		t.Errorf("kind = %q, want %q", det.GetKind(), want)
+	}
+	// Closed identity sets, not free text.
+	if want := "openits-perception-types:incident-wrong-way-vehicle"; det.GetType() != want {
+		t.Errorf("type = %q, want %q", det.GetType(), want)
+	}
+	if want := "openits-perception-types:object-truck"; det.GetObjectClass() != want {
+		t.Errorf("object_class = %q, want %q", det.GetObjectClass(), want)
+	}
+	if det.GetSeverity() != pcpv1.IncidentSeverity_INCIDENT_SEVERITY_MAJOR {
+		t.Errorf("severity = %v", det.GetSeverity())
+	}
+	if det.GetSpeedKmh() != "42.50" {
+		t.Errorf("speed = %q, want \"42.50\"", det.GetSpeedKmh())
+	}
+	if det.GetTrackId() != 7 || det.GetTrackEpoch() != 2 {
+		t.Errorf("track = %d/%d", det.GetTrackId(), det.GetTrackEpoch())
+	}
+
+	var upd pcpv1.ZoneIncidentUpdated
+	if ct := encodeOK(t, model.ZoneIncidentUpdated{
+		Base: base("lidar-01", "perception"), IncidentID: "i-1", ZoneID: "zone-a",
+		Severity: model.IncidentIntermediate, ConfidencePercent: 71,
+	}, &upd); ct != "openits.perception.zone-incident-updated.v1" {
+		t.Errorf("updated ce-type = %q", ct)
+	}
+	if upd.GetIncidentId() != "i-1" || upd.GetConfidence() != 71 {
+		t.Errorf("updated = %+v", &upd)
+	}
+
+	var clr pcpv1.ZoneIncidentCleared
+	if ct := encodeOK(t, model.ZoneIncidentCleared{
+		Base: base("lidar-01", "perception"), IncidentID: "i-1", ZoneID: "zone-a",
+	}, &clr); ct != "openits.perception.zone-incident-cleared.v1" {
+		t.Errorf("cleared ce-type = %q", ct)
+	}
+	if clr.GetIncidentId() != "i-1" || clr.GetZoneId() != "zone-a" {
+		t.Errorf("cleared = %+v", &clr)
+	}
+}
+
+func TestEncode_StoppedVehicleZeroSpeedSurvives(t *testing.T) {
+	// A stopped-vehicle incident is exactly where zero km/h is the meaningful
+	// reading, so it must render rather than vanish — and an UNREPORTED speed
+	// must still stay absent.
+	var stopped pcpv1.ZoneIncidentDetected
+	encodeOK(t, model.ZoneIncidentDetected{
+		Base: base("lidar-01", "perception"),
+		ZoneIncident: model.ZoneIncident{
+			IncidentID: "i-1", ZoneID: "z", Type: model.IncidentStoppedVehicle,
+			SpeedHundredthsKPH: 0, SpeedReported: true,
+		},
+	}, &stopped)
+	if stopped.GetSpeedKmh() != "0.00" {
+		t.Errorf("stopped vehicle speed = %q, want \"0.00\"", stopped.GetSpeedKmh())
+	}
+
+	var unknown pcpv1.ZoneIncidentDetected
+	encodeOK(t, model.ZoneIncidentDetected{
+		Base: base("lidar-01", "perception"),
+		ZoneIncident: model.ZoneIncident{
+			IncidentID: "i-2", ZoneID: "z", Type: model.IncidentStoppedVehicle,
+			SpeedReported: false,
+		},
+	}, &unknown)
+	if s := unknown.GetSpeedKmh(); s != "" {
+		t.Errorf("unreported speed = %q, want empty", s)
 	}
 }

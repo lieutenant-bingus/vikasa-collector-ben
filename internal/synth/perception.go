@@ -1,0 +1,107 @@
+package synth
+
+import (
+	"sort"
+
+	"github.com/Vikasa2M/vikasa-collector/sdk/model"
+)
+
+// NewZoneIncidentDiffer turns consecutive incident sets into detected /
+// updated / cleared events, keyed on the sensor's own IncidentID.
+//
+// Structurally this is the fault differ with a third axis. Faults and
+// incidents are both SETS of standing conditions identified by a stable id,
+// so appearance and disappearance mean the same thing in both. Incidents add
+// a middle state: an active incident whose assessment moves without the
+// incident itself starting or ending.
+func NewZoneIncidentDiffer() Differ { return zoneIncidentDiffer{} }
+
+type zoneIncidentDiffer struct{}
+
+func (zoneIncidentDiffer) Kind() model.Kind { return model.KindZoneIncidents }
+
+func (zoneIncidentDiffer) Diff(prev, curr model.Facet, base model.Base) []model.Event {
+	c := curr.(model.ZoneIncidents)
+	currByID := byIncidentID(c)
+
+	var prevByID map[string]model.ZoneIncident
+	if prev != nil {
+		if p, ok := prev.(model.ZoneIncidents); ok {
+			prevByID = byIncidentID(p)
+		}
+	}
+
+	var events []model.Event
+
+	// Detected and updated, in a stable order so a poll's events do not
+	// reshuffle between runs.
+	for _, id := range sortedIncidentIDs(currByID) {
+		ci := currByID[id]
+		pi, existed := prevByID[id]
+		if !existed {
+			// On first observation prevByID is nil, so everything currently
+			// active is detected. That is the fault differ's exception applied
+			// for the same reason: an incident already in progress when the
+			// collector starts is a state, not a transition we missed, and
+			// silence would hide a stopped vehicle for as long as it stays
+			// stopped.
+			events = append(events, model.ZoneIncidentDetected{Base: base, ZoneIncident: ci})
+			continue
+		}
+		if assessmentChanged(pi, ci) {
+			events = append(events, model.ZoneIncidentUpdated{
+				Base:               base,
+				IncidentID:         ci.IncidentID,
+				ZoneID:             ci.ZoneID,
+				Severity:           ci.Severity,
+				SpeedHundredthsKPH: ci.SpeedHundredthsKPH,
+				SpeedReported:      ci.SpeedReported,
+				ConfidencePercent:  ci.ConfidencePercent,
+			})
+		}
+	}
+
+	// Cleared: present before, absent now.
+	for _, id := range sortedIncidentIDs(prevByID) {
+		if _, still := currByID[id]; still {
+			continue
+		}
+		pi := prevByID[id]
+		events = append(events, model.ZoneIncidentCleared{
+			Base: base, IncidentID: pi.IncidentID, ZoneID: pi.ZoneID,
+		})
+	}
+	return events
+}
+
+// assessmentChanged reports whether an ACTIVE incident's assessment moved.
+//
+// Only severity, speed and confidence count. Zone, type, object class and
+// track identity deliberately do not: if those change the sensor is
+// describing something else, and reporting that as an update to the same
+// incident would hide a re-identification behind what looks like a severity
+// tweak. Such a change is left silent rather than mislabelled — the sensor
+// should have issued a new IncidentID.
+func assessmentChanged(prev, curr model.ZoneIncident) bool {
+	return prev.Severity != curr.Severity ||
+		prev.ConfidencePercent != curr.ConfidencePercent ||
+		prev.SpeedHundredthsKPH != curr.SpeedHundredthsKPH ||
+		prev.SpeedReported != curr.SpeedReported
+}
+
+func byIncidentID(zi model.ZoneIncidents) map[string]model.ZoneIncident {
+	out := make(map[string]model.ZoneIncident, len(zi.Incidents))
+	for _, i := range zi.Incidents {
+		out[i.IncidentID] = i
+	}
+	return out
+}
+
+func sortedIncidentIDs(m map[string]model.ZoneIncident) []string {
+	ids := make([]string, 0, len(m))
+	for id := range m {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
+}

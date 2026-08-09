@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	dmsv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/dms/v1"
+	pcpv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/perception/v1"
 	tsv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/traffic_sensor/v1"
 
 	"github.com/Vikasa2M/vikasa-collector/sdk/model"
@@ -202,6 +203,80 @@ func occupancyPercent(tenths uint16) string {
 	return fmt.Sprintf("%d.%d", tenths/10, tenths%10)
 }
 
+// incidentTypeIdentity and objectClassIdentity map the domain's closed enums
+// onto the upstream identity sets. Both have an unknown member on BOTH sides,
+// so nothing has to be guessed at.
+func incidentTypeIdentity(t model.IncidentType) string {
+	switch t {
+	case model.IncidentStoppedVehicle:
+		return perceptionTypes + "incident-stopped-vehicle"
+	case model.IncidentWrongWayVehicle:
+		return perceptionTypes + "incident-wrong-way-vehicle"
+	case model.IncidentPedestrianInRoadway:
+		return perceptionTypes + "incident-pedestrian-in-roadway"
+	case model.IncidentDebrisInRoadway:
+		return perceptionTypes + "incident-debris-in-roadway"
+	case model.IncidentQueueSpillback:
+		return perceptionTypes + "incident-queue-spillback"
+	case model.IncidentNearMiss:
+		return perceptionTypes + "incident-near-miss"
+	case model.IncidentCongestion:
+		return perceptionTypes + "incident-congestion"
+	case model.IncidentSlowedTraffic:
+		return perceptionTypes + "incident-slowed-traffic"
+	default:
+		// The upstream set has no "unknown incident type", so an unclassified
+		// incident is left EMPTY rather than mapped to a specific condition.
+		// The incident is still reported; what it is remains unstated.
+		return ""
+	}
+}
+
+func objectClassIdentity(c model.ObjectClass) string {
+	switch c {
+	case model.ObjectPassengerVehicle:
+		return perceptionTypes + "object-passenger-vehicle"
+	case model.ObjectTruck:
+		return perceptionTypes + "object-truck"
+	case model.ObjectBus:
+		return perceptionTypes + "object-bus"
+	case model.ObjectMotorcycle:
+		return perceptionTypes + "object-motorcycle"
+	case model.ObjectBicycle:
+		return perceptionTypes + "object-bicycle"
+	case model.ObjectPedestrian:
+		return perceptionTypes + "object-pedestrian"
+	case model.ObjectAnimal:
+		return perceptionTypes + "object-animal"
+	case model.ObjectDebris:
+		return perceptionTypes + "object-debris"
+	default:
+		return perceptionTypes + "object-unknown"
+	}
+}
+
+// incidentSeverityFor maps the domain severity to the wire enum.
+//
+// The wire has no "unreported": its zero is MINOR, so an unset field is a
+// positive claim that the incident is minor. SeverityUnreported therefore maps
+// to MINOR — the wire's own default — because there is nothing else to map it
+// to, and this is a DOWNGRADE that adapters must not rely on. An adapter
+// reporting a safety-relevant incident is obliged to set severity; leaving it
+// unreported silently understates a wrong-way vehicle.
+//
+// This is the third upstream enum with no unspecified zero, after
+// FaultSeverity and DataQuality. Raising it upstream is tracked.
+func incidentSeverityFor(s model.IncidentSeverity) pcpv1.IncidentSeverity {
+	switch s {
+	case model.IncidentIntermediate:
+		return pcpv1.IncidentSeverity_INCIDENT_SEVERITY_INTERMEDIATE
+	case model.IncidentMajor:
+		return pcpv1.IncidentSeverity_INCIDENT_SEVERITY_MAJOR
+	default:
+		return pcpv1.IncidentSeverity_INCIDENT_SEVERITY_MINOR
+	}
+}
+
 // hundredths renders a hundredths-of-a-unit integer as the wire's decimal64
 // string, always with both decimal places so 0 renders "0.00" rather than "0".
 func hundredths(v uint32) string {
@@ -322,4 +397,8 @@ var dataSchemaFor = map[string]string{
 	"openits.dms.message-activation-failed.v1": registryBase + "openits-dms-events/2026-07-23/",
 
 	"openits.traffic-sensor.traffic-interval-report.v1": registryBase + "openits-traffic-sensor-events/2026-07-21/",
+
+	"openits.perception.zone-incident-detected.v1": registryBase + "openits-perception-events/2026-07-21/",
+	"openits.perception.zone-incident-updated.v1":  registryBase + "openits-perception-events/2026-07-21/",
+	"openits.perception.zone-incident-cleared.v1":  registryBase + "openits-perception-events/2026-07-21/",
 }

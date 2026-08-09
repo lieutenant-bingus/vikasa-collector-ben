@@ -11,6 +11,7 @@ import (
 
 	commonv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/common/v1"
 	dmsv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/dms/v1"
+	pcpv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/perception/v1"
 	scv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/signal_control/v1"
 	tsv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/traffic_sensor/v1"
 
@@ -193,6 +194,44 @@ var goldenCases = []struct {
 		identHex:   "0a086c696461722d30311208626c6f636b6167651a0608c0e182d3069a06346f70656e6974732d70657263657074696f6e2d74797065733a70657263657074696f6e2d6661756c742d6576656e742d6b696e64",
 	},
 	{
+		name: "perception zone-incident-detected",
+		ev: model.ZoneIncidentDetected{
+			Base: gbase("lidar-01", "perception"),
+			ZoneIncident: model.ZoneIncident{
+				IncidentID: "i-1", ZoneID: "zone-a",
+				Type: model.IncidentWrongWayVehicle, Severity: model.IncidentMajor,
+				ObjectClass: model.ObjectTruck, ConfidencePercent: 92,
+				SpeedHundredthsKPH: 4250, SpeedReported: true,
+				TrackID: 7, TrackEpoch: 2,
+			},
+		},
+		ceType:     "openits.perception.zone-incident-detected.v1",
+		dataSchema: "https://schemas.open-its.org/openits-perception-events/2026-07-21/",
+		dataHex:    "0a03692d3112067a6f6e652d611a336f70656e6974732d70657263657074696f6e2d74797065733a696e636964656e742d77726f6e672d7761792d76656869636c652002280732256f70656e6974732d70657263657074696f6e2d74797065733a6f626a6563742d747275636b4a0534322e3530505c5a10636162696e65742d706f6c6c65722d31620608c0e182d30670017a086c696461722d30318001029a06336f70656e6974732d70657263657074696f6e2d74797065733a7063702d7a6f6e652d696e636964656e742d6465746563746564",
+		identHex:   "0a03692d3112067a6f6e652d611a336f70656e6974732d70657263657074696f6e2d74797065733a696e636964656e742d77726f6e672d7761792d76656869636c652002280732256f70656e6974732d70657263657074696f6e2d74797065733a6f626a6563742d747275636b4a0534322e3530505c620608c0e182d3067a086c696461722d30318001029a06336f70656e6974732d70657263657074696f6e2d74797065733a7063702d7a6f6e652d696e636964656e742d6465746563746564",
+	},
+	{
+		name: "perception zone-incident-updated",
+		ev: model.ZoneIncidentUpdated{
+			Base: gbase("lidar-01", "perception"), IncidentID: "i-1", ZoneID: "zone-a",
+			Severity: model.IncidentIntermediate, ConfidencePercent: 71,
+		},
+		ceType:     "openits.perception.zone-incident-updated.v1",
+		dataSchema: "https://schemas.open-its.org/openits-perception-events/2026-07-21/",
+		dataHex:    "0a03692d3112067a6f6e652d61180128473210636162696e65742d706f6c6c65722d313a0608c0e182d306480152086c696461722d30319a06326f70656e6974732d70657263657074696f6e2d74797065733a7063702d7a6f6e652d696e636964656e742d75706461746564",
+		identHex:   "0a03692d3112067a6f6e652d61180128473a0608c0e182d30652086c696461722d30319a06326f70656e6974732d70657263657074696f6e2d74797065733a7063702d7a6f6e652d696e636964656e742d75706461746564",
+	},
+	{
+		name: "perception zone-incident-cleared",
+		ev: model.ZoneIncidentCleared{
+			Base: gbase("lidar-01", "perception"), IncidentID: "i-1", ZoneID: "zone-a",
+		},
+		ceType:     "openits.perception.zone-incident-cleared.v1",
+		dataSchema: "https://schemas.open-its.org/openits-perception-events/2026-07-21/",
+		dataHex:    "0a03692d3112067a6f6e652d612210636162696e65742d706f6c6c65722d312a0608c0e182d306380142086c696461722d30319a06326f70656e6974732d70657263657074696f6e2d74797065733a7063702d7a6f6e652d696e636964656e742d636c6561726564",
+		identHex:   "0a03692d3112067a6f6e652d612a0608c0e182d30642086c696461722d30319a06326f70656e6974732d70657263657074696f6e2d74797065733a7063702d7a6f6e652d696e636964656e742d636c6561726564",
+	},
+	{
 		name: "traffic-sensor interval report",
 		ev: model.TrafficIntervalReport{
 			Base:             gbase("ts-01", "traffic-sensor"),
@@ -335,6 +374,12 @@ func emptyMessageFor(ceType string) proto.Message {
 	switch ceType {
 	case "openits.traffic-sensor.traffic-interval-report.v1":
 		return &tsv1.TrafficIntervalReport{}
+	case "openits.perception.zone-incident-detected.v1":
+		return &pcpv1.ZoneIncidentDetected{}
+	case "openits.perception.zone-incident-updated.v1":
+		return &pcpv1.ZoneIncidentUpdated{}
+	case "openits.perception.zone-incident-cleared.v1":
+		return &pcpv1.ZoneIncidentCleared{}
 	case "openits.signal-control.plan-applied.v1":
 		return &scv1.PlanApplied{}
 	case "openits.signal-control.operational-status-report.v1":

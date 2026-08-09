@@ -15,6 +15,7 @@ import (
 
 	commonv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/common/v1"
 	dmsv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/dms/v1"
+	pcpv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/perception/v1"
 	scv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/signal_control/v1"
 	tsv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/traffic_sensor/v1"
 
@@ -102,6 +103,10 @@ var ceTypeFor = map[key]string{
 	{"fault-cleared", "perception"}:     "openits.perception.fault-cleared.v1",
 
 	{"traffic-interval-report", "traffic-sensor"}: "openits.traffic-sensor.traffic-interval-report.v1",
+
+	{"zone-incident-detected", "perception"}: "openits.perception.zone-incident-detected.v1",
+	{"zone-incident-updated", "perception"}:  "openits.perception.zone-incident-updated.v1",
+	{"zone-incident-cleared", "perception"}:  "openits.perception.zone-incident-cleared.v1",
 
 	{"plan-changed", "asc"}:              "openits.signal-control.plan-applied.v1",
 	{"operational-status-report", "asc"}: "openits.signal-control.operational-status-report.v1",
@@ -287,6 +292,57 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 			// than pre-breaking the domain to match the wire.
 			IntervalDurationS: uint32((v.IntervalDuration + 500*time.Millisecond) / time.Second),
 			Detector:          dets,
+		}
+
+	case model.ZoneIncidentDetected:
+		d := &pcpv1.ZoneIncidentDetected{
+			Kind:           perceptionTypes + "pcp-zone-incident-detected",
+			SourceDeviceId: v.DeviceID,
+			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
+			ObservedBy:     e.collectorID,
+			Sequence:       e.nextSequence(v.DeviceID),
+			IncidentId:     v.IncidentID,
+			ZoneId:         v.ZoneID,
+			Type:           incidentTypeIdentity(v.Type),
+			Severity:       incidentSeverityFor(v.Severity),
+			ObjectClass:    objectClassIdentity(v.ObjectClass),
+			Confidence:     uint32(v.ConfidencePercent),
+			TrackId:        v.TrackID,
+			TrackEpoch:     v.TrackEpoch,
+		}
+		// Zero is meaningful here — a stopped-vehicle incident IS zero km/h —
+		// so an unreported speed stays absent rather than rendering as stopped.
+		if v.SpeedReported {
+			d.SpeedKmh = hundredths(v.SpeedHundredthsKPH)
+		}
+		msg = d
+
+	case model.ZoneIncidentUpdated:
+		u := &pcpv1.ZoneIncidentUpdated{
+			Kind:           perceptionTypes + "pcp-zone-incident-updated",
+			SourceDeviceId: v.DeviceID,
+			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
+			ObservedBy:     e.collectorID,
+			Sequence:       e.nextSequence(v.DeviceID),
+			IncidentId:     v.IncidentID,
+			ZoneId:         v.ZoneID,
+			Severity:       incidentSeverityFor(v.Severity),
+			Confidence:     uint32(v.ConfidencePercent),
+		}
+		if v.SpeedReported {
+			u.SpeedKmh = hundredths(v.SpeedHundredthsKPH)
+		}
+		msg = u
+
+	case model.ZoneIncidentCleared:
+		msg = &pcpv1.ZoneIncidentCleared{
+			Kind:           perceptionTypes + "pcp-zone-incident-cleared",
+			SourceDeviceId: v.DeviceID,
+			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
+			ObservedBy:     e.collectorID,
+			Sequence:       e.nextSequence(v.DeviceID),
+			IncidentId:     v.IncidentID,
+			ZoneId:         v.ZoneID,
 		}
 
 	case model.TrafficIntervalReport:

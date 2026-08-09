@@ -168,3 +168,40 @@ type TrafficIntervalReport struct {
 }
 
 func (TrafficIntervalReport) EventKind() string { return "traffic-interval-report" }
+
+// ZoneIncidentDetected fires when an incident appears that was not active on
+// the previous poll. Like FaultRaised, its OccurredAt IS the first
+// observation: the facet carries no timing of its own.
+type ZoneIncidentDetected struct {
+	Base
+	ZoneIncident
+}
+
+func (ZoneIncidentDetected) EventKind() string { return "zone-incident-detected" }
+
+// ZoneIncidentUpdated fires when an ACTIVE incident's assessment changes —
+// severity, speed, or confidence. It deliberately does not fire for changes to
+// identity or classification: an incident whose zone or object class changed is
+// a different incident, and reporting it as an update would hide that.
+type ZoneIncidentUpdated struct {
+	Base
+	IncidentID         string
+	ZoneID             string
+	Severity           IncidentSeverity
+	SpeedHundredthsKPH uint32
+	SpeedReported      bool
+	ConfidencePercent  uint8
+}
+
+func (ZoneIncidentUpdated) EventKind() string { return "zone-incident-updated" }
+
+// ZoneIncidentCleared fires when a previously active incident is absent from a
+// SUCCESSFUL poll. A failed read never produces this — synth suspends a facet
+// it could not read, so absence of evidence is never a clear.
+type ZoneIncidentCleared struct {
+	Base
+	IncidentID string
+	ZoneID     string
+}
+
+func (ZoneIncidentCleared) EventKind() string { return "zone-incident-cleared" }
