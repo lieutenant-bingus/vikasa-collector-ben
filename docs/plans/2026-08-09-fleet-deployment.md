@@ -32,9 +32,46 @@ management plane deploys. Neither executor is ours to maintain.
 The collector never updates itself (ADR 0012). It reports version, exposes
 readiness, and reports drift from its expected version.
 
+## What is invariant, and what is genuinely open
+
+The deployment substrate is NOT decided, and trying to decide it early was a
+mistake — an earlier draft recommended an immutable A/B host without first
+asking whether we own the OS at all. We may not. That is fine, and it narrows
+the open question rather than widening it.
+
+**Invariant under every branch — buildable now, zero regret:**
+
+- The readiness signal (D1), meaning *working* rather than *running*.
+- Version and config revision reported at boot; drift reported when running
+  disagrees with expected.
+- Tolerating an absent broker at startup.
+- NATS alongside rather than embedded (D2).
+- Desired state as `(binary version, config revision)` — one reconciliation
+  loop rather than separate delivery paths for code and config.
+- The three control-plane signals: `$SYS` leaf connect/disconnect answers *is
+  the cabinet there*, health events answer *is the collector working*, boot
+  reports answer *is it running what we asked*.
+
+**Genuinely open, and narrower than it first appeared:**
+
+- Who *executes* an update — a host runtime, or the plane.
+- Who *reverts* a bad one.
+- Whether rollback covers the OS as well as the apps.
+
+**The hinge is host ownership.** If we own the OS, the host executes and
+reverts and the plane only gates. If we are a guest on someone else's Linux,
+the plane must detect failure and drive the revert itself — which needs a
+command path, not just an observation path. That is a real architectural fork
+decided by a question that is not ours to answer yet, so it stays open rather
+than being guessed at.
+
+Runtime candidates remain podman + quadlet, docker compose (weakest — no
+rollback, no gating), single-node k3s per cabinet, or a vendor edge platform.
+See "Hardware and the inference question" for what actually settles it.
+
 ## Decide first
 
-These two shape everything downstream and are far cheaper to settle now than
+These shape everything downstream and are far cheaper to settle now than
 after 15,000 units exist.
 
 ### D1 — Readiness signal: what does "healthy" mean, and how is it exposed?
