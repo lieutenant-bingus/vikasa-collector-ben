@@ -12,6 +12,7 @@ import (
 	commonv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/common/v1"
 	dmsv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/dms/v1"
 	scv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/signal_control/v1"
+	tsv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/traffic_sensor/v1"
 
 	"github.com/Vikasa2M/vikasa-collector/sdk/model"
 )
@@ -192,6 +193,28 @@ var goldenCases = []struct {
 		identHex:   "0a086c696461722d30311208626c6f636b6167651a0608c0e182d3069a06346f70656e6974732d70657263657074696f6e2d74797065733a70657263657074696f6e2d6661756c742d6576656e742d6b696e64",
 	},
 	{
+		name: "traffic-sensor interval report",
+		ev: model.TrafficIntervalReport{
+			Base:             gbase("ts-01", "traffic-sensor"),
+			IntervalStart:    goldenAt.Add(-time.Minute),
+			IntervalDuration: 60 * time.Second,
+			Lanes: []model.LaneMeasurement{{
+				LaneID: 1, Volume: 42, OccupancyTenths: 125,
+				SpeedAvgHundredthsKPH: 8850, SpeedReported: true,
+				ClassVolumes: []model.LaneClassVolume{{ClassID: 2, Volume: 30}},
+				Quality:      model.QualityValid,
+			}, {
+				// Second lane exercises the unreported-speed path, which must
+				// stay absent rather than render as stopped traffic.
+				LaneID: 2, Volume: 7, OccupancyTenths: 20, Quality: model.QualityUnknown,
+			}},
+		},
+		ceType:     "openits.traffic-sensor.traffic-interval-report.v1",
+		dataSchema: "https://schemas.open-its.org/openits-traffic-sensor-events/2026-07-21/",
+		dataHex:    "0a21080122040802101e483c52060884e182d3065a0431322e356a0538382e3530702a0a150802483c52060884e182d3065a03322e30700778011210636162696e65742d706f6c6c65722d311a0608c0e182d3062801320574732d30319a06376f70656e6974732d747261666669632d73656e736f722d74797065733a74732d747261666669632d696e74657276616c2d7265706f7274",
+		identHex:   "0a21080122040802101e483c52060884e182d3065a0431322e356a0538382e3530702a0a150802483c52060884e182d3065a03322e30700778011a0608c0e182d306320574732d30319a06376f70656e6974732d747261666669632d73656e736f722d74797065733a74732d747261666669632d696e74657276616c2d7265706f7274",
+	},
+	{
 		name: "dms message-activation-failed",
 		ev: model.DMSMessageActivationFailed{Base: gbase("dms-1", "dms"),
 			MemoryType: model.MemoryChangeable, Slot: 7,
@@ -310,6 +333,8 @@ func emptyMessageFor(ceType string) proto.Message {
 		return &commonv1.FaultCleared{}
 	}
 	switch ceType {
+	case "openits.traffic-sensor.traffic-interval-report.v1":
+		return &tsv1.TrafficIntervalReport{}
 	case "openits.signal-control.plan-applied.v1":
 		return &scv1.PlanApplied{}
 	case "openits.signal-control.operational-status-report.v1":

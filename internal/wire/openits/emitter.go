@@ -16,6 +16,7 @@ import (
 	commonv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/common/v1"
 	dmsv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/dms/v1"
 	scv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/signal_control/v1"
+	tsv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/traffic_sensor/v1"
 
 	"github.com/Vikasa2M/vikasa-collector/internal/wire"
 	"github.com/Vikasa2M/vikasa-collector/sdk/model"
@@ -99,6 +100,8 @@ var ceTypeFor = map[key]string{
 	{"fault-cleared", "traffic-sensor"}: "openits.traffic-sensor.fault-cleared.v1",
 	{"fault-raised", "perception"}:      "openits.perception.fault-raised.v1",
 	{"fault-cleared", "perception"}:     "openits.perception.fault-cleared.v1",
+
+	{"traffic-interval-report", "traffic-sensor"}: "openits.traffic-sensor.traffic-interval-report.v1",
 
 	{"plan-changed", "asc"}:              "openits.signal-control.plan-applied.v1",
 	{"operational-status-report", "asc"}: "openits.signal-control.operational-status-report.v1",
@@ -284,6 +287,44 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 			// than pre-breaking the domain to match the wire.
 			IntervalDurationS: uint32((v.IntervalDuration + 500*time.Millisecond) / time.Second),
 			Detector:          dets,
+		}
+
+	case model.TrafficIntervalReport:
+		lanes := make([]*tsv1.TrafficIntervalReportLane, 0, len(v.Lanes))
+		for _, l := range v.Lanes {
+			classes := make([]*tsv1.TrafficIntervalReportLaneClassVolume, 0, len(l.ClassVolumes))
+			for _, cv := range l.ClassVolumes {
+				classes = append(classes, &tsv1.TrafficIntervalReportLaneClassVolume{
+					ClassId: cv.ClassID, Volume: cv.Volume,
+				})
+			}
+			lane := &tsv1.TrafficIntervalReportLane{
+				LaneId:      l.LaneID,
+				Volume:      l.Volume,
+				Occupancy:   occupancyPercent(l.OccupancyTenths),
+				ClassVolume: classes,
+				DataQuality: dataQualityFor(l.Quality),
+				// The interval belongs to the DEVICE, and the wire repeats it
+				// per lane. Both come from the report, not from poll timing.
+				IntervalStart:     timestamppb.New(v.IntervalStart.UTC()),
+				IntervalDurationS: uint32((v.IntervalDuration + 500*time.Millisecond) / time.Second),
+			}
+			// Left EMPTY when the sensor did not report speed. Rendering
+			// "0.00" would turn "we don't know" into "stopped traffic", and a
+			// consumer computing travel time cannot tell those apart after
+			// the fact.
+			if l.SpeedReported {
+				lane.SpeedAverageKmh = hundredths(l.SpeedAvgHundredthsKPH)
+			}
+			lanes = append(lanes, lane)
+		}
+		msg = &tsv1.TrafficIntervalReport{
+			Kind:           trafficSenTypes + "ts-traffic-interval-report",
+			SourceDeviceId: v.DeviceID,
+			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
+			ObservedBy:     e.collectorID,
+			Sequence:       e.nextSequence(v.DeviceID),
+			Lane:           lanes,
 		}
 
 	case model.DMSMessageActivationFailed:

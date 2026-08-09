@@ -152,3 +152,19 @@ type DMSMessageActivationFailed struct {
 }
 
 func (DMSMessageActivationFailed) EventKind() string { return "message-activation-failed" }
+
+// TrafficIntervalReport is one completed measurement interval from a traffic
+// sensor, emitted when the device presents a NEW interval — not once per poll.
+//
+// It carries the device's own interval bounds rather than poll timing, and so
+// differs from DetectorReport in where the interval comes from: an NTCIP
+// controller exposes cumulative counters the collector must difference, while
+// these sensors bin internally and hand over a finished interval.
+type TrafficIntervalReport struct {
+	Base
+	IntervalStart    time.Time
+	IntervalDuration time.Duration
+	Lanes            []LaneMeasurement // sorted by LaneID
+}
+
+func (TrafficIntervalReport) EventKind() string { return "traffic-interval-report" }

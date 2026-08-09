@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	dmsv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/dms/v1"
+	tsv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/traffic_sensor/v1"
 
 	"github.com/Vikasa2M/vikasa-collector/sdk/model"
 )
@@ -201,6 +202,31 @@ func occupancyPercent(tenths uint16) string {
 	return fmt.Sprintf("%d.%d", tenths/10, tenths%10)
 }
 
+// hundredths renders a hundredths-of-a-unit integer as the wire's decimal64
+// string, always with both decimal places so 0 renders "0.00" rather than "0".
+func hundredths(v uint32) string {
+	return fmt.Sprintf("%d.%02d", v/100, v%100)
+}
+
+// dataQualityFor maps the sensor's own assessment to the wire enum.
+//
+// The wire has no "unknown": its zero value is VALID, so an unset field
+// serializes as a positive claim that the data is good. QualityUnknown
+// therefore maps to SUSPECT — not because the sensor flagged anything, but
+// because the alternative is asserting a quality nobody vouched for. A
+// consumer that discounts good data loses a little precision; one that trusts
+// unvalidated data loses correctness.
+func dataQualityFor(q model.DataQuality) tsv1.DataQuality {
+	switch q {
+	case model.QualityValid:
+		return tsv1.DataQuality_DATA_QUALITY_VALID
+	case model.QualityInvalid:
+		return tsv1.DataQuality_DATA_QUALITY_INVALID
+	default:
+		return tsv1.DataQuality_DATA_QUALITY_SUSPECT
+	}
+}
+
 // memoryTypeFor maps the domain memory bank to the wire enum. Explicit switch,
 // not a cast: MemoryUnknown is the domain zero but UNSPECIFIED is the wire
 // zero, and those agreeing today is a coincidence worth not depending on.
@@ -294,4 +320,6 @@ var dataSchemaFor = map[string]string{
 	"openits.signal-control.detector-report.v1":           registryBase + "openits-signal-control-events/2026-07-21/",
 
 	"openits.dms.message-activation-failed.v1": registryBase + "openits-dms-events/2026-07-23/",
+
+	"openits.traffic-sensor.traffic-interval-report.v1": registryBase + "openits-traffic-sensor-events/2026-07-21/",
 }

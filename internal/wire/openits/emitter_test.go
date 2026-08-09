@@ -12,6 +12,7 @@ import (
 	commonv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/common/v1"
 	dmsv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/dms/v1"
 	scv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/signal_control/v1"
+	tsv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/traffic_sensor/v1"
 
 	"github.com/Vikasa2M/vikasa-collector/sdk/model"
 )
@@ -548,6 +549,7 @@ func TestCETypes_IsCompleteSortedAndDeduped(t *testing.T) {
 		"openits.signal-control.preemption-cleared.v1",
 		"openits.traffic-sensor.fault-cleared.v1",
 		"openits.traffic-sensor.fault-raised.v1",
+		"openits.traffic-sensor.traffic-interval-report.v1",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("CETypes() has %d entries, want %d:\n got: %q\nwant: %q", len(got), len(want), got, want)
@@ -735,5 +737,72 @@ func TestFaultKindIdentity_UnmappedCategoryFallsBackPerService(t *testing.T) {
 		if got != want {
 			t.Errorf("%s: kind = %q, want %q", deviceKind, got, want)
 		}
+	}
+}
+
+func TestEncode_TrafficIntervalReport(t *testing.T) {
+	var got tsv1.TrafficIntervalReport
+	ceType := encodeOK(t, model.TrafficIntervalReport{
+		Base:             base("ts-01", "traffic-sensor"),
+		IntervalStart:    time.Date(2026, 8, 9, 11, 59, 0, 0, time.UTC),
+		IntervalDuration: 60 * time.Second,
+		Lanes: []model.LaneMeasurement{{
+			LaneID: 1, Volume: 42, OccupancyTenths: 125,
+			SpeedAvgHundredthsKPH: 8850, SpeedReported: true,
+			ClassVolumes: []model.LaneClassVolume{{ClassID: 2, Volume: 30}, {ClassID: 5, Volume: 12}},
+			Quality:      model.QualityValid,
+		}},
+	}, &got)
+
+	if want := "openits.traffic-sensor.traffic-interval-report.v1"; ceType != want {
+		t.Errorf("ce-type = %q, want %q", ceType, want)
+	}
+	if want := "openits-traffic-sensor-types:ts-traffic-interval-report"; got.GetKind() != want {
+		t.Errorf("kind = %q, want %q", got.GetKind(), want)
+	}
+	if len(got.GetLane()) != 1 {
+		t.Fatalf("lane count = %d", len(got.GetLane()))
+	}
+	l := got.GetLane()[0]
+	if l.GetLaneId() != 1 || l.GetVolume() != 42 {
+		t.Errorf("lane id/volume = %d/%d", l.GetLaneId(), l.GetVolume())
+	}
+	// decimal64 leaves are strings on the wire, same as detector occupancy.
+	if l.GetOccupancy() != "12.5" {
+		t.Errorf("occupancy = %q, want \"12.5\"", l.GetOccupancy())
+	}
+	if l.GetSpeedAverageKmh() != "88.50" {
+		t.Errorf("speed = %q, want \"88.50\"", l.GetSpeedAverageKmh())
+	}
+	if l.GetIntervalDurationS() != 60 {
+		t.Errorf("interval_duration_s = %d, want 60", l.GetIntervalDurationS())
+	}
+	if len(l.GetClassVolume()) != 2 || l.GetClassVolume()[0].GetClassId() != 2 {
+		t.Errorf("class volumes = %+v", l.GetClassVolume())
+	}
+}
+
+func TestEncode_UnreportedSpeedIsOmittedNotZero(t *testing.T) {
+	// Zero km/h is a real reading — a lane of stopped traffic. Emitting "0.00"
+	// for a sensor that never reported speed would turn "we don't know" into
+	// "gridlock", at exactly the moment someone is looking.
+	var got tsv1.TrafficIntervalReport
+	encodeOK(t, model.TrafficIntervalReport{
+		Base:          base("ts-01", "traffic-sensor"),
+		IntervalStart: time.Date(2026, 8, 9, 11, 59, 0, 0, time.UTC),
+		Lanes:         []model.LaneMeasurement{{LaneID: 1, Volume: 3, SpeedReported: false}},
+	}, &got)
+	if s := got.GetLane()[0].GetSpeedAverageKmh(); s != "" {
+		t.Errorf("unreported speed rendered as %q, want empty", s)
+	}
+
+	var stopped tsv1.TrafficIntervalReport
+	encodeOK(t, model.TrafficIntervalReport{
+		Base:          base("ts-01", "traffic-sensor"),
+		IntervalStart: time.Date(2026, 8, 9, 11, 59, 0, 0, time.UTC),
+		Lanes:         []model.LaneMeasurement{{LaneID: 1, Volume: 3, SpeedReported: true}},
+	}, &stopped)
+	if s := stopped.GetLane()[0].GetSpeedAverageKmh(); s != "0.00" {
+		t.Errorf("reported zero speed rendered as %q, want \"0.00\"", s)
 	}
 }

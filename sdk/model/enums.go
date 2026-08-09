@@ -102,3 +102,31 @@ func (c FaultCategory) String() string {
 		return "unknown"
 	}
 }
+
+// DataQuality is the sensor's own assessment of a measurement.
+//
+// QualityUnknown is the zero value and means the sensor did not say. That is
+// deliberately distinct from Valid: a reading nobody vouched for is not the
+// same as one the device asserted was good, and the emitter has to make that
+// distinction explicitly rather than inherit it from a struct default.
+type DataQuality uint8
+
+const (
+	QualityUnknown DataQuality = iota
+	QualityValid
+	QualitySuspect
+	QualityInvalid
+)
+
+func (q DataQuality) String() string {
+	switch q {
+	case QualityValid:
+		return "valid"
+	case QualitySuspect:
+		return "suspect"
+	case QualityInvalid:
+		return "invalid"
+	default:
+		return "unknown"
+	}
+}
