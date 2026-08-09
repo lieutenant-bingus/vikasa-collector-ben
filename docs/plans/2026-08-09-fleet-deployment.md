@@ -2,9 +2,10 @@
 
 **Status:** Draft — scoped to Linux edge compute; one open question blocks Phase 1
 **Scale:** 10,000–15,000 cabinets, one statewide DOT operating its own fleet
-**Host scope:** Linux edge compute in the cabinet. IOx is expected for some
-DOTs later and is explicitly deferred, NOT designed out — see "Why the split
-still earns its place" below.
+**Host scope:** A hardened industrial Linux box in the cabinet — Pi-class ARM
+(CM4/CM5 on an industrial carrier) or a small x86 industrial PC. This is the
+use case being built first. IOx is deferred, NOT designed out — see "Why the
+split still earns its place" below.
 **Decision record:** ADR 0012 (host-executed updates), ADR 0011 (subject roots)
 
 ## Shape
@@ -58,16 +59,21 @@ the open question rather than widening it.
 - Who *reverts* a bad one.
 - Whether rollback covers the OS as well as the apps.
 
-**The hinge is host ownership.** If we own the OS, the host executes and
-reverts and the plane only gates. If we are a guest on someone else's Linux,
-the plane must detect failure and drive the revert itself — which needs a
-command path, not just an observation path. That is a real architectural fork
-decided by a question that is not ours to answer yet, so it stays open rather
-than being guessed at.
+**The hinge is host ownership, and the chosen target settles it.** On a
+Pi-class or industrial-PC host we buy and image ourselves, we own the OS. So
+the host executes AND reverts, and the plane only gates. Had we been a guest on
+someone else's Linux — the IOx case — the plane would have had to drive the
+revert itself, needing a command path rather than just observation. Deferring
+IOx defers that fork too.
 
-Runtime candidates remain podman + quadlet, docker compose (weakest — no
-rollback, no gating), single-node k3s per cabinet, or a vendor edge platform.
-See "Hardware and the inference question" for what actually settles it.
+Runtime remains podman + quadlet. docker compose is out (no rollback, no
+gating, no cohorts). Single-node k3s stays available but is only justified if
+the box becomes a multi-workload platform; for a dedicated collector host it
+adds a second fleet to manage — k3s upgrades and certificate lifecycle across
+10,000 nodes — in exchange for convergence expressiveness that
+`(version, config revision)` already provides. Note also that Kubernetes does
+NOT auto-rollback: a failed Deployment is *marked* failed, not reverted, so
+that capability would still have to be built.
 
 ## Decide first
 
@@ -117,6 +123,35 @@ straight to a regional hub) over splitting the durability model.
 
 ## Measure early
 
+### H1 — Target platform consequences (Pi-class / industrial Linux)
+
+**ARM64 is now a first-class target.** Container images must be multi-arch
+(arm64 + amd64). Go cross-compiles trivially so the build cost is near zero,
+but there is currently NO image build in CI at all, so this is real work rather
+than a flag. Building amd64 alongside keeps an x86 industrial PC available
+without a second pipeline.
+
+**Storage choice is the highest-leverage hardware decision.** Prefer NVMe or
+eMMC; avoid SD cards. SD is the single most common field-failure mode on
+Pi-class hardware and it is also what makes M1 dangerous rather than
+theoretical.
+
+**Ownership of the OS is a real advantage, not just a convenience.** It makes
+A/B image updates viable (Mender, RAUC, or Ubuntu Core), which gives atomic
+rollback covering the OS, the container runtime and the apps as one unit —
+strictly stronger than container-level rollback alone, and it answers D3.
+
+**Hardware lifecycle is worth comparing explicitly.** The Cisco IC3000 went
+end-of-sale mid-design with no like-for-like successor, and Cisco's dedicated
+industrial compute appears folded back into routers and switches. Raspberry Pi
+publishes long-term availability commitments for compute modules. For a fleet
+with a decade-plus field life that is a real advantage and should be weighed
+alongside unit cost.
+
+**Thermal and power.** Cabinets get hot and Pi-class silicon throttles. An
+industrial carrier with proper heatsinking is not optional at this scale, and
+the hardware watchdog is worth wiring up for unattended recovery.
+
 ### M1 — JetStream write volume against flash endurance
 
 The architecture leans on cabinet-local JetStream absorbing WAN outages
@@ -124,9 +159,14 @@ The architecture leans on cabinet-local JetStream absorbing WAN outages
 upstream sizes for, that is continuous writing — and on IOx it is likely an SD
 card with limited write endurance and a small allocation.
 
+**Now the top measurement**, because the chosen target is most likely on eMMC.
+eMMC endurance is far better than SD but still finite, and JetStream writes
+continuously.
+
 If it does not hold, the consequences are structural, not tuning: tighter
 retention, memory storage with accepted loss on power failure, or JetStream not
-living in the cabinet at all on constrained hosts. It also decides D2.
+living in the cabinet at all. Measure with the real retention settings on the
+real storage before committing to a hardware order.
 
 ### M2 — IOx resource envelope *(deferred with the IOx path)*
 
