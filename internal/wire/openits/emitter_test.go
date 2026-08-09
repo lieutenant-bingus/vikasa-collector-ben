@@ -543,6 +543,7 @@ func TestCETypes_IsCompleteSortedAndDeduped(t *testing.T) {
 		"openits.perception.zone-incident-cleared.v1",
 		"openits.perception.zone-incident-detected.v1",
 		"openits.perception.zone-incident-updated.v1",
+		"openits.perception.zone-interval-report.v1",
 		"openits.signal-control.detector-report.v1",
 		"openits.signal-control.fault-cleared.v1",
 		"openits.signal-control.fault-raised.v1",
@@ -893,5 +894,44 @@ func TestEncode_StoppedVehicleZeroSpeedSurvives(t *testing.T) {
 	}, &unknown)
 	if s := unknown.GetSpeedKmh(); s != "" {
 		t.Errorf("unreported speed = %q, want empty", s)
+	}
+}
+
+func TestEncode_ZoneIntervalReport(t *testing.T) {
+	var got pcpv1.ZoneIntervalReport
+	ceType := encodeOK(t, model.ZoneIntervalReport{
+		Base:             base("lidar-01", "perception"),
+		IntervalStart:    time.Date(2026, 8, 9, 11, 59, 0, 0, time.UTC),
+		IntervalDuration: 60 * time.Second,
+		Zones: []model.ZoneMeasurement{{
+			ZoneID: "zone-a", CrossedVolume: 40, ObservedCount: 42,
+			OccupancyTenths: 310, SpeedAvgHundredthsKPH: 5125, SpeedReported: true,
+			ClassCounts: []model.ZoneClassCount{{Class: model.ObjectTruck, Count: 4}},
+		}},
+	}, &got)
+
+	if want := "openits.perception.zone-interval-report.v1"; ceType != want {
+		t.Errorf("ce-type = %q, want %q", ceType, want)
+	}
+	if want := "openits-perception-types:pcp-zone-interval-report"; got.GetKind() != want {
+		t.Errorf("kind = %q, want %q", got.GetKind(), want)
+	}
+	z := got.GetZone()[0]
+	if z.GetCrossedVolume() != 40 || z.GetObservedCount() != 42 {
+		t.Errorf("crossed/observed = %d/%d, want 40/42", z.GetCrossedVolume(), z.GetObservedCount())
+	}
+	if z.GetOccupancyPercent() != "31.0" {
+		t.Errorf("occupancy = %q, want \"31.0\"", z.GetOccupancyPercent())
+	}
+	if z.GetAverageSpeedKmh() != "51.25" {
+		t.Errorf("speed = %q, want \"51.25\"", z.GetAverageSpeedKmh())
+	}
+	if z.GetIntervalDurationS() != 60 {
+		t.Errorf("interval_duration_s = %d, want 60", z.GetIntervalDurationS())
+	}
+	// Counted by object-class IDENTITY here, not a numeric bin.
+	cc := z.GetClassCount()
+	if len(cc) != 1 || cc[0].GetClass() != "openits-perception-types:object-truck" || cc[0].GetCount() != 4 {
+		t.Errorf("class counts = %+v", cc)
 	}
 }

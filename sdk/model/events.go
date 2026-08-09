@@ -205,3 +205,16 @@ type ZoneIncidentCleared struct {
 }
 
 func (ZoneIncidentCleared) EventKind() string { return "zone-incident-cleared" }
+
+// ZoneIntervalReport is one completed aggregate interval from a perception
+// sensor, emitted when the device presents a NEW interval. Same contract as
+// TrafficIntervalReport: the device does the binning, the collector does not
+// invent a window.
+type ZoneIntervalReport struct {
+	Base
+	IntervalStart    time.Time
+	IntervalDuration time.Duration
+	Zones            []ZoneMeasurement // sorted by ZoneID
+}
+
+func (ZoneIntervalReport) EventKind() string { return "zone-interval-report" }

@@ -107,6 +107,7 @@ var ceTypeFor = map[key]string{
 	{"zone-incident-detected", "perception"}: "openits.perception.zone-incident-detected.v1",
 	{"zone-incident-updated", "perception"}:  "openits.perception.zone-incident-updated.v1",
 	{"zone-incident-cleared", "perception"}:  "openits.perception.zone-incident-cleared.v1",
+	{"zone-interval-report", "perception"}:   "openits.perception.zone-interval-report.v1",
 
 	{"plan-changed", "asc"}:              "openits.signal-control.plan-applied.v1",
 	{"operational-status-report", "asc"}: "openits.signal-control.operational-status-report.v1",
@@ -343,6 +344,38 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 			Sequence:       e.nextSequence(v.DeviceID),
 			IncidentId:     v.IncidentID,
 			ZoneId:         v.ZoneID,
+		}
+
+	case model.ZoneIntervalReport:
+		zones := make([]*pcpv1.ZoneIntervalReportZone, 0, len(v.Zones))
+		for _, z := range v.Zones {
+			counts := make([]*pcpv1.ClassCount, 0, len(z.ClassCounts))
+			for _, cc := range z.ClassCounts {
+				counts = append(counts, &pcpv1.ClassCount{
+					Class: objectClassIdentity(cc.Class), Count: cc.Count,
+				})
+			}
+			zone := &pcpv1.ZoneIntervalReportZone{
+				ZoneId:            z.ZoneID,
+				CrossedVolume:     z.CrossedVolume,
+				ObservedCount:     z.ObservedCount,
+				OccupancyPercent:  occupancyPercent(z.OccupancyTenths),
+				ClassCount:        counts,
+				IntervalStart:     timestamppb.New(v.IntervalStart.UTC()),
+				IntervalDurationS: uint32((v.IntervalDuration + 500*time.Millisecond) / time.Second),
+			}
+			if z.SpeedReported {
+				zone.AverageSpeedKmh = hundredths(z.SpeedAvgHundredthsKPH)
+			}
+			zones = append(zones, zone)
+		}
+		msg = &pcpv1.ZoneIntervalReport{
+			Kind:           perceptionTypes + "pcp-zone-interval-report",
+			SourceDeviceId: v.DeviceID,
+			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
+			ObservedBy:     e.collectorID,
+			Sequence:       e.nextSequence(v.DeviceID),
+			Zone:           zones,
 		}
 
 	case model.TrafficIntervalReport:

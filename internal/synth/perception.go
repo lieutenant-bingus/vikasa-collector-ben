@@ -105,3 +105,41 @@ func sortedIncidentIDs(m map[string]model.ZoneIncident) []string {
 	sort.Strings(ids)
 	return ids
 }
+
+// NewZoneIntervalDiffer emits a report each time the sensor presents a new
+// aggregate interval.
+//
+// Deliberately a sibling of the traffic-sensor interval differ rather than a
+// shared generic: they are two instances of one shape, and the repo's rule of
+// three says a third is the moment to unify. Merging now would mean a type
+// parameter over facets that have different member names and are free to
+// diverge — perception counts by object class, traffic-sensor by length bin.
+func NewZoneIntervalDiffer() Differ { return zoneIntervalDiffer{} }
+
+type zoneIntervalDiffer struct{}
+
+func (zoneIntervalDiffer) Kind() model.Kind { return model.KindZoneIntervals }
+
+func (zoneIntervalDiffer) Diff(prev, curr model.Facet, base model.Base) []model.Event {
+	c := curr.(model.ZoneIntervals)
+	if len(c.Zones) == 0 {
+		return nil
+	}
+	// Same re-read suppression as the traffic differ: polling faster than the
+	// sensor's binning window returns one interval repeatedly, and
+	// republishing it inflates every count derived from the stream.
+	if prev != nil {
+		if p, ok := prev.(model.ZoneIntervals); ok && p.IntervalStart.Equal(c.IntervalStart) {
+			return nil
+		}
+	}
+	zones := append([]model.ZoneMeasurement(nil), c.Zones...)
+	sort.Slice(zones, func(i, j int) bool { return zones[i].ZoneID < zones[j].ZoneID })
+
+	return []model.Event{model.ZoneIntervalReport{
+		Base:             base,
+		IntervalStart:    c.IntervalStart,
+		IntervalDuration: c.IntervalDuration,
+		Zones:            zones,
+	}}
+}

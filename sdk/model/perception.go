@@ -1,5 +1,7 @@
 package model
 
+import "time"
+
 // KindZoneIncidents is the set of incidents a perception sensor currently
 // observes in its detection zones.
 const KindZoneIncidents Kind = "zone-incidents"
@@ -141,3 +143,44 @@ type ZoneIncident struct {
 type ZoneIncidents struct{ Incidents []ZoneIncident }
 
 func (ZoneIncidents) FacetKind() Kind { return KindZoneIncidents }
+
+// KindZoneIntervals is a completed aggregate interval over a sensor's
+// detection zones — the counting counterpart to ZoneIncidents, which is the
+// lifecycle side of the same device.
+const KindZoneIntervals Kind = "zone-intervals"
+
+// ZoneClassCount is how many objects of one class the sensor counted.
+//
+// Classified by ObjectClass rather than by a numeric bin, unlike
+// LaneClassVolume: a perception sensor identifies WHAT an object is, while a
+// traffic sensor bins by length and cannot.
+type ZoneClassCount struct {
+	Class ObjectClass
+	Count uint32
+}
+
+// ZoneMeasurement is one detection zone over one interval.
+//
+// CrossedVolume counts objects that traversed the zone during the interval;
+// ObservedCount is how many were present. They differ for a stopped vehicle,
+// which is observed repeatedly but crosses once — which is exactly the
+// condition these sensors exist to notice, so the two must not be conflated.
+type ZoneMeasurement struct {
+	ZoneID                string
+	CrossedVolume         uint32
+	ObservedCount         uint32
+	OccupancyTenths       uint16
+	SpeedAvgHundredthsKPH uint32
+	SpeedReported         bool
+	ClassCounts           []ZoneClassCount // sorted by Class
+}
+
+// ZoneIntervals is the sensor's most recently completed aggregate interval.
+// Interval bounds come from the DEVICE, as with TrafficIntervals.
+type ZoneIntervals struct {
+	IntervalStart    time.Time
+	IntervalDuration time.Duration
+	Zones            []ZoneMeasurement
+}
+
+func (ZoneIntervals) FacetKind() Kind { return KindZoneIntervals }

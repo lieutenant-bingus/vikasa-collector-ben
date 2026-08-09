@@ -116,3 +116,52 @@ func TestZoneIncidentDiffer_ReclassificationIsNotAnUpdate(t *testing.T) {
 		t.Fatalf("reclassification emitted %d events; it is not an assessment update", len(evs))
 	}
 }
+
+func zones(start time.Time, crossed uint32) model.ZoneIntervals {
+	return model.ZoneIntervals{
+		IntervalStart:    start,
+		IntervalDuration: 60 * time.Second,
+		Zones: []model.ZoneMeasurement{{
+			ZoneID: "zone-a", CrossedVolume: crossed, ObservedCount: crossed + 2,
+			OccupancyTenths: 310, SpeedAvgHundredthsKPH: 5125, SpeedReported: true,
+			ClassCounts: []model.ZoneClassCount{{Class: model.ObjectTruck, Count: 4}},
+		}},
+	}
+}
+
+func TestZoneIntervalDiffer_FirstObservationEmits(t *testing.T) {
+	evs := NewZoneIntervalDiffer().Diff(nil, zones(pcpAt.Add(-time.Minute), 40), pcpBase())
+	if len(evs) != 1 {
+		t.Fatalf("first observation produced %d events, want 1", len(evs))
+	}
+	r := evs[0].(model.ZoneIntervalReport)
+	if r.Zones[0].CrossedVolume != 40 || r.Zones[0].ObservedCount != 42 {
+		t.Errorf("crossed/observed = %d/%d, want 40/42 (they are not the same measure)",
+			r.Zones[0].CrossedVolume, r.Zones[0].ObservedCount)
+	}
+}
+
+func TestZoneIntervalDiffer_SameIntervalReReadEmitsNothing(t *testing.T) {
+	start := pcpAt.Add(-time.Minute)
+	if evs := NewZoneIntervalDiffer().Diff(zones(start, 40), zones(start, 40), pcpBase()); len(evs) != 0 {
+		t.Fatalf("re-read emitted %d events, want 0", len(evs))
+	}
+}
+
+func TestZoneIntervalDiffer_NewIntervalEmits(t *testing.T) {
+	prev := zones(pcpAt.Add(-2*time.Minute), 40)
+	evs := NewZoneIntervalDiffer().Diff(prev, zones(pcpAt.Add(-time.Minute), 12), pcpBase())
+	if len(evs) != 1 {
+		t.Fatalf("got %d events, want 1", len(evs))
+	}
+	if got := evs[0].(model.ZoneIntervalReport).Zones[0].CrossedVolume; got != 12 {
+		t.Errorf("crossed = %d, want 12 (the interval's own count)", got)
+	}
+}
+
+func TestZoneIntervalDiffer_EmptyZonesEmitNothing(t *testing.T) {
+	curr := model.ZoneIntervals{IntervalStart: pcpAt, IntervalDuration: time.Minute}
+	if evs := NewZoneIntervalDiffer().Diff(nil, curr, pcpBase()); len(evs) != 0 {
+		t.Fatalf("empty zone set emitted %d events, want 0", len(evs))
+	}
+}

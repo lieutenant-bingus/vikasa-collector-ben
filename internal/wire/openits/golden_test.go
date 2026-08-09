@@ -232,6 +232,23 @@ var goldenCases = []struct {
 		identHex:   "0a03692d3112067a6f6e652d612a0608c0e182d30642086c696461722d30319a06326f70656e6974732d70657263657074696f6e2d74797065733a7063702d7a6f6e652d696e636964656e742d636c6561726564",
 	},
 	{
+		name: "perception zone-interval-report",
+		ev: model.ZoneIntervalReport{
+			Base:             gbase("lidar-01", "perception"),
+			IntervalStart:    goldenAt.Add(-time.Minute),
+			IntervalDuration: 60 * time.Second,
+			Zones: []model.ZoneMeasurement{{
+				ZoneID: "zone-a", CrossedVolume: 40, ObservedCount: 42,
+				OccupancyTenths: 310, SpeedAvgHundredthsKPH: 5125, SpeedReported: true,
+				ClassCounts: []model.ZoneClassCount{{Class: model.ObjectTruck, Count: 4}},
+			}},
+		},
+		ceType:     "openits.perception.zone-interval-report.v1",
+		dataSchema: "https://schemas.open-its.org/openits-perception-events/2026-07-21/",
+		dataHex:    "0a4e0a067a6f6e652d6112060884e182d306183c220535312e32352a290a256f70656e6974732d70657263657074696f6e2d74797065733a6f626a6563742d747275636b10043028382a420433312e301210636162696e65742d706f6c6c65722d311a0608c0e182d306280132086c696461722d30319a06316f70656e6974732d70657263657074696f6e2d74797065733a7063702d7a6f6e652d696e74657276616c2d7265706f7274",
+		identHex:   "0a4e0a067a6f6e652d6112060884e182d306183c220535312e32352a290a256f70656e6974732d70657263657074696f6e2d74797065733a6f626a6563742d747275636b10043028382a420433312e301a0608c0e182d30632086c696461722d30319a06316f70656e6974732d70657263657074696f6e2d74797065733a7063702d7a6f6e652d696e74657276616c2d7265706f7274",
+	},
+	{
 		name: "traffic-sensor interval report",
 		ev: model.TrafficIntervalReport{
 			Base:             gbase("ts-01", "traffic-sensor"),
@@ -380,6 +397,8 @@ func emptyMessageFor(ceType string) proto.Message {
 		return &pcpv1.ZoneIncidentUpdated{}
 	case "openits.perception.zone-incident-cleared.v1":
 		return &pcpv1.ZoneIncidentCleared{}
+	case "openits.perception.zone-interval-report.v1":
+		return &pcpv1.ZoneIntervalReport{}
 	case "openits.signal-control.plan-applied.v1":
 		return &scv1.PlanApplied{}
 	case "openits.signal-control.operational-status-report.v1":

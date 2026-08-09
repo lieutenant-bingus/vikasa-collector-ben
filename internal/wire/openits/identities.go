@@ -401,4 +401,5 @@ var dataSchemaFor = map[string]string{
 	"openits.perception.zone-incident-detected.v1": registryBase + "openits-perception-events/2026-07-21/",
 	"openits.perception.zone-incident-updated.v1":  registryBase + "openits-perception-events/2026-07-21/",
 	"openits.perception.zone-incident-cleared.v1":  registryBase + "openits-perception-events/2026-07-21/",
+	"openits.perception.zone-interval-report.v1":   registryBase + "openits-perception-events/2026-07-21/",
 }
