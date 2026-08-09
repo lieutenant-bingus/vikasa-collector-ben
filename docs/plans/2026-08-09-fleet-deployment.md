@@ -257,7 +257,40 @@ additional tooling.
   device inventory, not hand-authored; the collector already accepts whatever a
   generator produces.
 
-### Phase 3 — Fleet control plane (out of scope for this repo)
+### Phase 3 — Ansible as the v1 control plane
+
+Ansible covers more of this than an earlier draft credited, and should be the
+starting point rather than a stopgap.
+
+- **Its inventory IS the fleet inventory.** Cabinets, their devices and their
+  cohort are `host_vars`; `collector.yaml` is a Jinja template rendered per
+  cabinet. That answers "15,000 configs must be generated, not hand-authored"
+  with a tool the DOT may already run.
+- **Cohorts are groups**, and `serial:` with `max_fail_percentage:` is staged
+  rollout with halt-on-failure — built in. An earlier draft asserted no host
+  executor provides this and that the bespoke plane therefore had to exist.
+  That was wrong.
+- **Health gating is a `uri` task against `/readyz`** with retries, reverting
+  the image tag on failure. Roughly twenty lines of YAML, and it is what turns
+  a play from "restart and hope" into a gated rollout.
+
+**What Ansible cannot do**, and therefore what the bespoke plane is actually
+for: continuous observability (it is run-based and point-in-time), convergence
+for cabinets that were offline during a change, and the ITS-aware health view.
+
+**Triggers to build the plane:** run duration across the fleet stops being
+tolerable, or the offline-miss rate means reconciliation logic is accumulating
+in the playbooks anyway. Both are scale effects, neither bites at a few hundred
+cabinets.
+
+**Do not build a custom orchestrator on SSH.** That is the trap: inventory,
+scheduling, retries, concurrency and secrets are all solved, and the result
+still has push semantics, so offline cabinets still silently miss changes. All
+of the build cost and none of the benefit. What makes a purpose-built plane
+better is being event-driven and converging, which means building it on the
+NATS connection rather than on SSH.
+
+### Phase 3b — Fleet control plane (out of scope for this repo)
 
 Consumes only public interfaces — health events, version reports, readiness.
 Nothing about driving a fleet requires privileged access to the collector, so
@@ -269,8 +302,13 @@ any implementation can do it.
   *and* kept its devices reachable for N minutes. Both signals exist today —
   `CollectorStarted` carries version, `DeviceStatusChanged` carries
   reachability.
-- Halt on cohort failure. This is the capability no host executor provides and
-  the reason the plane exists.
+- Halt on cohort failure — noting Ansible already provides this, so it is not
+  by itself a reason to build the plane.
+
+What Ansible cannot provide, and therefore what the plane is for: continuous,
+converging, domain-aware fleet health — answering "which cabinets stopped
+collecting from their DMS, and since when" rather than "did the last run
+succeed".
 
 ### When IOx comes back: second repo, or fork?
 

@@ -107,19 +107,48 @@ its own subject root and its own stream.
   At 15,000 cabinets on a five-minute interval that is ~50 msg/sec fleet-wide,
   which is noise against the ~75,000 msg/sec of telemetry.
 
-## 3. Inbound surface — deliberately none
+## 3. Inbound surface — none for now, deferred rather than ruled out
 
-ADR 0004 is pull-only and this design does not change it. **Desired state
-arrives as config**, which the host already delivers; the collector never
-subscribes to a control channel.
+**Desired state arrives as a config file on disk plus a restart.** Delivery is
+someone else's problem: SSH and config management (Ansible) to begin with.
 
-That is what keeps the fleet story simple: there is one delivery path for
-config and expected version, the same path for every host type, and no inbound
-authorisation surface on 15,000 field devices.
+A correction worth recording, since an earlier draft argued this from ADR 0004:
+**ADR 0004 does not govern this.** It is about how the collector interacts with
+DEVICES — polling rather than receiving pushes — and says nothing about the
+management interface. Citing it here was an over-application.
 
-A control channel remains reserved (ADR 0011's scope limit) for the case it is
-genuinely needed — commanding a device, or an audit path for the CCTV events a
-pull-only collector structurally cannot produce.
+The reason inbound is deferred is simpler and better: **it does not touch the
+collector.** Config file plus restart plus readiness gate is the interface, and
+SSH, Ansible, an image rebuild, or a future NATS channel all drive it
+identically. A decision that changes nothing in this repo is one that can wait
+for evidence.
+
+Also worth being honest about the security comparison, because an earlier draft
+had it backwards. SSH grants a shell; a scoped NATS subscription does not. An
+SSH key reaching every cabinet is a considerably larger prize than a per-cabinet
+credential limited to one subject. SSH is the pragmatic starting point because
+it already exists, not because it is the more conservative one.
+
+**Triggers that would bring inbound-over-NATS forward:**
+
+- **Cabinets are not routable.** Behind carrier NAT, SSH needs a tunnel or VPN
+  fleet — at which point building on the NATS connection that already traverses
+  NAT is cheaper than maintaining the tunnels.
+- **Push stops converging.** SSH is push: a cabinet offline during a change
+  silently misses it, and tracking and retrying becomes the automation's
+  problem. Pull-based delivery converges for free. This bites somewhere above
+  a thousand cabinets, not at first deployment.
+
+**If it does arrive, two conditions:** the payload must be signed, so the trust
+root is not merely a NATS credential on the cabinet; and last-good config must
+be retained and restored automatically on a failed readiness gate. Without the
+second, strict-boot turns the management channel into a bricking mechanism — a
+cabinet that will not start cannot receive the fix.
+
+**Declarative desired state only.** "You should be at config revision N" is
+idempotent and convergent. Arbitrary remote command execution across 15,000
+traffic cabinets is a materially different security proposition and should be
+justified case by case, not enabled generally.
 
 ## 4. What the plane sees
 
