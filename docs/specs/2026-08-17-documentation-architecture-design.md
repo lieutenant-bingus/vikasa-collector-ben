@@ -308,7 +308,7 @@ unbounded, low yield.
 
 ## 9. Demolition
 
-**Specs — 6 deleted after harvest, 1 kept:**
+**Specs — 6 deleted after harvest (§10 step 3, not step 1), 1 kept:**
 
 Deleted: `2026-07-10-vendor-adapter-architecture-design.md` (gen-1),
 `2026-07-12-greenfield-collector-architecture-design.md`,
@@ -341,12 +341,16 @@ historical reference, not a broken link.
 
 1. **Truth pass and demolition.** Audit ledger; write ADR 0013 and ADR 0014 for
    the homeless rules (§4.1); add the `replace`-directive check to
-   `lint-boundary.sh`; delete 6 specs and 16 plans; fix confirmed defects in
+   `lint-boundary.sh`; delete the 16 shipped plans; fix confirmed defects in
    place. No new prose documents written.
+
+   The six specs are **not** deleted here — step 3 harvests them first. Plans
+   are safe to delete now because nothing harvests from them.
 2. **Scaffold and verification.** `docs/README.md`; the four checks;
    `invariants.md`, `configuration.md`, `test-requirements.md`,
    `starter-tasks.md`.
-3. **Explanation tier.** Harvest from probed content, then delete the sources.
+3. **Explanation tier.** Harvest from probed content, then delete the six
+   harvested specs.
 4. **Tutorial and how-to guides.** Exemplar first; then the three unblocked
    how-tos; two honest stubs.
 5. **Skills.** Retarget three; add `add-transport` and
