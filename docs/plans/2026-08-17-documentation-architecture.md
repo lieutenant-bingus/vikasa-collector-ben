@@ -1545,3 +1545,57 @@ output: the explanation tier (five documents promoted from probed spec content,
 then the six specs deleted), the tutorial, four how-to guides, two honest stubs,
 and the skills — three retargeted to the contract, plus `add-transport` and
 `review-adapter-contribution`.
+
+### Rule-restatement conversions (added after Phase 1 review)
+
+`docs/reference/invariants.md` states the enforced rules canonically, but the
+paraphrases it was meant to replace are still live. Each of these restates at
+least one enforced rule with no link into `docs/reference/`, and each must be
+converted to a link (or deleted) in Phase 2:
+
+- `AGENTS.md` — six restatements: the two layering rules (`:20-22`, `:23-26`),
+  absence-of-evidence (`:27-29`), subjects-vs-envelope (`:30-34`), the testing
+  bar (`:47-51`), and config-as-trust-boundary (`:60-62`). Untouched by Phase 1.
+- `CONTRIBUTING.md` — the openits-models import rule (`:26`) and
+  "no fixtures, no merge" (`:28`).
+- `README.md` — the contributing section's adapter-contract bullets.
+- `.github/pull_request_template.md` — the layering checkbox (`:9`).
+- `.claude/skills/add-vendor-adapter/SKILL.md`,
+  `.claude/skills/add-domain-facet/SKILL.md`,
+  `.claude/skills/wire-emitter/SKILL.md` — all three, as part of the retarget
+  already listed above.
+
+### Probe the three `SKILL.md` files with the ledger method
+
+The truth audit never probed the skills. Its only skill coverage is an
+`ls -d` of the directory (ledger `:284-297`) — a check that they exist, not
+that anything in them is true. Phase 1 review found a concrete consequence:
+`add-vendor-adapter/SKILL.md` sent contributors to wire adapter registration
+"into `internal/app`", when registration has always lived in
+`cmd/collector/main.go`'s `RegisterAdapters`. That was corrected in place, but
+it was found by reading, not by a systematic pass, and `docs/README.md` routes
+the single highest-traffic contributor task straight into that file.
+
+Phase 2 must probe all three skills claim-by-claim in the audit's ledger
+format — every path, symbol, command, and rule statement — before or as part
+of retargeting them, and record the verdicts in a `docs/notes/` ledger like
+every other probed surface.
+
+### Citations with no durable home
+
+Phase 2 deletes the six harvested specs. These live `.go` comments cite
+"spec §N" and will dangle. Phase 1 repointed the ones with an existing target;
+these two have none yet and need one created or the citation dropped:
+
+- `internal/runner/runner.go:3` — cites the greenfield spec §7 for the poll
+  loop's jitter / per-poll timeout / panic isolation. No ADR or reference doc
+  covers it; the natural home is the explanation tier's `architecture.md`.
+- `sdk/model/model.go:9` — cites the architecture spec §4 for the
+  "facets are per-device-kind, never per-vendor" governance rail. The manifest
+  harvests §4 into `adapter-to-model.md`; repoint once that exists.
+
+Also: the greenfield spec's "rule of three" deferral (no per-vendor overlay
+mechanism until ~3 variant adapters exist) is cited by name from two other
+harvest specs and has no home outside them — fold one sentence into
+`pluggability.md` during harvest or accept losing the rationale
+(ledger `:2448-2466`).
