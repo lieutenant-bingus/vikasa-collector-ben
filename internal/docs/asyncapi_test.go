@@ -153,6 +153,16 @@ func TestAsyncAPICESourceDescriptionMatchesSourceFor(t *testing.T) {
 	}
 }
 
+// ceIDDigestFormula is the digest formula asyncapi.yaml documents for
+// ce-id. It must appear in the doc verbatim, field order included: this is
+// the exact string that catches a future edit reverting the field order to
+// the original defect (SHA-256(type, source, …) instead of the correct
+// SHA-256(source ‖ ce-type ‖ stable-time ‖ payload-bytes)). The "ULID" and
+// shape checks below do not catch that regression — a reordered digest
+// input still produces a 26-character Crockford ULID — so this literal
+// substring check is the only guard on the field order itself.
+const ceIDDigestFormula = "SHA-256(source ‖ ce-type ‖ stable-time ‖\npayload-bytes)"
+
 // crockfordULIDRe matches a 26-character Crockford base32 ULID: exactly what
 // asyncapi.yaml's ce-id description now claims EventID produces.
 var crockfordULIDRe = regexp.MustCompile(`^[0-9A-HJKMNP-TV-Z]{26}$`)
@@ -172,6 +182,9 @@ func TestAsyncAPICEIDDescriptionMatchesEventIDShape(t *testing.T) {
 	}
 	if !strings.Contains(desc, "ULID") {
 		t.Errorf("ce-id description no longer mentions ULID; it must not describe the id as a bare content hash:\n%s", desc)
+	}
+	if !strings.Contains(desc, ceIDDigestFormula) {
+		t.Errorf("ce-id description does not contain the documented digest formula %q (field order matters — this is the guard against reverting to SHA-256(type, source, …)):\n%s", ceIDDigestFormula, desc)
 	}
 
 	id := cloudevents.EventID("urn:openits:controller:us-ga:metro-atlanta:d01:asc-1",

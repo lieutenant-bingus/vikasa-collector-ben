@@ -23,8 +23,8 @@ local NATS JetStream using versioned openits-models payloads.
 - **Wire emitters** (`internal/wire/`) are the only code that knows
   openits-models. One package per pinned models release.
 
-Why it's built this way: see `docs/adr/`. Full design:
-`docs/specs/2026-07-12-greenfield-collector-architecture-design.md`.
+Why it's built this way: see `docs/adr/`. Start here for everything else —
+task guides, configuration, what will fail a PR: [`docs/README.md`](docs/README.md).
 
 ## Status
 

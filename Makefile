@@ -1,4 +1,4 @@
-.PHONY: build test vet lint-boundary lint-boundary-selftest lint-boundary-replace-selftest check
+.PHONY: build test vet lint-boundary lint-boundary-selftest lint-boundary-replace-selftest lint-docs check
 
 build:
 	go build ./...
@@ -38,4 +38,7 @@ lint-boundary-replace-selftest:
 		echo "lint-boundary replace-rule selftest: rule fires correctly"; \
 	fi
 
-check: vet test lint-boundary lint-boundary-selftest lint-boundary-replace-selftest
+lint-docs:
+	./scripts/lint-docs.sh
+
+check: vet test lint-boundary lint-boundary-selftest lint-boundary-replace-selftest lint-docs
