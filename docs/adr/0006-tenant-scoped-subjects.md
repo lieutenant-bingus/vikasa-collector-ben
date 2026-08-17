@@ -1,6 +1,7 @@
 # ADR 0006: Tenant-scoped NATS subjects; CE type = catalog ce-type
 
 **Status:** Partially superseded by [ADR 0009](0009-configurable-subject-templates.md) (2026-07-16)
+and further amended by [ADR 0011](0011-namespace-rooted-subject-spaces.md) (2026-08-08)
 
 The subject *grammar* below is now the operator's, configured per deployment;
 ADR 0009's default reproduces it exactly. The identity decisions — CE `type` =

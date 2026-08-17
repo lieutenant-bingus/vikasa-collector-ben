@@ -377,7 +377,7 @@ in `internal/app/app.go` above), not just "some test exists somewhere."
 ```
 $ grep -n 'func Test' internal/synth/*_test.go
 ```
-(full output: 45 tests across `signal_test.go`, `fault_test.go`,
+(full output: 47 tests across `signal_test.go`, `fault_test.go`,
 `detector_test.go`, `dms_test.go`, `trafficsensor_test.go`,
 `perception_test.go`, `cctv_test.go` — see git history for the complete
 list; representative names quoted below)
@@ -753,3 +753,783 @@ $ grep -c '^\*\*Verdict:' docs/notes/2026-08-17-documentation-truth-audit.md
 
 26 probed claims, spanning README.md, CONTRIBUTING.md, AGENTS.md,
 SECURITY.md, CODE_OF_CONDUCT.md, and collector.yaml.
+
+---
+
+# Task 5: ADRs
+
+**Scope note.** ADRs are immutable in substance. The only edit this task
+makes to an ADR body is the ADR 0006 status-line correction below (Step 3
+of the task brief). Every other inaccuracy found in an ADR's Context,
+Decision, Consequences, or Alternatives is recorded here as a finding for
+a human to decide on — it is **not** fixed, regardless of what the
+standard verdict-key action says. Where a `DOC WRONG` verdict below has no
+matching edit in the diff, that is why.
+
+## Supersession integrity matrix
+
+```
+$ for f in docs/adr/0*.md; do echo "--- $f"; grep -nE '^\*\*(Status|Supersedes|Amends)' "$f"; done
+```
+(full output confirmed the table below; see the per-ADR probes for the
+individual command/output pairs behind each cell)
+
+| X (amends/supersedes) | Y | Y's Status/body names X? | Verdict |
+|---|---|---|---|
+| ADR 0009 supersedes (subject-grammar half of) ADR 0006 | ADR 0006 | Yes — `**Status:** Partially superseded by ADR 0009` | TRUE (bidirectional) |
+| ADR 0010 amends ADR 0002 (dependency-pinning clause) | ADR 0002 | No — ADR 0002's Status is bare `Accepted (2026-07-12)`, no mention of 0010 anywhere in the file | Supersession-integrity DEFECT — not authorized to fix (out of this task's scope: only ADR 0006's status line may be edited); recorded as finding |
+| ADR 0010 states "0005 stands as written" | ADR 0005 | N/A — 0010 declares no amendment, so no reverse pointer is owed | TRUE (consistent; no defect) |
+| ADR 0011 amends ADR 0009 (default-grammar, single-binding consequences) | ADR 0009 | No — ADR 0009's Status only names `**Supersedes:** ADR 0006`; no mention of 0011 anywhere in the file | Supersession-integrity DEFECT — same category as the 0002/0010 gap; not authorized to fix; recorded as finding |
+| ADR 0011 states "0006 and 0007 stand as written" | ADR 0006, 0007 | ADR 0006's status (pre-fix) named only 0009. This task's Step 3 adds 0011 to ADR 0006's status anyway — see note below | Reconciled; see note |
+| ADR 0013, ADR 0014 ("records a rule that predates this ADR") | — | Neither Supersedes nor Amends any existing ADR; both are net-new retroactive records | TRUE (no supersession claim made, none owed) |
+| ADR 0012 referenced in ADR 0014's Consequences prose ("ADR 0012's readiness signal") | ADR 0012 | Not a formal Amends/Supersedes relationship — narrative cross-reference only, no reverse pointer owed | TRUE (not a supersession claim) |
+
+**Note on the 0011/0006 reconciliation.** ADR 0011's own Amends line
+explicitly disclaims amending ADR 0006's substance ("0006 ... stand[s] as
+written"), which appears to contradict this task's brief, which calls
+"ADR 0006's status names ADR 0009 but not ADR 0011, which also amends it"
+the known defect. Probing resolves the apparent conflict: ADR 0011 is
+correct that it doesn't touch ADR 0006's *identity decisions* (CE type, CE
+source, CE id) directly — but ADR 0006's own status-line prose asserts
+"ADR 0009's default reproduces it [0006's grammar] exactly," and ADR 0011
+*did* change ADR 0009's default template (namespace-rooted, seven tokens,
+confirmed below). So the chain ADR 0006 → "see ADR 0009" is stale once
+ADR 0009 itself moved: a reader stopping at ADR 0009 without hearing about
+0011 gets the wrong current grammar. The Step 3 status-line addition is
+therefore justified as a "follow the chain to its current end" pointer
+fix, not as evidence that ADR 0011 amends ADR 0006's substance — those are
+different claims, and only the first one is true. (ADR 0006's now-stale
+"reproduces it exactly" sentence itself is a separate finding, below —
+Step 3 does not touch it, since it lives outside the single `**Status:**`
+line this task is authorized to edit.)
+
+
+## ADR 0001 — Greenfield rebuild
+
+### Claim: "Gen-1 code is deleted (git history preserves it)"
+
+```
+$ git branch -a
+* docs/documentation-architecture
+  docs/openits-models-lockstep-pin
+  feat/health-subject-separation
+  feat/openits-emitter
+  main
+  remotes/origin/HEAD -> origin/main
+  remotes/origin/dependabot/go_modules/go-dependencies-7435be0ee5
+  remotes/origin/docs/openits-models-lockstep-pin
+  remotes/origin/main
+
+$ git log --reverse --oneline | head -5
+ed21133 chore: public baseline — vikasa-collector open-source launch
+fe729bf ci: dependabot, release-please, repo templates, SHA-pinned actions
+a5d7beb docs: contributor skills for adapter, facet, and wire-emitter work
+94786cc docs: AGENTS.md with repo rules for coding agents (CLAUDE.md symlink)
+36884ce chore(deps): bump actions/checkout in the github-actions group
+```
+
+**Verdict: UNVERIFIABLE (blocked).** No `gen2` branch exists (local or
+remote), and this repository's history starts at `ed21133 chore: public
+baseline — vikasa-collector open-source launch` — a deliberately squashed
+starting point for the open-source release. Whatever git history preserves
+gen-1, it is not reachable from this clone. This is recorded as *blocked*,
+not inherent: a private predecessor repository may exist internally with
+the full history the ADR describes, but confirming that requires access
+this environment and this audit pass do not have. Re-probe path: ask
+whether an internal (non-public) repository or branch preserves the
+pre-launch history, and check there directly.
+
+### Claim: "the openits-models dependency re-enters only behind the wire-emitter boundary (ADR 0002)"
+
+**Verdict: TRUE.** Cross-referenced against ADR 0002's probe below —
+`scripts/lint-boundary.sh` confirms only `internal/wire` imports
+openits-models.
+
+---
+
+## ADR 0002 — Collector-owned domain model + versioned wire emitters
+
+### Claim: "Adapters produce only collector-owned `sdk/model` types… CI fails if `sdk/` or `internal/vendors/` transitively import openits-models"
+
+```
+$ sed -n '1,20p' scripts/lint-boundary.sh
+#!/usr/bin/env bash
+# Boundary rule (ADR 0002): the wire model stays confined to internal/wire, so
+# a models release is always a one-package edit.
+...
+#   A. TRANSITIVE — sdk/... and internal/vendors/... must not reach the wire
+#      model by any path at all. ...
+#   B. DIRECT — no package outside internal/wire may IMPORT the wire model.
+```
+
+**Verdict: TRUE.** Same evidence as Task 4's AGENTS.md probe of this rule;
+re-confirmed here against the ADR text directly — Rule A/B match the
+Decision verbatim.
+
+### Claim: "Exactly one layer, `internal/wire/<version>`, imports openits-models"
+
+```
+$ ls internal/wire/
+emitter.go
+health
+openits
+```
+
+**Verdict: TRUE, as amended.** The literal claim (`internal/wire/<version>`,
+a directory suffixed by models version) does not match `internal/wire/openits`
+— but ADR 0010 explicitly amends this exact clause: "the emitter package is
+`internal/wire/openits`, unsuffixed. A version suffix naming a
+pseudo-version would be ceremony that documents nothing." Current code
+matches the amended description exactly, not the original. Read together
+(0002 as amended by 0010) this holds; read from 0002 alone it would not.
+
+### Claim: ADR 0002's status does not name ADR 0010 as an amendment
+
+Recorded in the supersession-integrity matrix above. **Verdict:**
+supersession-integrity DEFECT, not fixed (out of this task's authorized
+edit scope — only ADR 0006's status line may be touched).
+
+---
+
+## ADR 0003 — Stable SDK, in-tree adapters (Telegraf model)
+
+### Claim: "`sdk/model`, `sdk/adapter`, optional `sdk/transport/*` helpers"
+
+```
+$ ls -d sdk/model sdk/adapter sdk/transport sdk/transport/snmp
+sdk/model
+sdk/adapter
+sdk/transport
+sdk/transport/snmp
+```
+
+**Verdict: TRUE.**
+
+### Claim: "Registry key: `<vendor>-<device_kind>`"
+
+```
+$ grep -n 'func (d Descriptor) Key' -A 1 sdk/adapter/adapter.go
+func (d Descriptor) Key() string { return d.Vendor + "-" + d.DeviceKind }
+```
+
+**Verdict: TRUE.** Exact match.
+
+### Claim: "Contribution = PR adding `internal/vendors/<vendor>/<kind>/` plus fixtures"
+
+```
+$ find internal/vendors -type f | sort
+internal/vendors/ntcip/asc.go
+internal/vendors/ntcip/asc_test.go
+internal/vendors/ntcip/register.go
+```
+
+**Verdict: DOC WRONG.** Same defect Task 4 found in README.md for the
+identical claim: the tree is `internal/vendors/<vendor>/<kind>.go` — a
+file named for the device kind, not a `<kind>/` subdirectory. Per this
+task's scope note, this is **not fixed** — recorded as a finding for a
+human to decide whether the ADR's illustrative path was always aspirational
+or genuinely wrong.
+
+---
+
+## ADR 0004 — Pull-only; StateReader vs EventReader split by semantics
+
+### Claim: "`StateReader.Read → *model.Snapshot`… `EventReader.Fetch → []model.Event`… A `Commander` capability is reserved but dormant"
+
+```
+$ grep -n 'type StateReader\|type EventReader\|type Commander' sdk/adapter/adapter.go
+sdk/adapter/adapter.go:47:type StateReader interface {
+sdk/adapter/adapter.go:54:type EventReader interface {
+sdk/adapter/adapter.go:60:type Commander interface {
+
+$ grep -rn 'CapCommand' --include='*.go' internal/ sdk/
+sdk/adapter/registry_test.go:39:	if !a.Descriptor().Caps.Has(CapState) || a.Descriptor().Caps.Has(CapCommand) {
+sdk/adapter/adapter.go:22:	// CapCommand: implements Commander. Reserved seam; nothing dispatches
+sdk/adapter/adapter.go:24:	CapCommand
+```
+
+**Verdict: TRUE.** All three interfaces exist with the described shapes;
+`CapCommand`'s own doc comment ("Reserved seam; nothing dispatches") matches
+"reserved but dormant" verbatim in substance, and it is used only in a
+test asserting it is *not* set on the one real adapter.
+
+### Claim: "EventReader checkpointing… is deferred to the first log-shaped adapter"
+
+```
+$ grep -rln 'EventReader' --include='*.go' internal/ sdk/ | grep -v _test
+sdk/model/events.go
+sdk/adapter/adapter.go
+```
+
+**Verdict: TRUE.** `EventReader` is declared but nothing in `internal/`
+implements it — the only adapter (`ntcip-asc`) is a `StateReader`. No
+log-shaped adapter exists yet, consistent with "deferred."
+
+---
+
+## ADR 0005 — One catalog version per collector instance
+
+### Claim: "Each collector instance selects exactly one catalog version at boot (`model_version` in config), instantiating one wire emitter"
+
+```
+$ grep -n 'ModelVersion' internal/config/config.go
+	ModelVersion string   `yaml:"model_version"`
+...
+	if c.ModelVersion == "" {
+		return fmt.Errorf("model_version is required")
+
+$ grep -n 'emitters :=\|ModelVersion' internal/app/app.go
+	emitters := []wire.Emitter{openits.New(cfg.CollectorID), health.NewHealthEmitter()}
+```
+
+**Verdict: DOC RIGHT, CODE WRONG.** `cfg.ModelVersion` is checked only for
+non-emptiness and is never read anywhere else in the codebase (confirmed:
+it does not appear in `app.go`, `internal/wire/`, or anywhere the emitter
+list is built). The emitter list is hardcoded regardless of the configured
+value — setting `model_version` to any non-empty string, valid or not,
+produces byte-identical behavior. There is no selection mechanism, not even
+a trivial single-case one. The ADR states the intended architecture
+correctly (config should determine the emitter); the code has not
+implemented that causal link at all. Successor work item: either implement
+real `model_version`-based emitter selection, or validate the configured
+value against the wire package's declared version so an unrecognized value
+fails at boot per ADR 0014's own trust-boundary rule (currently it would
+not). Cross-reference: ADR 0010 explicitly discusses and defers this same
+gap ("`model_version`… keeps its boot validation… but selects from a single
+option") — see the ADR 0010 probe below for why that softer phrasing does
+not change this verdict.
+
+---
+
+## ADR 0006 — Tenant-scoped NATS subjects; CE type = catalog ce-type
+
+### Fix applied (Step 3)
+
+```diff
+-**Status:** Partially superseded by [ADR 0009](0009-configurable-subject-templates.md) (2026-07-16)
++**Status:** Partially superseded by [ADR 0009](0009-configurable-subject-templates.md) (2026-07-16)
++and further amended by [ADR 0011](0011-namespace-rooted-subject-spaces.md) (2026-08-08)
+```
+
+```
+$ grep -n '0011' docs/adr/0006-tenant-scoped-subjects.md
+4:and further amended by [ADR 0011](0011-namespace-rooted-subject-spaces.md) (2026-08-08)
+```
+
+### Claim (status prose, not touched by Step 3): "ADR 0009's default reproduces it [ADR 0006's grammar] exactly"
+
+```
+$ grep -n 'DefaultTemplate' internal/subject/subject.go
+const DefaultTemplate = "{namespace}.{region}.{agency}.{agency_unit}.{service}.{device_id}.{event}"
+```
+
+**Verdict: DOC WRONG.** ADR 0006's original grammar was
+`openits.<agency>.<site>.<service>.<event>.v<n>` (five tokens, fixed
+`openits` root). ADR 0009's *original* default reproduced that. ADR 0011
+then changed ADR 0009's default to the seven-token, namespace-rooted
+grammar shown above — which is what `DefaultTemplate` is today. So "ADR
+0009's default reproduces it exactly" is stale: true of ADR 0009 as
+written in 2026-07-16, false of ADR 0009 (and the code) today. Per this
+task's scope note: not fixed — this sentence lives outside the single
+`**Status:**` line Step 3 is authorized to edit. Recorded as a finding.
+
+### Claim (status prose): "CE `source` = `//<agency>/<site>/<device-id>`… retained unchanged"
+
+```
+$ sed -n '85,99p' internal/cloudevents/subject.go
+func SourceFor(t Tenant, deviceKind, deviceID string) string {
+...
+	return "urn:openits:" + kind + ":" + t.Region + ":" + t.Agency + ":" + t.AgencyUnit + ":" + id
+```
+
+**Verdict: DOC WRONG.** The actual CE source is
+`urn:openits:<entity-kind>:<region>:<agency>:<agency_unit>:<id>` —
+different prefix (`urn:openits:` vs `//`), an added entity-kind segment, an
+added `region` token, an added `agency_unit` token, and `site` demoted from
+a URN segment to only a device-less fallback `id`. This is not "retained
+unchanged" by any reading. Tracing where this format is actually decided:
+
+```
+$ grep -rn 'ce-source\|CE `source`\|urn:openits' docs/adr/*.md
+docs/adr/0006-tenant-scoped-subjects.md:7:catalog ce-type verbatim, CE `source` = `//<agency>/<site>/<device-id>`,
+docs/adr/0006-tenant-scoped-subjects.md:20:Device identity lives in CE `source` (`//<agency>/<site>/<device-id>`), not
+docs/adr/0009-configurable-subject-templates.md:22:catalog ce-type verbatim, and CE `source` is `//<agency>/<site>/<device-id>`.
+
+$ grep -n 'urn:openits\|ce-source' docs/specs/2026-07-21-openits-models-emitter-design.md
+161:- `ce-source`: becomes the profile URN
+162:  `urn:openits:<entity-kind>:<region>:<agency>:<unit>:<id>`, replacing the
+```
+
+**No ADR documents the current format at all** — its only written source is
+`docs/specs/2026-07-21-openits-models-emitter-design.md`, one of the six
+specs this documentation-architecture plan deletes after harvest (§9 of
+`docs/specs/2026-08-17-documentation-architecture-design.md` names it
+explicitly). This is a second, distinct finding on top of the DOC WRONG
+above:
+
+**Verdict: HOMELESS RULE.** The rule actually governing CE-source
+construction today (the five-segment `urn:openits:` scheme with
+region/agency/agency_unit) needs an ADR — or a correction folded into an
+existing one — before that spec is deleted, or the rule loses its only
+durable home while two *different*, wrong descriptions remain permanently
+enshrined in ADR 0006 and ADR 0009. Not fixed here (ADR bodies are out of
+scope for this task); flagged for the harvest step (Task 6/7).
+
+---
+
+## ADR 0007 — Collector-owned health event schema
+
+### Claim: "Health events use a small collector-owned versioned schema with its own ce-type namespace (`openits-collector.health.*.v1`), JSON-encoded, documented in the collector's AsyncAPI. They… never pass through the openits-models emitter."
+
+```
+$ grep -n 'openits-collector' internal/wire/health/health.go
+2:// (ADR 0007): ce-types openits-collector.health.*.v1, JSON bodies.
+22:	ceTypeDeviceStatusChanged = "openits-collector.health.device-status-changed.v1"
+23:	ceTypeCollectorStarted    = "openits-collector.health.collector-started.v1"
+
+$ grep -rn 'openits-models' internal/wire/health/*.go
+(no output)
+
+$ grep -n 'openits-collector' asyncapi.yaml
+47:  openits-collector.health.device-status-changed.v1:
+59:  openits-collector.health.collector-started.v1:
+
+$ grep -n 'emitters :=' internal/app/app.go
+	emitters := []wire.Emitter{openits.New(cfg.CollectorID), health.NewHealthEmitter()}
+```
+
+**Verdict: TRUE.** ce-type namespace matches exactly; `internal/wire/health`
+never imports openits-models (empty grep); both health ce-types are
+documented in the repo's own `asyncapi.yaml`; and the health emitter is
+registered as a distinct, separate `wire.Emitter` from the openits one —
+it does not route through it.
+
+---
+
+## ADR 0008 — Fixture-golden testing bar for adapters
+
+### Claim: "table-driven synth differ tests with fixed timestamps"
+
+```
+$ grep -n 'var t0' internal/synth/signal_test.go
+internal/synth/signal_test.go:10:var t0 = time.Date(2026, 7, 12, 10, 0, 0, 0, time.UTC)
+```
+
+**Verdict: TRUE.** One fixed, package-level `t0` shared across all of
+`internal/synth`'s test files (same package); every differ test builds
+snapshots by offsetting from it, never `time.Now()`.
+
+### Claim: "emitter goldens (domain event → exact bytes + ce-type)"
+
+```
+$ grep -n 'func TestGoldens' internal/wire/openits/golden_test.go
+func TestGoldens(t *testing.T) {
+```
+
+**Verdict: TRUE.**
+
+### Claim: "emitter catalog-conformance (every producible ce-type must exist in the pinned models release's asyncapi.yaml)"
+
+```
+$ grep -rln 'asyncapi\|[Cc]onformance' internal/wire/openits/*.go
+(no output)
+
+$ grep -rln 'asyncapi\|[Cc]onformance' internal/wire/health/*.go
+internal/wire/health/conformance_test.go
+
+$ sed -n '46,50p' internal/wire/health/conformance_test.go
+func loadAsyncAPI(t *testing.T) asyncAPI {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "asyncapi.yaml"))
+
+$ grep -n '^  openits' asyncapi.yaml
+  openits-collector.health.device-status-changed.v1:
+  openits-collector.health.collector-started.v1:
+
+$ find /home/josh/go/pkg/mod/github.com/\!vikasa2\!m/openits-models@v0.2.3-0.20260807005833-235e8780f44c -iname 'asyncapi*'
+.../tools/yang-proto-gen/asyncapi.go
+.../tools/yang-proto-gen/asyncapi_test.go
+.../bindings/nats/asyncapi.yaml
+```
+
+**Verdict: DOC RIGHT, CODE WRONG.** The only conformance test in the repo
+(`internal/wire/health/conformance_test.go`) checks the **health** emitter's
+ce-types against the collector's own local `asyncapi.yaml` — which
+documents only `openits-collector.*` channels, none of the catalog's
+`openits.*` ones. The `openits` emitter (`internal/wire/openits/`), whose
+ce-types actually come from the externally-versioned catalog this rule is
+about, has no conformance test at all against the pinned openits-models
+release's own `bindings/nats/asyncapi.yaml` — the two tests that sound
+closest (`TestCETypes_IsCompleteSortedAndDeduped`,
+`TestCETypes_CoversEveryRoutableCEType`) check the emitter's `CETypes()`
+against its own internal `ceTypeFor` routing table, an entirely
+self-referential check that could never catch a ce-type genuinely absent
+from openits-models' catalog. The ADR states the correct bar (catch drift
+between what the collector claims to emit and what the pinned catalog
+actually defines); the code does not meet it for the emitter it matters
+most for. Successor work item, not a doc edit.
+
+### Claim: "byte-literal subject goldens"
+
+```
+$ grep -n 'func TestDefaultTemplateGolden' internal/subject/subject_test.go
+func TestDefaultTemplateGolden(t *testing.T) {
+```
+
+**Verdict: TRUE.**
+
+### Claim: "the CI boundary lint (ADR 0002)"
+
+**Verdict: TRUE.** Cross-referenced against the ADR 0002 probe above.
+
+---
+
+## ADR 0009 — Operator-configurable subject templates
+
+### Claim: "Supersedes: the subject-grammar half of ADR 0006"
+
+**Verdict: TRUE (bidirectional).** Confirmed in the supersession-integrity
+matrix — ADR 0006's status (pre-fix) already named ADR 0009.
+
+### Claim: ADR 0009's status does not name ADR 0011 as amending it
+
+Recorded in the supersession-integrity matrix above. **Verdict:**
+supersession-integrity DEFECT, not fixed (out of this task's authorized
+edit scope).
+
+### Claim: "Omitting the config reproduces ADR 0006's scheme byte-for-byte"
+
+**Verdict: DOC WRONG.** Same underlying fact as the ADR 0006 finding above:
+ADR 0011 changed the default template, so omitting config today reproduces
+the *0011* grammar, not ADR 0006's original five-token scheme. Not fixed —
+finding for a human.
+
+### Claim: "CE `source` is `//<agency>/<site>/<device-id>`" (restated from ADR 0006)
+
+**Verdict: DOC WRONG.** Identical finding to ADR 0006's CE-source claim
+above — same code (`SourceFor`), same divergence, same HOMELESS RULE
+companion finding (the real rule's only source is a spec being deleted).
+Not fixed — finding for a human.
+
+### Claim: "this required `wire.Emitter` to declare `CETypes()`"
+
+```
+$ grep -n 'CETypes' internal/wire/emitter.go
+	// CETypes returns every ce-type this emitter can produce, sorted.
+	CETypes() []string
+```
+
+**Verdict: TRUE.** Declared on the shared `wire.Emitter` interface;
+implemented by both `internal/wire/health` and `internal/wire/openits`.
+
+---
+
+## ADR 0010 — Track openits-models HEAD in lockstep until v1
+
+### Claim: "Amends: 0002 (its dependency-pinning clause only…). 0005 stands as written."
+
+**Verdict:** see the supersession-integrity matrix. ADR 0002's status does
+not reflect being amended (defect, not fixed); ADR 0005 correctly has no
+reverse pointer since 0010 declares it untouched (no defect there).
+
+### Claim: "the emitter package is `internal/wire/openits`, unsuffixed"
+
+```
+$ ls internal/wire/
+emitter.go
+health
+openits
+```
+
+**Verdict: TRUE.**
+
+### Claim: "`scripts/lint-boundary.sh`… matches on the repo name" / pin is "a real, reproducible module version… pseudo-version"
+
+```
+$ grep -n 'Matched on the REPO name' -A 2 scripts/lint-boundary.sh
+26:# Matched on the REPO name, not a full import path. openits-models declares
+27:# `module github.com/Vikasa2M/openits-models` today, but the model layer is
+
+$ grep -n 'openits-models' go.mod
+	github.com/Vikasa2M/openits-models v0.2.3-0.20260807005833-235e8780f44c
+```
+
+**Verdict: TRUE.** Matches the pseudo-version shape
+(`vX.Y.Z-0.<timestamp>-<commit>`) and the repo-name-based lint match
+exactly as described.
+
+### Claim: "`model_version` in config… keeps its boot validation… but selects from a single option"
+
+**Verdict: DOC RIGHT, CODE WRONG** — same underlying gap as ADR 0005's
+finding above, not a separate one. ADR 0010's phrasing ("selects from a
+single option") is defensible as a description of the *outcome* (there is
+currently only one wire emitter, and it is the one instantiated) but the
+code implements no selection at all — not even a trivial one keyed off the
+configured value. Recorded once, cross-referenced from both ADRs, so it is
+fixed once rather than opened as two duplicate work items.
+
+---
+
+## ADR 0011 — Namespace-rooted subject spaces, one stream per namespace
+
+### Claim: "Amends: 0009… 0006 and 0007 stand as written"
+
+**Verdict:** see the supersession-integrity matrix and its reconciliation
+note. ADR 0009's status does not reflect this amendment (defect, not
+fixed); the 0006/0007 "stand as written" claims are accurate for the
+identity decisions specifically (0011 genuinely does not touch CE type/id),
+though ADR 0006's own text about CE *source* was already stale for
+unrelated reasons (the homeless-rule finding above), which 0011 neither
+causes nor claims responsibility for.
+
+### Claim: the default grammar is `{namespace}.{region}.{agency}.{agency_unit}.{service}.{device_id}.{event}`
+
+```
+$ grep -n 'DefaultTemplate' internal/subject/subject.go
+const DefaultTemplate = "{namespace}.{region}.{agency}.{agency_unit}.{service}.{device_id}.{event}"
+```
+
+**Verdict: TRUE.** Character-for-character match.
+
+### Claim: "`Binding()` becomes `Bindings()`"… "The `subject.stream` config key is removed"
+
+```
+$ grep -n 'func.*Bindings' internal/subject/subject.go
+func (t *Template) Bindings(ceTypes []string) ([]string, error) {
+
+$ grep -in 'stream' internal/config/config.go
+(no output referencing a stream config field)
+```
+
+**Verdict: TRUE.** `Bindings` (plural) exists and returns `[]string`; no
+`stream` config field exists anywhere in `internal/config/config.go`.
+
+### Claim: stream-name derivation example, `openits.us-ga.metro.d01.>` → `OPENITS-US-GA-METRO-D01`
+
+```
+$ sed -n '40,43p' internal/publish/publish.go
+func StreamNameForBinding(binding string) string {
+	trimmed := strings.TrimSuffix(strings.TrimSuffix(binding, ">"), ".")
+	return strings.ToUpper(strings.ReplaceAll(trimmed, ".", "-"))
+}
+```
+
+**Verdict: TRUE.** Applying the function to the ADR's own example
+reproduces the ADR's own stated output exactly.
+
+### Claim: "a bad grammar is still a refusal to start… `config.Load` keeps an early structural check (`ValidateBindable`)"
+
+```
+$ grep -n 'ValidateBindable' internal/subject/subject.go internal/config/config.go
+```
+(confirmed present in both files per Task 4's collector.yaml probe of the
+same mechanism, re-checked here against the ADR text directly)
+
+**Verdict: TRUE.**
+
+---
+
+## ADR 0012 — Host-executed updates; the collector participates but never updates itself
+
+### Claim: "It reports its version at boot, on the bus (`CollectorStarted` already carries it)"
+
+```
+$ grep -n 'Version' sdk/model/health.go
+	Version string
+
+$ sed -n '84,86p' internal/app/app.go
+	sink([]model.Event{model.CollectorStarted{
+		Base: model.Base{OccurredAt: time.Now().UTC()}, Version: version,
+```
+
+**Verdict: TRUE.**
+
+### Claim: "It exposes a local readiness signal a supervisor can gate on" / "It can be told the version it is expected to be running, and reports loudly on the bus when it is not"
+
+```
+$ grep -rln 'readiness\|Readiness' --include='*.go' .
+(no output)
+
+$ grep -rln 'TargetVersion\|PinnedVersion\|VersionMismatch\|VersionDrift\|cohort' --include='*.go' .
+(no output)
+```
+
+**Verdict: DOC RIGHT, CODE WRONG.** Neither mechanism exists anywhere in
+the codebase. The ADR's own Consequences section is self-aware about the
+first one — "The readiness signal becomes load-bearing and must be built
+before any unattended rollout" — which reads as forward-looking rather
+than a claim of current implementation, but the Decision section's
+numbered list is phrased in the present tense alongside item 1 (which
+*is* implemented), so a reader taking the Decision section at face value
+would believe all three participate today. Recorded as a successor work
+item (matches this repo's own git history: the two most recent doc
+commits before this branch are titled "management surface design and
+resolve the readiness signal" and "target a hardened industrial Linux box
+and settle the host-ownership hinge" — this is acknowledged, in-progress
+work, not a silent gap).
+
+---
+
+## ADR 0013 — Absence of evidence is never a state change
+
+### Claim: the Engine mechanism ("A failed or absent facet read emits nothing and leaves previous state untouched")
+
+**Verdict: TRUE.** Already probed directly against
+`internal/synth/synth.go`'s `Apply` in Task 4's AGENTS.md section (the
+`snap.Facets`/`snap.Errors` split); re-confirmed here against the ADR text,
+which matches the mechanism exactly.
+
+### Claim: "Every differ needs a failed-read test, and all four current facets have one"
+
+```
+$ grep -n 'func (CCTVStatus) FacetKind\|func (SignalStatus) FacetKind\|func (DetectorSamples) FacetKind\|func (DMSStatus) FacetKind\|func (TrafficIntervals) FacetKind\|func (ZoneIncidents) FacetKind\|func (ZoneIntervals) FacetKind\|func (FaultSet) FacetKind' sdk/model/*.go
+sdk/model/cctv.go:78:func (CCTVStatus) FacetKind() Kind { return KindCCTVStatus }
+sdk/model/signal.go:15:func (SignalStatus) FacetKind() Kind { return KindSignalStatus }
+sdk/model/detector.go:27:func (DetectorSamples) FacetKind() Kind { return KindDetectorSamples }
+sdk/model/dms.go:189:func (DMSStatus) FacetKind() Kind { return KindDMSStatus }
+sdk/model/trafficsensor.go:62:func (TrafficIntervals) FacetKind() Kind { return KindTrafficIntervals }
+sdk/model/perception.go:145:func (ZoneIncidents) FacetKind() Kind { return KindZoneIncidents }
+sdk/model/perception.go:186:func (ZoneIntervals) FacetKind() Kind { return KindZoneIntervals }
+sdk/model/fault.go:21:func (FaultSet) FacetKind() Kind { return KindFaultSet }
+```
+
+**Verdict: DOC WRONG.** Eight facet kinds exist today (signal, fault,
+detector, DMS, CCTV, traffic-intervals, zone-incidents, zone-intervals),
+not four — matching the eight differs Task 4 already confirmed registered
+in `internal/app/app.go`. The four failed-read tests the ADR names
+(`TestFailedFacetSuspendsDiffing`, `TestFailedFaultReadNeverClears`,
+`TestFailedDetectorReadEmitsNothing`, `TestDMSFailedReadEmitsNothing`) do
+exist and do cover what they claim — but "all four current facets" is
+stale as a count: it was accurate when this rule predated the ADR (before
+CCTV/traffic-sensor/perception facets existed) and was carried into the
+ADR's text verbatim on the same day those other facets were already
+registered in `app.go`. Task 4 separately found (AGENTS.md testing-bar
+probe) that the four newer facets rely on the shared `Engine.Apply`
+mechanism rather than their own dedicated failed-read tests, which is
+legitimate coverage — but the ADR's sentence asserts a stale fact (four
+facets exist) to justify it, not the true one (eight facets exist, four
+have dedicated tests, four rely on the shared mechanism). Not fixed —
+finding for a human.
+
+---
+
+## ADR 0014 — Config is the trust boundary; boot fails on the unrecognized
+
+### Claim: every named boot-time validation
+
+```
+$ grep -n 'reg.Known\|duplicate device id\|at least one device is required\|id is required\|poll_interval must be positive\|model_version is required' internal/config/config.go
+145:		if !reg.Known(d.Vendor, d.DeviceKind) {
+132:		return fmt.Errorf("at least one device is required")
+142:			return fmt.Errorf("duplicate device id %q", d.ID)
+138:			return fmt.Errorf("devices[%d]: id is required", i)
+149:			return fmt.Errorf("device %q: poll_interval must be positive", d.ID)
+110:		return fmt.Errorf("model_version is required")
+```
+
+**Verdict: TRUE.** Every named check (unknown vendor/device-kind, tenant
+token validation, unbindable template, missing/malformed `collector_id`,
+missing `model_version`, zero devices, duplicate device id, missing device
+id, negative `poll_interval`) is present and matches the ADR's description.
+Tenant-token and `ValidateBindable` checks were already confirmed via Task
+4's collector.yaml probes and ADR 0011's probe above; re-cited here rather
+than re-run.
+
+### Claim: "One sanctioned exception, not yet implemented… planned as fleet-plan Phase 1 (`docs/plans/2026-08-09-fleet-deployment.md`)"
+
+```
+$ ls docs/plans/2026-08-09-fleet-deployment.md
+docs/plans/2026-08-09-fleet-deployment.md
+```
+
+**Verdict: TRUE.** The ADR explicitly self-labels this exception "not yet
+implemented" (present-tense honesty, not a completeness claim), and the
+plan file it names as the exception's scope exists and is one of the two
+specs/plans this documentation-architecture pass keeps rather than deletes
+(`docs/specs/2026-08-17-documentation-architecture-design.md` §9: "Kept:
+`2026-08-09-fleet-deployment.md` — not built").
+
+---
+
+## Verdict tally (Task 5 — ADRs)
+
+Counted directly from the summary table below (`awk` over the Verdict
+column, not eyeballed):
+
+```
+$ awk '/^## Summary table \(Task 5/,0' <ledger> | grep -E '^\| 00' \
+    | awk -F'|' '{print $4}' | sed 's/^ *//;s/ *$//' | sort | uniq -c
+      3 DOC RIGHT, CODE WRONG
+      1 DOC RIGHT, CODE WRONG (same as 0005)
+      6 DOC WRONG
+      1 Fixed (Step 3)
+      1 HOMELESS RULE
+      1 See 0002/0005 rows
+      1 See 0009 row
+      2 Supersession-integrity DEFECT
+     22 TRUE
+      1 TRUE (as amended by 0010)
+      1 TRUE (bidirectional)
+      1 UNVERIFIABLE (blocked)
+```
+
+TRUE: 24 (22 plain + 1 "as amended by 0010" + 1 "bidirectional") ·
+DOC WRONG: 6 · DOC RIGHT, CODE WRONG: 4 probed instances, 3 distinct
+successor work items (ADR 0005's and ADR 0010's rows both flag the same
+`model_version`-selection gap, counted once as work) · UNVERIFIABLE
+(blocked): 1 · HOMELESS RULE: 1 · Supersession-integrity DEFECT (a
+category this task introduces because the fixed verdict vocabulary has no
+slot for it; both instances left unfixed per this task's ADR-editing
+scope): 2 (ADR 0002/0010, ADR 0009/0011).
+
+38 distinct probed claims total (41 table rows, less 2 pure
+cross-references — "See 0002/0005 rows," "See 0009 row" — and 1 row that
+is the Step 3 edit-verification rather than a truth probe), across 14
+ADRs.
+
+## Summary table (Task 5 — ADRs)
+
+| ADR | Claim | Verdict |
+|---|---|---|
+| 0001 | "Gen-1 code is deleted (git history preserves it)" | UNVERIFIABLE (blocked) |
+| 0001 | "openits-models dependency re-enters only behind the wire-emitter boundary" | TRUE |
+| 0002 | Adapters produce only `sdk/model`; CI boundary lint | TRUE |
+| 0002 | "Exactly one layer, `internal/wire/<version>`, imports openits-models" | TRUE (as amended by 0010) |
+| 0002 | Status omits ADR 0010 as amending it | Supersession-integrity DEFECT |
+| 0003 | `sdk/model`, `sdk/adapter`, `sdk/transport/*` exist | TRUE |
+| 0003 | Registry key `<vendor>-<device_kind>` | TRUE |
+| 0003 | `internal/vendors/<vendor>/<kind>/` directory layout | DOC WRONG |
+| 0004 | `StateReader`/`EventReader`/`Commander` interfaces; `CapCommand` dormant | TRUE |
+| 0004 | EventReader checkpointing deferred | TRUE |
+| 0005 | `model_version` selects the wire emitter at boot | DOC RIGHT, CODE WRONG |
+| 0006 | Status names 0009 but not 0011 | Fixed (Step 3) |
+| 0006 | "ADR 0009's default reproduces it exactly" | DOC WRONG |
+| 0006 | CE source "retained unchanged" as `//<agency>/<site>/<device-id>` | DOC WRONG |
+| 0006/0009 | Current CE-source rule's only home is a spec being deleted | HOMELESS RULE |
+| 0007 | Health ce-type namespace, JSON, own AsyncAPI, never through openits emitter | TRUE |
+| 0008 | Fixed timestamps in synth differ tests | TRUE |
+| 0008 | Emitter goldens | TRUE |
+| 0008 | Emitter catalog-conformance against pinned models release | DOC RIGHT, CODE WRONG |
+| 0008 | Byte-literal subject goldens | TRUE |
+| 0008 | CI boundary lint | TRUE |
+| 0009 | Supersedes ADR 0006 (subject-grammar half) | TRUE (bidirectional) |
+| 0009 | Status omits ADR 0011 as amending it | Supersession-integrity DEFECT |
+| 0009 | "Omitting config reproduces ADR 0006's scheme byte-for-byte" | DOC WRONG |
+| 0009 | CE source claim (restated) | DOC WRONG |
+| 0009 | `wire.Emitter` declares `CETypes()` | TRUE |
+| 0010 | Amends 0002; 0005 stands as written | See 0002/0005 rows |
+| 0010 | `internal/wire/openits`, unsuffixed | TRUE |
+| 0010 | lint-boundary matches repo name; pseudo-version pin | TRUE |
+| 0010 | `model_version` "selects from a single option" | DOC RIGHT, CODE WRONG (same as 0005) |
+| 0011 | Amends 0009; 0006/0007 stand as written | See 0009 row |
+| 0011 | Default grammar `{namespace}.{region}.{agency}.{agency_unit}.{service}.{device_id}.{event}` | TRUE |
+| 0011 | `Bindings()` plural; `subject.stream` config key removed | TRUE |
+| 0011 | Stream-name derivation example | TRUE |
+| 0011 | `ValidateBindable` at boot | TRUE |
+| 0012 | Reports version at boot via `CollectorStarted` | TRUE |
+| 0012 | Readiness signal / expected-version reporting | DOC RIGHT, CODE WRONG |
+| 0013 | Engine mechanism (absence never a state change) | TRUE |
+| 0013 | "all four current facets" have a failed-read test | DOC WRONG |
+| 0014 | Every named boot-time validation | TRUE |
+| 0014 | Sanctioned broker-startup exception, not yet implemented | TRUE |
+
