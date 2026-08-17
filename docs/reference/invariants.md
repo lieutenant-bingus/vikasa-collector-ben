@@ -22,13 +22,14 @@ left blank, so the gap is visible instead of implied.
 | Rule | Decided by | Enforced by |
 |---|---|---|
 | Adapters and `sdk/` never import openits-models | ADR 0002 | `scripts/lint-boundary.sh` |
-| openits-models is pinned at main HEAD; never a `replace` directive | ADR 0010 | `scripts/lint-boundary.sh` |
+| The openits-models pin carries no `replace` directive | ADR 0010 | `scripts/lint-boundary.sh` |
+| The openits-models pin is main HEAD, not a stale tag | ADR 0010 | Review (manual) |
 | Absence of evidence is never a state change | ADR 0013 | `internal/synth/synth.go`, `TestFailedFacetSuspendsDiffing`, `TestFailedFaultReadNeverClears`, `TestFailedDetectorReadEmitsNothing`, `TestDMSFailedReadEmitsNothing` |
 | Config is the trust boundary; boot fails on the unrecognized | ADR 0014 | `internal/config` |
-| Subjects are operator-configurable; the CloudEvents envelope stays canonical | ADR 0009, ADR 0011, ADR 0015 | `internal/subject`, `internal/cloudevents` |
+| Subjects are operator-configurable; the CloudEvents envelope stays canonical | ADR 0009, ADR 0011, ADR 0015 | `internal/subject`, `internal/cloudevents`, `internal/config` |
 | Every mapped ce-type has a byte-exact golden | ADR 0008 | `internal/wire/openits/golden_test.go` |
 | No fixtures, no merge | ADR 0008 | Review (manual) — automated by the conformance kit in successor A |
-| Every guard must be shown to fail | Practice (no ADR; promoted here) | `scripts/lint-boundary.sh` |
+| Every guard must be shown to fail | Practice (no ADR; promoted here) | `make lint-boundary-selftest`, `make lint-boundary-replace-selftest` |
 
 ## Adapters and `sdk/` never import openits-models
 
@@ -44,7 +45,7 @@ path at all) and the direct case (Rule B: does any package outside
 `internal/wire` import it directly), and `make check` runs it on every CI
 build.
 
-## openits-models is pinned at main HEAD; never a `replace` directive
+## The openits-models pin carries no `replace` directive
 
 Decided by [ADR 0010](../adr/0010-openits-models-lockstep-pre-v1.md).
 
@@ -53,6 +54,22 @@ Violating this looks like a `replace github.com/Vikasa2M/openits-models =>
 tempts you toward when the two repos are moving in lockstep pre-v1.
 `scripts/lint-boundary.sh`'s Rule C checks `go.mod` for exactly that and
 fails the build if it finds one.
+
+## The openits-models pin is main HEAD, not a stale tag
+
+Decided by [ADR 0010](../adr/0010-openits-models-lockstep-pre-v1.md).
+
+This is a separate rule from "no `replace` directive," not a restatement of
+it, because the two halves have genuinely different enforcement status. A
+pin to an old tagged release with no `replace` directive at all would pass
+Rule C cleanly — the lint checks the *shape* of the dependency line, not
+its freshness. Violating this looks like `go.mod` quietly falling behind
+openits-models' `main` for weeks after a `go get` was skipped, so the
+catalog the collector encodes against drifts from the catalog the rest of
+the fleet assumes. Nothing in CI catches that today; it is caught, if at
+all, by a maintainer noticing the pseudo-version's commit hash or date is
+stale during review. Marked `Review (manual)` rather than left implied by
+the row above.
 
 ## Absence of evidence is never a state change
 
@@ -118,6 +135,26 @@ built by `SourceFor`, and `ce-id` is deterministic — built in
 contract, not this repo's; see its `ce-id-spec.md`. Deterministic does not
 mean "a bare content hash."
 
+**This is architectural separation as of today, not a regression-tested
+boundary.** `internal/subject` and `internal/cloudevents` genuinely do not
+import each other, but nothing scans the import graph or the code shape to
+keep it that way — contrast the row above, where the lint scans the whole
+import graph for future violations, or the absence-of-evidence row, where
+the shared `Apply` loop makes a violation structurally impossible. A future
+PR that derived `ce-source` from a rendered subject string, or vice versa,
+would pass every check in this repo today. One real, narrower choke point
+does exist and is worth citing precisely rather than folding into a vague
+"internal/subject" claim: `internal/subject/subject.go`'s own comment
+states that `config.Load` is "the authoritative gate" for token
+strictness — `subject.New` deliberately only enforces the permissive
+NATS-subject character rule and relies on `Config.validate` having already
+run `cloudevents.Tenant.Validate()`'s stricter `^[a-z0-9][a-z0-9-]*$` check
+first, so a `*config.Config` that bypassed `config.Load` could reach
+`subject.New` with a value legal for the subject but unparseable in the
+URN. `internal/config` is cited above for exactly that reason: it is the
+one place today that actually closes that specific gap, not a stand-in for
+enforcing the broader "never derive one from the other" rule.
+
 ## Every mapped ce-type has a byte-exact golden
 
 Decided by [ADR 0008](../adr/0008-fixture-golden-testing-bar.md).
@@ -156,12 +193,20 @@ indistinguishable from one that can never fail — a check that has never
 been seen to catch anything is not known to be a check. Violating this
 looks like adding a guard (a lint rule, a boot-time validation) and never
 writing the test that deliberately trips it, so a future refactor could
-silently defang the guard and nothing would notice. `scripts/lint-boundary.sh`
-is built specifically to make this testable: `LINT_FORBIDDEN` and
-`LINT_GOMOD` are override hooks that let a test point the same rule at a
-fixture guaranteed to violate it. `make lint-boundary-selftest` points
-Rule A at `gosnmp`, a dependency `sdk/` genuinely has, and fails the build
-unless the lint flags it; `make lint-boundary-replace-selftest` points
-Rule C at a throwaway `go.mod` fixture that does carry a `replace`
-directive, and fails the build unless the lint flags that too. Both run as
-part of `make check`, alongside the lint itself.
+silently defang the guard and nothing would notice.
+
+The enforcers are the two Makefile targets themselves, not
+`scripts/lint-boundary.sh` — the script is the thing *under test* by these
+targets, and citing it here would mean the cell kept passing even if both
+targets were deleted, so long as the script file still existed. That is
+exactly the failure mode this row exists to catch, so the row names the
+actual guards-of-the-guard: `make lint-boundary-selftest` points Rule A at
+`gosnmp`, a dependency `sdk/` genuinely has, and fails the build unless the
+lint flags it; `make lint-boundary-replace-selftest` points Rule C at a
+throwaway `go.mod` fixture that does carry a `replace` directive, and
+fails the build unless the lint flags that too. Both are wired into
+`check:` in the Makefile and run as part of `make check`, alongside the
+lint itself. Both work by pointing the *same* rule at `scripts/lint-boundary.sh`'s
+`LINT_FORBIDDEN`/`LINT_GOMOD` override hooks and a fixture guaranteed to
+violate it — the script is the mechanism the targets exercise, not the
+enforcer of this row's rule.

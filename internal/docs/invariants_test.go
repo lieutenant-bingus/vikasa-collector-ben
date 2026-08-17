@@ -8,9 +8,6 @@ import (
 	"testing"
 )
 
-// repoRoot is the module root relative to this package's directory.
-const repoRoot = "../.."
-
 var backtickRe = regexp.MustCompile("`([^`]+)`")
 
 // manualEscape marks a rule that no automated check enforces. It is spelled
@@ -24,7 +21,7 @@ func tableRows(t *testing.T, src string) [][]string {
 	t.Helper()
 	var rows [][]string
 	seenHeader := false
-	for _, line := range strings.Split(src, "\n") {
+	for line := range strings.SplitSeq(src, "\n") {
 		line = strings.TrimSpace(line)
 		if !strings.HasPrefix(line, "|") {
 			continue
@@ -78,7 +75,8 @@ func TestInvariantsTableNamesRealEnforcers(t *testing.T) {
 
 // assertEnforcerExists resolves one backticked enforcer. A token containing a
 // slash is a path (file or directory); a token starting with "Test" is a Go
-// test function that must exist somewhere in the tree.
+// test function that must exist somewhere in the tree; a token starting with
+// "make " is a Makefile target that must be defined in the Makefile.
 func assertEnforcerExists(t *testing.T, rule, name string) {
 	t.Helper()
 	switch {
@@ -90,9 +88,26 @@ func assertEnforcerExists(t *testing.T, rule, name string) {
 		if !testFuncExists(t, name) {
 			t.Errorf("rule %q names test %q, which is not defined anywhere", rule, name)
 		}
+	case strings.HasPrefix(name, "make "):
+		target := strings.TrimPrefix(name, "make ")
+		if !makeTargetExists(t, target) {
+			t.Errorf("rule %q names make target %q, which is not defined in the Makefile", rule, name)
+		}
 	default:
-		t.Errorf("rule %q names enforcer %q, which is neither a path nor a Test function", rule, name)
+		t.Errorf("rule %q names enforcer %q, which is neither a path, a Test function, nor a make target", rule, name)
 	}
+}
+
+// makeTargetExists reports whether the Makefile defines the named target
+// (a line of the form "target:" or "target: prereqs").
+func makeTargetExists(t *testing.T, target string) bool {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(repoRoot, "Makefile"))
+	if err != nil {
+		t.Fatalf("read Makefile: %v", err)
+	}
+	targetRe := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(target) + `:`)
+	return targetRe.Match(b)
 }
 
 func testFuncExists(t *testing.T, fn string) bool {
