@@ -129,8 +129,9 @@ components:
       summary: The collector booted.
       description: |
         Emitted once at startup, before any device is polled. The CE source is
-        the cabinet itself (//<agency>/<site>) with no device segment, since
-        the subject of the event is the collector rather than a device.
+        urn:openits:collector:<region>:<agency>:<agency_unit>:<site> — the
+        collector is the subject of its own event, so SourceFor substitutes
+        the tenant's site for the id it has no device to supply.
       headers:
         $ref: '#/components/schemas/cloudEventHeaders'
       payload:
@@ -155,21 +156,29 @@ components:
         ce-type:
           type: string
           description: |
-            Schema identity, verbatim. Note this is NOT the NATS subject: the
-            subject splices agency/site in after the first token.
+            Schema identity, verbatim. Note this is NOT the NATS subject: see
+            this file's header for the subject grammar, which the addresses
+            below are asserted against.
         ce-id:
           type: string
           description: |
-            Content-addressed SHA-256 over (type, source, occurred-at, data).
-            Identical inputs yield an identical id, so JetStream dedup holds
-            across collector restarts.
+            Deterministic id per openits-models' ce-id-spec.md, NOT a bare
+            content hash: digest = SHA-256(source ‖ ce-type ‖ stable-time ‖
+            payload-bytes), then id = ULID(timestamp = stable-time-ms,
+            randomness = digest[0:10]), rendered as 26-character Crockford
+            base32 (internal/cloudevents.EventID). stable-time is the event's
+            occurred-at. Identical inputs yield an identical id, so JetStream
+            dedup holds across collector restarts.
         ce-source:
           type: string
           description: |
-            //<agency>/<site>/<device-id>, or //<agency>/<site> for events
-            about the collector itself. Device identity lives here rather than
-            in the subject, which would explode subject cardinality for no
-            routing benefit.
+            The profile URN (ADR 0015):
+            urn:openits:<entity-kind>:<region>:<agency>:<agency_unit>:<id>,
+            built by internal/cloudevents.SourceFor. entity-kind is the
+            profile's vocabulary, not the collector's device kind (asc becomes
+            controller, dms becomes sign). Device-less events — collector
+            self-events — substitute the tenant's site as the id, so the id
+            slot is always present.
         ce-time:
           type: string
           format: date-time
