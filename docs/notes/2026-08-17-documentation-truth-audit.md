@@ -777,9 +777,9 @@ individual command/output pairs behind each cell)
 | X (amends/supersedes) | Y | Y's Status/body names X? | Verdict |
 |---|---|---|---|
 | ADR 0009 supersedes (subject-grammar half of) ADR 0006 | ADR 0006 | Yes — `**Status:** Partially superseded by ADR 0009` | TRUE (bidirectional) |
-| ADR 0010 amends ADR 0002 (dependency-pinning clause) | ADR 0002 | No — ADR 0002's Status is bare `Accepted (2026-07-12)`, no mention of 0010 anywhere in the file | Supersession-integrity DEFECT — not authorized to fix (out of this task's scope: only ADR 0006's status line may be edited); recorded as finding |
+| ADR 0010 amends ADR 0002 (dependency-pinning clause) | ADR 0002 | Was No at first probe (Status was bare `Accepted (2026-07-12)`). Fixed per the coordinator's extended authorization (fix-report appendix): `grep -n '0010' docs/adr/0002-domain-model-and-wire-emitter-boundary.md` → `Amended by [ADR 0010](0010-openits-models-lockstep-pre-v1.md) (2026-08-08) — its dependency-pinning clause only; the boundary rule is untouched.` | Fixed (status-line correction, see fix-report appendix) |
 | ADR 0010 states "0005 stands as written" | ADR 0005 | N/A — 0010 declares no amendment, so no reverse pointer is owed | TRUE (consistent; no defect) |
-| ADR 0011 amends ADR 0009 (default-grammar, single-binding consequences) | ADR 0009 | No — ADR 0009's Status only names `**Supersedes:** ADR 0006`; no mention of 0011 anywhere in the file | Supersession-integrity DEFECT — same category as the 0002/0010 gap; not authorized to fix; recorded as finding |
+| ADR 0011 amends ADR 0009 (default-grammar, single-binding consequences) | ADR 0009 | Was No at first probe. Fixed per the coordinator's extended authorization (fix-report appendix): `grep -n '0011' docs/adr/0009-configurable-subject-templates.md` → `Amended by [ADR 0011](0011-namespace-rooted-subject-spaces.md) (2026-08-08) — its default-grammar and single-binding consequences.` | Fixed (status-line correction, see fix-report appendix) |
 | ADR 0011 states "0006 and 0007 stand as written" | ADR 0006, 0007 | ADR 0006's status (pre-fix) named only 0009. This task's Step 3 adds 0011 to ADR 0006's status anyway — see note below | Reconciled; see note |
 | ADR 0013, ADR 0014 ("records a rule that predates this ADR") | — | Neither Supersedes nor Amends any existing ADR; both are net-new retroactive records | TRUE (no supersession claim made, none owed) |
 | ADR 0012 referenced in ADR 0014's Consequences prose ("ADR 0012's readiness signal") | ADR 0012 | Not a formal Amends/Supersedes relationship — narrative cross-reference only, no reverse pointer owed | TRUE (not a supersession claim) |
@@ -885,9 +885,19 @@ matches the amended description exactly, not the original. Read together
 
 ### Claim: ADR 0002's status does not name ADR 0010 as an amendment
 
-Recorded in the supersession-integrity matrix above. **Verdict:**
-supersession-integrity DEFECT, not fixed (out of this task's authorized
-edit scope — only ADR 0006's status line may be touched).
+Recorded in the supersession-integrity matrix above. **Verdict (first
+pass): supersession-integrity DEFECT, not fixed (out of this task's
+authorized edit scope — only ADR 0006's status line may be touched).**
+The coordinator extended that authorization in code review (fix-report
+appendix). Fixed:
+
+```
+$ grep -n '0010' docs/adr/0002-domain-model-and-wire-emitter-boundary.md
+4:Amended by [ADR 0010](0010-openits-models-lockstep-pre-v1.md) (2026-08-08) — its
+```
+
+**Verdict (revised): Fixed.** Status-line-only correction, in ADR 0006's
+style.
 
 ---
 
@@ -1193,9 +1203,18 @@ matrix — ADR 0006's status (pre-fix) already named ADR 0009.
 
 ### Claim: ADR 0009's status does not name ADR 0011 as amending it
 
-Recorded in the supersession-integrity matrix above. **Verdict:**
-supersession-integrity DEFECT, not fixed (out of this task's authorized
-edit scope).
+Recorded in the supersession-integrity matrix above. **Verdict (first
+pass): supersession-integrity DEFECT, not fixed (out of this task's
+authorized edit scope).** The coordinator extended that authorization in
+code review (fix-report appendix). Fixed:
+
+```
+$ grep -n '0011' docs/adr/0009-configurable-subject-templates.md
+5:Amended by [ADR 0011](0011-namespace-rooted-subject-spaces.md) (2026-08-08) — its
+```
+
+**Verdict (revised): Fixed.** Status-line-only correction, in ADR 0006's
+style.
 
 ### Claim: "Omitting the config reproduces ADR 0006's scheme byte-for-byte"
 
@@ -1393,23 +1412,75 @@ sdk/model/perception.go:186:func (ZoneIntervals) FacetKind() Kind { return KindZ
 sdk/model/fault.go:21:func (FaultSet) FacetKind() Kind { return KindFaultSet }
 ```
 
-**Verdict: DOC WRONG.** Eight facet kinds exist today (signal, fault,
-detector, DMS, CCTV, traffic-intervals, zone-incidents, zone-intervals),
-not four — matching the eight differs Task 4 already confirmed registered
-in `internal/app/app.go`. The four failed-read tests the ADR names
-(`TestFailedFacetSuspendsDiffing`, `TestFailedFaultReadNeverClears`,
+**Verdict (first pass): DOC WRONG.** Eight facet kinds exist today
+(signal, fault, detector, DMS, CCTV, traffic-intervals, zone-incidents,
+zone-intervals), not four — matching the eight differs Task 4 already
+confirmed registered in `internal/app/app.go`. The four failed-read tests
+the ADR names (`TestFailedFacetSuspendsDiffing`, `TestFailedFaultReadNeverClears`,
 `TestFailedDetectorReadEmitsNothing`, `TestDMSFailedReadEmitsNothing`) do
-exist and do cover what they claim — but "all four current facets" is
-stale as a count: it was accurate when this rule predated the ADR (before
-CCTV/traffic-sensor/perception facets existed) and was carried into the
-ADR's text verbatim on the same day those other facets were already
-registered in `app.go`. Task 4 separately found (AGENTS.md testing-bar
-probe) that the four newer facets rely on the shared `Engine.Apply`
-mechanism rather than their own dedicated failed-read tests, which is
-legitimate coverage — but the ADR's sentence asserts a stale fact (four
-facets exist) to justify it, not the true one (eight facets exist, four
-have dedicated tests, four rely on the shared mechanism). Not fixed —
-finding for a human.
+exist and do cover what they claim. The first-pass writeup then reasoned,
+by generalizing from `synth.go`'s shared `Apply` mechanism, that the other
+four facets had "legitimate coverage" through that shared code path even
+without dedicated tests of their own — a claim never actually probed
+against those four differs. That is a read-based argument doing
+load-bearing work in a task whose entire evidence rule is *probe, don't
+read*, and it downgraded a real testing-bar gap (`AGENTS.md`: "Differ
+tests cover: ... failed read ...") into a stale headcount. Code review
+caught this and required a direct probe:
+
+```
+$ grep -cE 'func Test.*(Fail|Absent|Missing|Suspend|NeverClear)' internal/synth/*_test.go
+internal/synth/cctv_test.go:0
+internal/synth/detector_test.go:1
+internal/synth/dms_test.go:2
+internal/synth/signal_test.go:1
+internal/synth/perception_test.go:0
+internal/synth/fault_test.go:1
+internal/synth/trafficsensor_test.go:0
+```
+
+**Verdict (revised): DOC RIGHT, CODE WRONG.** Four of the eight
+differs — CCTV, traffic-sensor, zone-incident, and zone-interval (both in
+`perception_test.go`) — have zero failed-read tests, confirmed directly
+rather than inferred by analogy. `AGENTS.md` states the correct bar
+("Differ tests cover: ... failed read ..."); the test suite does not meet
+it for half the registered differs. This is an acknowledged testing-bar
+gap and a successor work item, recorded the same way as the ADR 0008
+catalog-conformance gap and the ADR 0005/0010 `model_version` gap above —
+fix the code, never weaken the document.
+
+A note on the shared-mechanism argument, kept *beside* this finding rather
+than as grounds for downgrading it: `Engine.Apply` (`internal/synth/synth.go`)
+does implement the "absence is never a state change" gate once, in shared
+code, before any differ runs — so a bug here would plausibly show up
+across differs, which may make this gap lower-risk than four independent,
+untested implementations would be. That is a statement about likely
+blast radius, not about coverage. An untested invariant is untested
+regardless of how confident the mechanism's design makes anyone feel about
+it — which is the entire premise of this repo's testing bar, and exactly
+why the first-pass reasoning was wrong to let it stand in for a probe.
+
+Per the coordinator's ruling in code review, ADR 0013's body is corrected
+(this task's `docs/adr/` scope was extended for this one case, since ADR
+0013 was authored earlier on this same unmerged branch and has never been
+published — see the fix-report appendix at the end of this document):
+
+```diff
+-Every differ needs a failed-read test, and all four current facets have one:
+-`TestFailedFacetSuspendsDiffing` (signal), `TestFailedFaultReadNeverClears`
+-(fault), `TestFailedDetectorReadEmitsNothing` (detector), and
+-`TestDMSFailedReadEmitsNothing` (DMS). Each asserts the same shape: a failed
+-poll emits zero events, and a subsequent recovery poll diffs against the
+-pre-failure state, not a zero value.
++Every differ needs a failed-read test. Four of the collector's eight
++current facets have one: `TestFailedFacetSuspendsDiffing` (signal),
++`TestFailedFaultReadNeverClears` (fault), `TestFailedDetectorReadEmitsNothing`
++(detector), and `TestDMSFailedReadEmitsNothing` (DMS), each asserting the
++same shape: a failed poll emits zero events, and a subsequent recovery poll
++diffs against the pre-failure state, not a zero value. CCTV, traffic-sensor,
++zone-incident, and zone-interval do not yet have one — a known gap against
++this rule, not an exemption from it.
+```
 
 ---
 
@@ -1453,20 +1524,28 @@ specs/plans this documentation-architecture pass keeps rather than deletes
 
 ## Verdict tally (Task 5 — ADRs)
 
-Counted directly from the summary table below (`awk` over the Verdict
-column, not eyeballed):
+**Revised after code review.** The first-pass tally below is superseded by
+this one, which reflects: (1) the ADR 0013 "four current facets" row
+reclassified from DOC WRONG to DOC RIGHT, CODE WRONG after a direct probe
+replaced a read-based analogy argument (see the ADR 0013 section and the
+fix-report appendix); (2) the two supersession-integrity gaps (ADR
+0002/0010, ADR 0009/0011) resolved from DEFECT to Fixed once the
+coordinator extended this task's ADR-editing authorization to cover them,
+in the same status-line style as the ADR 0006 fix. Counted directly from
+the summary table below (`awk` over the Verdict column, not eyeballed):
 
 ```
 $ awk '/^## Summary table \(Task 5/,0' <ledger> | grep -E '^\| 00' \
     | awk -F'|' '{print $4}' | sed 's/^ *//;s/ *$//' | sort | uniq -c
       3 DOC RIGHT, CODE WRONG
+      1 DOC RIGHT, CODE WRONG (body corrected)
       1 DOC RIGHT, CODE WRONG (same as 0005)
-      6 DOC WRONG
+      5 DOC WRONG
+      2 Fixed (status-line correction)
       1 Fixed (Step 3)
       1 HOMELESS RULE
       1 See 0002/0005 rows
       1 See 0009 row
-      2 Supersession-integrity DEFECT
      22 TRUE
       1 TRUE (as amended by 0010)
       1 TRUE (bidirectional)
@@ -1474,18 +1553,19 @@ $ awk '/^## Summary table \(Task 5/,0' <ledger> | grep -E '^\| 00' \
 ```
 
 TRUE: 24 (22 plain + 1 "as amended by 0010" + 1 "bidirectional") ·
-DOC WRONG: 6 · DOC RIGHT, CODE WRONG: 4 probed instances, 3 distinct
+DOC WRONG: 5 · DOC RIGHT, CODE WRONG: 5 probed instances, 4 distinct
 successor work items (ADR 0005's and ADR 0010's rows both flag the same
-`model_version`-selection gap, counted once as work) · UNVERIFIABLE
-(blocked): 1 · HOMELESS RULE: 1 · Supersession-integrity DEFECT (a
-category this task introduces because the fixed verdict vocabulary has no
-slot for it; both instances left unfixed per this task's ADR-editing
-scope): 2 (ADR 0002/0010, ADR 0009/0011).
+`model_version`-selection gap, counted once as work; ADR 0008's
+catalog-conformance gap; ADR 0012's readiness/expected-version gap; ADR
+0013's four-untested-differs gap) · UNVERIFIABLE (blocked): 1 ·
+HOMELESS RULE: 1 · Fixed (authorized status-line corrections, in ADR
+0006's style): 3 — ADR 0006 (Step 3, original authorization), ADR 0002,
+ADR 0009 (both under the coordinator's extended authorization).
 
-38 distinct probed claims total (41 table rows, less 2 pure
-cross-references — "See 0002/0005 rows," "See 0009 row" — and 1 row that
-is the Step 3 edit-verification rather than a truth probe), across 14
-ADRs.
+39 distinct probed-or-corrected claims (41 table rows, less 2 pure
+cross-references — "See 0002/0005 rows," "See 0009 row"), of which 3
+resulted in an authorized ADR status-line edit rather than a standing
+verdict, across 14 ADRs.
 
 ## Summary table (Task 5 — ADRs)
 
@@ -1495,7 +1575,7 @@ ADRs.
 | 0001 | "openits-models dependency re-enters only behind the wire-emitter boundary" | TRUE |
 | 0002 | Adapters produce only `sdk/model`; CI boundary lint | TRUE |
 | 0002 | "Exactly one layer, `internal/wire/<version>`, imports openits-models" | TRUE (as amended by 0010) |
-| 0002 | Status omits ADR 0010 as amending it | Supersession-integrity DEFECT |
+| 0002 | Status omits ADR 0010 as amending it | Fixed (status-line correction) |
 | 0003 | `sdk/model`, `sdk/adapter`, `sdk/transport/*` exist | TRUE |
 | 0003 | Registry key `<vendor>-<device_kind>` | TRUE |
 | 0003 | `internal/vendors/<vendor>/<kind>/` directory layout | DOC WRONG |
@@ -1513,7 +1593,7 @@ ADRs.
 | 0008 | Byte-literal subject goldens | TRUE |
 | 0008 | CI boundary lint | TRUE |
 | 0009 | Supersedes ADR 0006 (subject-grammar half) | TRUE (bidirectional) |
-| 0009 | Status omits ADR 0011 as amending it | Supersession-integrity DEFECT |
+| 0009 | Status omits ADR 0011 as amending it | Fixed (status-line correction) |
 | 0009 | "Omitting config reproduces ADR 0006's scheme byte-for-byte" | DOC WRONG |
 | 0009 | CE source claim (restated) | DOC WRONG |
 | 0009 | `wire.Emitter` declares `CETypes()` | TRUE |
@@ -1529,7 +1609,112 @@ ADRs.
 | 0012 | Reports version at boot via `CollectorStarted` | TRUE |
 | 0012 | Readiness signal / expected-version reporting | DOC RIGHT, CODE WRONG |
 | 0013 | Engine mechanism (absence never a state change) | TRUE |
-| 0013 | "all four current facets" have a failed-read test | DOC WRONG |
+| 0013 | "all four current facets" have a failed-read test; four of eight differs (CCTV, traffic-sensor, zone-incident, zone-interval) have zero | DOC RIGHT, CODE WRONG (body corrected) |
 | 0014 | Every named boot-time validation | TRUE |
 | 0014 | Sanctioned broker-startup exception, not yet implemented | TRUE |
 
+
+---
+
+## Fix-report appendix (Task 5, post-review)
+
+Code review on this task's first pass returned three findings; this
+appendix records what changed in response. See the coordinator's review
+message for the full findings; summarized here for anyone reading this
+ledger without that context.
+
+**Finding 1 — ADR 0013's failed-read-test gap was downgraded on an
+unprobed analogy, not a probe.** The first pass read `synth.go`'s shared
+`Apply` mechanism and reasoned by generalization that the four newer
+differs (CCTV, traffic-sensor, zone-incident, zone-interval) had
+"legitimate coverage" without dedicated failed-read tests. That was never
+checked directly. Re-probed:
+
+```
+$ grep -cE 'func Test.*(Fail|Absent|Missing|Suspend|NeverClear)' internal/synth/*_test.go
+internal/synth/cctv_test.go:0
+internal/synth/detector_test.go:1
+internal/synth/dms_test.go:2
+internal/synth/signal_test.go:1
+internal/synth/perception_test.go:0
+internal/synth/fault_test.go:1
+internal/synth/trafficsensor_test.go:0
+```
+
+Confirms zero failed-read tests for CCTV, traffic-sensor, and both
+perception differs (zone-incident/zone-interval, both in
+`perception_test.go`). The ADR 0013 row (in the `## ADR 0013` section and
+the summary table) is corrected from `DOC WRONG` to `DOC RIGHT, CODE
+WRONG` — a real, acknowledged testing-bar gap and successor work item, not
+a stale headcount. The shared-mechanism reasoning is kept as a note beside
+the finding (possible lower blast-radius, not a substitute for coverage),
+per the coordinator's instruction.
+
+**Finding 2 — ADR 0013's body sentence corrected (newly authorized).**
+The coordinator lifted the ADR-immutability restriction for this one
+record: ADR 0013 was authored earlier on this same unmerged branch and
+has never been published, so correcting a factual error introduced within
+this same branch is not the case the immutability convention protects.
+Applied, sentence-only:
+
+```diff
+-Every differ needs a failed-read test, and all four current facets have one:
+-`TestFailedFacetSuspendsDiffing` (signal), `TestFailedFaultReadNeverClears`
+-(fault), `TestFailedDetectorReadEmitsNothing` (detector), and
+-`TestDMSFailedReadEmitsNothing` (DMS). Each asserts the same shape: a failed
+-poll emits zero events, and a subsequent recovery poll diffs against the
+-pre-failure state, not a zero value.
++Every differ needs a failed-read test. Four of the collector's eight
++current facets have one: `TestFailedFacetSuspendsDiffing` (signal),
++`TestFailedFaultReadNeverClears` (fault), `TestFailedDetectorReadEmitsNothing`
++(detector), and `TestDMSFailedReadEmitsNothing` (DMS), each asserting the
++same shape: a failed poll emits zero events, and a subsequent recovery poll
++diffs against the pre-failure state, not a zero value. CCTV, traffic-sensor,
++zone-incident, and zone-interval do not yet have one — a known gap against
++this rule, not an exemption from it.
+```
+
+**Finding 3 — the two supersession-integrity gaps fixed (newly
+authorized).** The coordinator extended this task's ADR-editing
+authorization to cover ADR 0002 and ADR 0009's status lines, in exactly
+the ADR 0006 style — status-line only, no body edits. Applied:
+
+```diff
+--- a/docs/adr/0002-domain-model-and-wire-emitter-boundary.md
++++ b/docs/adr/0002-domain-model-and-wire-emitter-boundary.md
+ **Status:** Accepted (2026-07-12)
++Amended by [ADR 0010](0010-openits-models-lockstep-pre-v1.md) (2026-08-08) — its
++dependency-pinning clause only; the boundary rule is untouched.
+```
+
+```diff
+--- a/docs/adr/0009-configurable-subject-templates.md
++++ b/docs/adr/0009-configurable-subject-templates.md
+ **Supersedes:** the subject-grammar half of [ADR 0006](0006-tenant-scoped-subjects.md)
++Amended by [ADR 0011](0011-namespace-rooted-subject-spaces.md) (2026-08-08) — its
++default-grammar and single-binding consequences.
+```
+
+Verified:
+
+```
+$ grep -n '0010' docs/adr/0002-domain-model-and-wire-emitter-boundary.md
+4:Amended by [ADR 0010](0010-openits-models-lockstep-pre-v1.md) (2026-08-08) — its
+
+$ grep -n '0011' docs/adr/0009-configurable-subject-templates.md
+5:Amended by [ADR 0011](0011-namespace-rooted-subject-spaces.md) (2026-08-08) — its
+```
+
+Every Supersedes/Amends relationship in the ADR set is now bidirectional:
+ADR 0009 ↔ ADR 0006, ADR 0010 ↔ ADR 0002, ADR 0011 ↔ ADR 0009, ADR 0011 ↔
+ADR 0006 (via the ADR 0006 status line naming both 0009 and 0011).
+
+**Not fixed, per the coordinator's explicit instruction.** The
+"Supersession-integrity DEFECT" label itself — the category, not the two
+instances above — stays as a disclosed extension to the fixed verdict
+vocabulary; it isn't one of the six canonical verdicts and doesn't need to
+become one.
+
+`make check` and `go test ./... -race` were re-run after all four file
+changes (ADR 0002, ADR 0009, ADR 0013, this ledger) and both passed; full
+output is in the task report.

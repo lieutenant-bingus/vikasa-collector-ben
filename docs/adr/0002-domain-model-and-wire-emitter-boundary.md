@@ -1,6 +1,8 @@
 # ADR 0002: Collector-owned domain model + versioned wire emitters
 
 **Status:** Accepted (2026-07-12)
+Amended by [ADR 0010](0010-openits-models-lockstep-pre-v1.md) (2026-08-08) — its
+dependency-pinning clause only; the boundary rule is untouched.
 
 ## Context
 The collector must survive three model-change scenarios: (S1) codegen

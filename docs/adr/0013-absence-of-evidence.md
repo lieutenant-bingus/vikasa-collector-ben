@@ -28,12 +28,14 @@ the engine's remembered previous state for that facet survives the poll
 unchanged. Absence is never evidence.
 
 ## Consequences
-Every differ needs a failed-read test, and all four current facets have one:
-`TestFailedFacetSuspendsDiffing` (signal), `TestFailedFaultReadNeverClears`
-(fault), `TestFailedDetectorReadEmitsNothing` (detector), and
-`TestDMSFailedReadEmitsNothing` (DMS). Each asserts the same shape: a failed
-poll emits zero events, and a subsequent recovery poll diffs against the
-pre-failure state, not a zero value.
+Every differ needs a failed-read test. Four of the collector's eight
+current facets have one: `TestFailedFacetSuspendsDiffing` (signal),
+`TestFailedFaultReadNeverClears` (fault), `TestFailedDetectorReadEmitsNothing`
+(detector), and `TestDMSFailedReadEmitsNothing` (DMS), each asserting the
+same shape: a failed poll emits zero events, and a subsequent recovery poll
+diffs against the pre-failure state, not a zero value. CCTV, traffic-sensor,
+zone-incident, and zone-interval do not yet have one — a known gap against
+this rule, not an exemption from it.
 
 A device that goes silent produces silence, not a storm of false clears —
 reachability is reported separately via `DeviceStatusChanged`

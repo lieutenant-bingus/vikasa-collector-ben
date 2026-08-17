@@ -2,6 +2,8 @@
 
 **Status:** Accepted (2026-07-16)
 **Supersedes:** the subject-grammar half of [ADR 0006](0006-tenant-scoped-subjects.md)
+Amended by [ADR 0011](0011-namespace-rooted-subject-spaces.md) (2026-08-08) — its
+default-grammar and single-binding consequences.
 
 ## Context
 ADR 0006 fixed the subject grammar at
