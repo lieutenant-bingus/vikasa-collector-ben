@@ -11,7 +11,7 @@ local NATS JetStream using versioned openits-models payloads.
 [device] ─transport─▶ ADAPTER ─sdk/model─▶ CORE ─wire emitter─▶ CloudEvent ─▶ local JetStream
 ```
 
-- **Adapters** (`internal/vendors/<vendor>/<kind>/`) own transport
+- **Adapters** (`internal/vendors/<vendor>/`) own transport
   entirely and return only `sdk/model` types.
 - **The core** diffs snapshots into domain events, tracks device health,
   and publishes on operator-configurable subjects (ADR 0009) — by default
@@ -28,12 +28,17 @@ Why it's built this way: see `docs/adr/`. Full design:
 
 ## Status
 
-Gen-2 rebuild in progress. Working today: `ntcip-asc` adapter (fixtures +
-live SNMP), signal-status synth, and the full publish path — domain events
-map to openits-models payloads and reach JetStream as CloudEvents in the
-NATS reference profile's Tier 2 shape (binary mode, deterministic ULID
-`ce-id`, seven-token subjects). Not yet wired: additional facets and
-vendors (Plan 3+).
+Gen-2 rebuild in progress. The domain model, the synth engine and the full
+publish path are complete: eight facet kinds, eight differs, and 26 catalog
+ce-types plus two collector-health ce-types, each pinned by a byte-exact
+golden. Events reach JetStream as CloudEvents in the NATS reference
+profile's Tier 2 shape (binary mode, deterministic ULID `ce-id`,
+seven-token namespace-rooted subjects).
+
+What is missing is **adapters**. One exists — `ntcip-asc` — producing three
+of the eight facet kinds. The other five are modeled, diffed and wired with
+no device on the other end, which makes them the best first contribution in
+the repo: see [starter tasks](docs/reference/starter-tasks.md).
 
 Events can still be dropped with a warning, and that is the designed
 behaviour rather than a gap: the emitter declines anything it cannot

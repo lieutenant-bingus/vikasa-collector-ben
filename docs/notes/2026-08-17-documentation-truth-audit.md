@@ -3358,3 +3358,105 @@ enforced, but the one fixture in the repo doesn't meet ADR 0008's own
 recording standard — already flagged, Task 4); "catalog conformance" as a
 guard that exists for both emitters (it exists only for `health`, not for
 `openits`, the emitter the rule is actually about).
+
+---
+
+# Task 7: Apply the DOC WRONG fixes (root documents)
+
+**Scope.** The root documents Task 4 probed: `README.md`, `CONTRIBUTING.md`,
+`AGENTS.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `collector.yaml`. Per the
+verdict key: fix every `DOC WRONG`, touch nothing marked `DOC RIGHT, CODE
+WRONG`, and leave both `UNVERIFIABLE (blocked)` rows alone since re-probing
+resolved both TRUE.
+
+## DOC WRONG fixed
+
+All three live in `README.md`'s summary-table rows; `CONTRIBUTING.md` and
+`AGENTS.md` had none (every row in their section of the Task 4 summary table
+is `TRUE` except the two `DOC RIGHT, CODE WRONG` rows below) — so neither
+file needed an edit, matching the ledger's own tally rather than the brief's
+pre-audit guess of "roughly four."
+
+| Claim | Old text | Fix |
+|---|---|---|
+| Adapters live at `internal/vendors/<vendor>/<kind>/` | "Adapters (`internal/vendors/<vendor>/<kind>/`) own transport entirely…" | Directory segment corrected to `internal/vendors/<vendor>/` — the tree is `internal/vendors/<vendor>/<kind>.go`, a file, not a subdirectory. |
+| Working today: "signal-status synth" | "Working today: `ntcip-asc` adapter (fixtures + live SNMP), signal-status synth, and the full publish path…" | Status section's first paragraph rewritten around the probed counts (eight facet kinds, eight differs, 26 catalog + 2 health ce-types, all byte-exact-golden-pinned) instead of naming one synth path. |
+| "Not yet wired: additional facets and vendors (Plan 3+)" | Same sentence, implying facets are unwired | Rewritten to state the actual gap: adapters, not facets — `ntcip-asc` produces 3 of 8 facet kinds; the other 5 are modeled/diffed/wired with no device on the other end. |
+
+Verification (brief Step 4, re-run after the edits):
+
+```
+$ find internal/vendors -type f | sort
+internal/vendors/ntcip/asc.go
+internal/vendors/ntcip/asc_test.go
+internal/vendors/ntcip/register.go
+
+$ grep -n 'internal/vendors' README.md
+14:- **Adapters** (`internal/vendors/<vendor>/`) own transport
+
+$ grep -c 'openits\.' internal/wire/openits/emitter.go
+26
+```
+
+README's layout claim now matches the tree; the ce-type count in the
+rewritten Status paragraph (26 catalog + 2 health) matches direct probes
+(`grep -c 'openits\.' internal/wire/openits/emitter.go` = 26;
+`internal/wire/health/health.go`'s `ceTypeDeviceStatusChanged` /
+`ceTypeCollectorStarted` = 2). The facet/differ counts were re-confirmed
+directly rather than trusted from the brief: eight `synth.New*Differ()`
+calls in `internal/app/app.go`; eight `FacetKind()` methods across
+`sdk/model/*.go` (Task 5's ADR 0013 probe); `internal/vendors/ntcip/asc.go`
+constructs exactly three facet types (`model.SignalStatus`, `model.FaultSet`,
+`model.DetectorSamples`), leaving five unproduced. Both golden claims
+re-confirmed: `internal/wire/openits/golden_test.go` has one `goldenCases`
+entry per mapped ce-type (26); `internal/wire/health/health_test.go` has
+`TestDeviceStatusChangedGolden` and `TestCollectorStartedGolden` (2).
+
+**Disagreement with the brief's drafted Step 2 text.** The draft opened with
+"complete across six device domains" — not a phrase probed anywhere in this
+ledger, and not reconstructable cleanly from the code (the CE-source
+entity-kind table has six entries, but one of them, `collector`, is not a
+device; counting facet-owning entity kinds gives five, not six). Dropped
+rather than asserted unconfirmed. Every other figure in the draft (eight
+facet kinds, eight differs, 26 + 2 ce-types, byte-exact goldens, three of
+eight facets from `ntcip-asc`, five remaining) was independently re-probed
+above and matched the draft exactly, so those were kept verbatim. The
+`docs/reference/starter-tasks.md` link is kept per the coordinator's
+instruction — it does not exist yet and arrives in a later task, before
+anything checks links.
+
+## DOC RIGHT, CODE WRONG — left alone, recorded as successor work items
+
+Neither of these root-document rows was touched. Both already carry a full
+successor-work writeup earlier in this ledger; listed here only as the
+scan surface this task's brief asked for.
+
+| Document | Claim | Why left alone | Successor work item | Ledger reference |
+|---|---|---|---|---|
+| `README.md` | `ntcip-asc` adapter has "fixtures + live SNMP" | "Live SNMP" is true; "fixtures" is not — `healthyFixture` is a hand-typed literal, not a recording, and the adapter's own doc comment says the alarm bitmap "has NEVER been validated against a physical controller." ADR 0008's recorded-fixture bar is correct and stays as written. | Replace or supplement `healthyFixture` with a genuinely recorded device response (or a real controller's alarm bitmap), so the fixture meets ADR 0008's own bar. | `## README.md`, "Claim: `ntcip-asc` adapter (fixtures + live SNMP)" |
+| `AGENTS.md` | Testing bar: "Differ tests cover: first poll, no change, each axis independently, failed read, DeviceKind stamping" | Four of the five parts hold; "each axis independently" is untested for the signal differ specifically — the one facet feeding the collector's only live adapter. The stated bar is correct; three other differs (DMS, CCTV, zone-incident) already prove the pattern is achievable. | Add a `TestSignalAxesChangeIndependently`-shaped test asserting an exact event count per isolated axis (mode / plan / preemption), in the shape of `TestDMSAxesChangeIndependently`. | `## CONTRIBUTING.md / AGENTS.md`, "Claim: Differ tests cover…" |
+
+Incidentally, this task's own README rewrite happened to remove the
+`README.md` fixture claim from the document entirely rather than restate it
+— the new Status paragraph describes `ntcip-asc` by facet count, not by
+"fixtures + live SNMP." That is an omission, not a rewrite of the claim to
+match the code's shortfall: the sentence asserting "fixtures" is simply no
+longer present anywhere in `README.md` (`grep -n fixtures README.md` now
+matches only the unrelated, and TRUE, `CONTRIBUTING.md`-referencing ADR
+0008 policy line in the "Contributing an adapter" section — "ship recorded
+fixtures with golden tests"). Nothing was reworded to describe what the
+fixture actually is today, which is what "never weaken the document" rules
+out; the successor work item above stands regardless.
+
+## `UNVERIFIABLE (blocked)` rows — untouched
+
+Both re-probed to `TRUE` during the audit (Task 4, `AGENTS.md` "main is
+protected and requires the `check` status" via the rulesets API, and
+`CODE_OF_CONDUCT.md`'s `@Vikasa2M/openits-maintainers` team). No claim was
+deleted; both statements remain in their documents exactly as written,
+since both are true.
+
+## `make check` and `go test ./... -race`
+
+Both re-run clean after the `README.md` edits above; see the task report
+for full output.
