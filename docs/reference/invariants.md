@@ -1,12 +1,20 @@
 # Invariants
 
 Four architectural rules used to be restated 28 times across 14 files, and
-most of the copies drifted from what the code actually does. **This is now
-the only document permitted to restate an enforced rule.** Every other
-document — README, AGENTS.md, package comments, specs — links to a row
-here instead of paraphrasing the rule itself. If you find yourself about
-to write "never import openits-models outside internal/wire" anywhere but
-this file, link this file instead.
+most of the copies drifted from what the code actually does. **This is the
+document that states an enforced rule canonically** — the row here is the
+one that is kept true, and the one CI checks. If you find yourself about to
+write "never import openits-models outside internal/wire" anywhere but this
+file, link this file instead.
+
+Paraphrases still exist elsewhere and have not all been converted yet:
+`AGENTS.md`, `CONTRIBUTING.md`, `README.md`'s contributing section,
+`.github/pull_request_template.md`, and all three `.claude/skills/*/SKILL.md`
+files each restate at least one rule without linking here. Converting them
+to links is tracked in
+[`../plans/2026-08-17-documentation-architecture.md`](../plans/2026-08-17-documentation-architecture.md)'s
+Phase 2 scope. Until that lands, this file wins any disagreement: a
+paraphrase that contradicts a row below is the paraphrase's defect.
 
 Each row names an **enforcer**: something that actually fails if the rule
 is broken, not just a place the rule is written down. `internal/docs`'s
@@ -88,11 +96,12 @@ otherwise.** Only 4 of the collector's 8 registered differs have a test
 proving the failed-read path actually holds for them:
 `TestFailedFacetSuspendsDiffing` (signal), `TestFailedFaultReadNeverClears`
 (fault), `TestFailedDetectorReadEmitsNothing` (detector), and
-`TestDMSFailedReadEmitsNothing` (DMS). CCTV, traffic-sensor, zone-incident,
-and zone-interval do not have one yet — the shared `Apply` mechanism almost
-certainly covers them too, but "almost certainly" is not "proven," and
-writing the missing four tests is tracked as a successor work item rather
-than papered over here.
+`TestDMSFailedReadEmitsNothing` (DMS). CCTV, traffic-interval,
+zone-incident, and zone-interval do not have one yet — the shared `Apply`
+mechanism almost certainly covers them too, but "almost certainly" is not
+"proven," and writing the missing four tests is tracked as a successor work
+item rather than papered over here — see the
+[gap list](../README.md#known-gaps-and-successor-work).
 
 ## Config is the trust boundary; boot fails on the unrecognized
 
@@ -164,8 +173,28 @@ than a prior release did — a silent wire-format drift no reviewer would
 catch by reading the diff. `internal/wire/openits/golden_test.go`'s
 `TestGoldens` encodes one fixture per mapped ce-type at a fixed timestamp
 and compares against recorded exact bytes; `TestGoldensCoverEveryCEType`
-separately checks that every ce-type the pinned models release declares
-has a fixture, so a newly-mapped ce-type can't quietly ship without one.
+separately checks that every ce-type **the emitter maps** has a fixture, so
+a newly-mapped ce-type can't quietly ship without one.
+
+**What that second test does not do.** It iterates `New("x").CETypes()`,
+and `CETypes()` (`internal/wire/openits/emitter.go`) returns the values of
+the emitter's own local `ceTypeFor` routing table. The pinned openits-models
+release is never consulted, so the check is self-referential with respect to
+the catalog: it proves the goldens keep up with the mapping, and nothing
+about whether the mapping keeps up with the catalog. A ce-type the pinned
+release declares but the emitter never mapped is invisible to it.
+
+There is no catalog-conformance check for the `openits` emitter today.
+`internal/wire/health` does have one — `conformance_test.go` compares the
+health emitter's `CETypes()` against an external document (`asyncapi.yaml`)
+in both directions, failing on an emittable type with no channel *and* on a
+documented channel nothing can emit. The emitter whose ce-types actually
+come from an externally-versioned catalog is the one without that check.
+Building the equivalent against the pinned release's own
+`bindings/nats/asyncapi.yaml` is successor work; see the audit ledger's
+ADR 0008 catalog-conformance finding
+(`../notes/2026-08-17-documentation-truth-audit.md`) and
+[the gap list](../README.md#known-gaps-and-successor-work).
 
 ## No fixtures, no merge
 
@@ -204,9 +233,18 @@ actual guards-of-the-guard: `make lint-boundary-selftest` points Rule A at
 `gosnmp`, a dependency `sdk/` genuinely has, and fails the build unless the
 lint flags it; `make lint-boundary-replace-selftest` points Rule C at a
 throwaway `go.mod` fixture that does carry a `replace` directive, and
-fails the build unless the lint flags that too. Both are wired into
-`check:` in the Makefile and run as part of `make check`, alongside the
-lint itself. Both work by pointing the *same* rule at `scripts/lint-boundary.sh`'s
+fails the build unless the lint flags that too. Neither selftest accepts a
+bare nonzero exit as proof — `lint-boundary.sh` exits 2 on a broken `go
+list` or an unreadable `LINT_GOMOD`, which would otherwise read as "the
+rule fires" — so each greps the output for its own rule's violation
+message and fails if the lint failed for any other reason.
+
+Both are wired into `check:` in the Makefile and run as part of `make
+check`, alongside the lint itself. `TestInvariantsTableNamesRealEnforcers`
+verifies that wiring, not just that the targets are defined: removing
+either one from `check:`'s prerequisite list fails the test, because a
+guard CI never runs is exactly as unenforced as a guard that does not
+exist. Both work by pointing the *same* rule at `scripts/lint-boundary.sh`'s
 `LINT_FORBIDDEN`/`LINT_GOMOD` override hooks and a fixture guaranteed to
 violate it — the script is the mechanism the targets exercise, not the
 enforcer of this row's rule.

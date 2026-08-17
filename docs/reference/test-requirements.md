@@ -32,11 +32,23 @@ starting point (see the gap note below on why not `signal_test.go`). Cover:
   field that can change, prove that changing ONE axis fires only that
   axis's event — an exact event-count assertion, not just "the event I
   expected is present." `TestDMSAxesChangeIndependently`
-  (`internal/synth/dms_test.go`), `TestCCTVDiffer_AxesAreIndependent`
-  (`internal/synth/cctv_test.go`), and `TestZoneIncidentDiffer_AxesAreIndependent`
-  (`internal/synth/perception_test.go`) are the reference shape: each
-  changes one field, asserts the exact resulting event count, and confirms
-  the other axis's event did NOT fire.
+  (`internal/synth/dms_test.go`) is the reference shape: it moves the
+  control-mode axis alone and asserts exactly one event, then the
+  display-state axis alone and asserts exactly one event, so the other
+  axis's event is proven absent by the count rather than merely unmentioned.
+
+  Two neighbouring tests are named similarly and are a *different* shape —
+  useful, but not what this row asks for.
+  `TestCCTVDiffer_AxesAreIndependent` (`internal/synth/cctv_test.go`) moves
+  both axes in a single poll and asserts a total of 2 events;
+  `TestZoneIncidentDiffer_AxesAreIndependent`
+  (`internal/synth/perception_test.go`) mutates three incidents at once and
+  asserts 1 detected / 1 updated / 1 cleared. Both prove
+  multi-axis simultaneity — that concurrent changes each produce their own
+  event and don't swallow one another — which is worth having, and neither
+  proves that an *isolated* change leaves the other axis silent. A new
+  differ ideally has both; if you write only one, write the isolated-axis
+  shape.
 - **Failed read emits nothing** — the absence-of-evidence rule. See
   [`invariants.md`](invariants.md#absence-of-evidence-is-never-a-state-change)
   for the rule and its enforcement mechanism.
@@ -100,10 +112,22 @@ new differ; copy `dms_test.go`'s.
   `goldenCases` there.
 - **A test asserting no mapped ce-type lacks a golden.** The existing
   `TestGoldensCoverEveryCEType` (`internal/wire/openits/golden_test.go`)
-  already does this for every ce-type declared in the pinned models
-  release — a new mapping is covered automatically once it's wired into
+  already does this for every ce-type **the emitter maps** — it iterates
+  `CETypes()`, which is derived from the emitter's own `ceTypeFor` table —
+  so a new mapping is covered automatically once it's wired into
   `ceTypeFor`, but check the test still passes; it is the thing that would
   catch you forgetting a golden case.
+
+  It does **not** check the mapping against the pinned openits-models
+  release's catalog: a catalog ce-type the emitter never mapped is invisible
+  to it. `internal/wire/health`'s `conformance_test.go` has that kind of
+  check against an external document; the `openits` emitter has no
+  equivalent, and building one is successor work. See
+  [`invariants.md`](invariants.md#every-mapped-ce-type-has-a-byte-exact-golden)
+  and [the gap list](../README.md#known-gaps-and-successor-work). Until it
+  exists, adding a *new* catalog ce-type to `ceTypeFor` is a manual
+  cross-check against the pinned release, not something CI will prompt you
+  for.
 
 ## Contribution types not covered above
 
