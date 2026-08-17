@@ -19,5 +19,6 @@ immutable once accepted; reversals get a new ADR that supersedes the old.
 | [0011](0011-namespace-rooted-subject-spaces.md) | Namespace-rooted subject spaces, one stream per namespace (amends 0009) |
 | [0012](0012-host-executed-updates.md) | Host-executed updates; the collector participates but never self-updates |
 | [0013](0013-absence-of-evidence.md) | Absence of evidence is never a state change |
+| [0014](0014-config-is-the-trust-boundary.md) | Config is the trust boundary; boot fails on the unrecognized |
 
 Companion spec: `../specs/2026-07-12-greenfield-collector-architecture-design.md`
