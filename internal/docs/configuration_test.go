@@ -15,9 +15,8 @@ import (
 // a device's `id` needs documenting exactly once, not once per device.
 func yamlFields(t reflect.Type, prefix string) []string {
 	var out []string
-	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
-		tag := strings.Split(f.Tag.Get("yaml"), ",")[0]
+	for f := range t.Fields() {
+		tag, _, _ := strings.Cut(f.Tag.Get("yaml"), ",")
 		if tag == "" || tag == "-" {
 			continue
 		}
@@ -25,7 +24,7 @@ func yamlFields(t reflect.Type, prefix string) []string {
 		out = append(out, name)
 
 		ft := f.Type
-		if ft.Kind() == reflect.Slice || ft.Kind() == reflect.Ptr {
+		if ft.Kind() == reflect.Slice || ft.Kind() == reflect.Pointer {
 			ft = ft.Elem()
 		}
 		if ft.Kind() == reflect.Struct {
@@ -43,7 +42,7 @@ func TestConfigReferenceDocumentsEveryField(t *testing.T) {
 	}
 	doc := string(raw)
 
-	fields := yamlFields(reflect.TypeOf(config.Config{}), "")
+	fields := yamlFields(reflect.TypeFor[config.Config](), "")
 	if len(fields) == 0 {
 		t.Fatal("reflected zero config fields; the check would be vacuous")
 	}
