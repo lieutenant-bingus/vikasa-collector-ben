@@ -35,6 +35,10 @@ cd "$(dirname "$0")/.."
 # A lint that can never fail is indistinguishable from one that always passes.
 forbidden="${LINT_FORBIDDEN:-openits-models}"
 
+# Overridable so Rule C is testable against a fixture — see
+# `make lint-boundary-replace-selftest`.
+gomod="${LINT_GOMOD:-go.mod}"
+
 errfile=$(mktemp)
 trap 'rm -f "$errfile"' EXIT
 
@@ -90,6 +94,27 @@ for pkg in $pkgs; do
     fail=1
   fi
 done
+
+# ---- Rule C: no replace directive for the model module (ADR 0010) ----------
+# The pin is a main-HEAD pseudo-version while both repos move in lockstep. A
+# `replace` would make every developer's build depend on a local checkout, so
+# CI would be testing a tree nobody else has. Rules A and B cannot see this:
+# a replaced module still imports cleanly.
+#
+# Parsed textually rather than via `go mod edit -json` so the check stays
+# offline and works against a fixture path.
+replaces=$(awk '
+  /^replace[[:space:]]*\(/ { inblock=1; next }
+  inblock && /^\)/         { inblock=0; next }
+  inblock                  { print; next }
+  /^replace[[:space:]]/    { print }
+' "$gomod")
+
+if grep -q -- "$forbidden" <<<"$replaces"; then
+  echo "BOUNDARY VIOLATION (replace directive): $gomod replaces $forbidden (ADR 0010)" >&2
+  grep -- "$forbidden" <<<"$replaces" | sed 's/^/  /' >&2
+  fail=1
+fi
 
 if [ "$checked" -eq 0 ] && [ "$direct" -eq 0 ]; then
   echo "lint-boundary: inspected 0 packages — the rule proved nothing" >&2
