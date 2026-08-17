@@ -368,6 +368,92 @@ Steps 1–2 carry the leverage. Steps 3–4 carry the writing.
 - **B — deploy path.** Fleet plan Phases 1–2: readiness signal, broker-absent
   tolerance, expected-version drift, container image, systemd unit. Unblocks
   `deploy-a-collector.md` and the `deploy-collector` skill.
+- **C — Phase 2 of this design.** The explanation tier, tutorial, how-to
+  guides, and skill retargeting this spec's manifest (§5, §6) describes.
+  Phase 1 shipped the truth pass, the reference tier, and the checks; Phase 2
+  is the writing. Scope in full: §11.1. Its harvest whitelist: §11.2.
+
+### 11.1 Phase 2 scope
+
+Phase 2's harvest list is Phase 1's truth-pass output (§8, §11.2): the
+explanation tier (five documents promoted from probed spec content, then the
+six harvested specs deleted — §9), the tutorial, four how-to guides, two
+honest stubs, and the skills — three retargeted to the §6.1 contract, plus
+`add-transport` and `review-adapter-contribution`.
+
+**Rule-restatement conversions (added after Phase 1 review).**
+`docs/reference/invariants.md` states the enforced rules canonically, but the
+paraphrases it was meant to replace are still live. Each of these restates at
+least one enforced rule with no link into `docs/reference/`, and each must be
+converted to a link (or deleted) in Phase 2:
+
+- `AGENTS.md` — six restatements: the two layering rules (`:20-22`, `:23-26`),
+  absence-of-evidence (`:27-29`), subjects-vs-envelope (`:30-34`), the testing
+  bar (`:47-51`), and config-as-trust-boundary (`:60-62`). Untouched by
+  Phase 1.
+- `CONTRIBUTING.md` — the openits-models import rule (`:26`) and
+  "no fixtures, no merge" (`:28`).
+- `README.md` — the contributing section's adapter-contract bullets.
+- `.github/pull_request_template.md` — the layering checkbox (`:9`).
+- `.claude/skills/add-vendor-adapter/SKILL.md`,
+  `.claude/skills/add-domain-facet/SKILL.md`,
+  `.claude/skills/wire-emitter/SKILL.md` — all three, as part of the retarget
+  already listed above.
+
+**Probe the three `SKILL.md` files with the ledger method.** The truth audit
+never probed the skills. Its only skill coverage is an `ls -d` of the
+directory (ledger `:284-297`) — a check that they exist, not that anything in
+them is true. Phase 1 review found a concrete consequence:
+`add-vendor-adapter/SKILL.md` sent contributors to wire adapter registration
+"into `internal/app`", when registration has always lived in
+`cmd/collector/main.go`'s `RegisterAdapters`. That was corrected in place, but
+it was found by reading, not by a systematic pass, and `docs/README.md`
+routes the single highest-traffic contributor task straight into that file.
+
+Phase 2 must probe all three skills claim-by-claim in the audit's ledger
+format — every path, symbol, command, and rule statement — before or as part
+of retargeting them, and record the verdicts in a probe ledger like every
+other probed surface (§11.2 on where such ledgers live now).
+
+**Citations with no durable home.** Phase 2 deletes the six harvested specs
+(§9). These live `.go` comments cite "spec §N" and will dangle. Phase 1
+repointed the ones with an existing target; these two have none yet and need
+one created or the citation dropped:
+
+- `internal/runner/runner.go:3` — cites the greenfield spec §7 for the poll
+  loop's jitter / per-poll timeout / panic isolation. No ADR or reference doc
+  covers it; the natural home is the explanation tier's `architecture.md`.
+- `sdk/model/model.go:9` — cites the architecture spec §4 for the
+  "facets are per-device-kind, never per-vendor" governance rail. The
+  manifest harvests §4 into `adapter-to-model.md`; repoint once that exists.
+
+Also: the greenfield spec's "rule of three" deferral (no per-vendor overlay
+mechanism until ~3 variant adapters exist) is cited by name from two other
+harvest specs and has no home outside them — fold one sentence into
+`pluggability.md` during harvest or accept losing the rationale (ledger
+`:2448-2466`).
+
+### 11.2 Harvest dependency: the audit ledger
+
+Phase 2's harvest (§11.1, §9) uses the truth audit's per-document verdicts as
+its whitelist: which claims in the six specs being harvested are probed
+**True** and safe to promote into the explanation tier as written, and which
+are **Doc wrong** and need fixing during harvest rather than copying
+verbatim (§8.2). Harvesting without it means re-verifying every claim from
+scratch, or worse, laundering an unverified one into the document a
+newcomer trusts most (§8, first paragraph).
+
+That ledger — `docs/notes/2026-08-17-documentation-truth-audit.md`, one row
+per document with the probe that produced each verdict — no longer lives in
+this repository: `docs/notes/` is a working-artifact tier kept outside the
+tree once its content has served its purpose (this repo's agent tooling
+writes such ledgers under the git-ignored `.superpowers/`; see
+`docs/README.md`'s taxonomy note). Every commit that touched it is still in
+history. Retrieve it when Phase 2 starts:
+
+```
+git show e6e2b1f:docs/notes/2026-08-17-documentation-truth-audit.md
+```
 
 ## 12. Risks
 

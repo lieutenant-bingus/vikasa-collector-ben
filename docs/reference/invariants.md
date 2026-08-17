@@ -12,7 +12,7 @@ Paraphrases still exist elsewhere and have not all been converted yet:
 `.github/pull_request_template.md`, and all three `.claude/skills/*/SKILL.md`
 files each restate at least one rule without linking here. Converting them
 to links is tracked in
-[`../plans/2026-08-17-documentation-architecture.md`](../plans/2026-08-17-documentation-architecture.md)'s
+[`../specs/2026-08-17-documentation-architecture-design.md`](../specs/2026-08-17-documentation-architecture-design.md#111-phase-2-scope)'s
 Phase 2 scope. Until that lands, this file wins any disagreement: a
 paraphrase that contradicts a row below is the paraphrase's defect.
 
