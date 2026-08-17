@@ -170,7 +170,9 @@ func encodeAndPublish(ctx context.Context, pub *publish.Publisher, tenant cloude
 		}
 		return
 	}
-	// Loud drop: no emitter claims this event (spec §7). Reaching here now
+	// Loud drop: no emitter claims this event. README.md's "Events can still
+	// be dropped with a warning, and that is the designed behaviour" is the
+	// living statement of this rule. Reaching here now
 	// means a real mapping gap — an event kind with no ce-type, or one the
 	// openits emitter declined because it could not encode it faithfully —
 	// rather than the chain simply being unwired.

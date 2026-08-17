@@ -28,14 +28,13 @@ the engine's remembered previous state for that facet survives the poll
 unchanged. Absence is never evidence.
 
 ## Consequences
-Every differ needs a failed-read test. Four of the collector's eight
-current facets have one: `TestFailedFacetSuspendsDiffing` (signal),
-`TestFailedFaultReadNeverClears` (fault), `TestFailedDetectorReadEmitsNothing`
-(detector), and `TestDMSFailedReadEmitsNothing` (DMS), each asserting the
-same shape: a failed poll emits zero events, and a subsequent recovery poll
-diffs against the pre-failure state, not a zero value. CCTV, traffic-sensor,
-zone-incident, and zone-interval do not yet have one — a known gap against
-this rule, not an exemption from it.
+Every differ needs a failed-read test, asserting the same shape: a failed
+poll emits zero events, and a subsequent recovery poll diffs against the
+pre-failure state, not a zero value. Which differs currently have one is a
+moving number and deliberately not recorded here — an immutable record must
+not carry a count that the next PR falsifies. The live coverage, including
+the differs still missing the test, is in
+[`docs/reference/invariants.md`](../reference/invariants.md#absence-of-evidence-is-never-a-state-change).
 
 A device that goes silent produces silence, not a storm of false clears —
 reachability is reported separately via `DeviceStatusChanged`

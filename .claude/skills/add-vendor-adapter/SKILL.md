@@ -46,7 +46,10 @@ only where the vendor genuinely differs.
    `map[string]any` — it is opaque to the core; parse and validate it here,
    returning errors prefixed `"<vendor>-<kind> <deviceID>: ..."` so boot
    failures identify the device. Wire the registration into
-   `internal/app` alongside the existing `ntcip.RegisterTo`.
+   `RegisterAdapters` in `cmd/collector/main.go`, alongside the existing
+   `ntcip.RegisterTo(r)` — that function is the one place the binary decides
+   which vendors it ships with. Nothing in `internal/app` registers adapters;
+   it receives an already-populated `*adapter.Registry`.
 
 3. **Implement the read.** Populate one facet per subsystem read
    (`sdk/model` facets: operational status, fault set, detector samples,

@@ -45,17 +45,19 @@ health-gated rollback (ADR 0012's readiness signal) non-optional rather than
 a nice-to-have — the strictness makes the rollback guard more necessary, not
 less. This ADR does not weaken the rule to make that tension smaller.
 
-**One sanctioned exception**, not yet implemented: an absent broker at
-startup is a transient, not a config error. `publish.Connect`
-(`internal/publish/publish.go`) currently dials NATS and provisions streams
-during boot, so a broker that is slow to come up makes the collector exit —
-which under health-gated rollback reads as a failed update and triggers a
-spurious revert. Tolerating this is planned as fleet-plan Phase 1
-(`docs/plans/2026-08-09-fleet-deployment.md`), and is written down there as
-"a narrow exception to 'config is the trust boundary' rather than a
-weakening of it: bad config still fails hard, an absent peer retries." That
-plan is the source this ADR should be read alongside for the exception's
-scope; this ADR is the source for the rule the exception is narrow against.
+**One sanctioned exception**: an absent broker at startup is a transient,
+not a config error, and tolerating it is scoped by fleet-plan Phase 1
+(`docs/plans/2026-08-09-fleet-deployment.md`) as "a narrow exception to
+'config is the trust boundary' rather than a weakening of it: bad config
+still fails hard, an absent peer retries." The reason it must be an
+exception rather than a rule change: a broker slow to come up would
+otherwise make the collector exit, which under health-gated rollback reads
+as a failed update and triggers a spurious revert. That plan is the source
+for the exception's scope; this ADR is the source for the rule the exception
+is narrow against. Whether the exception is implemented yet is a moving
+fact and is not recorded here — see
+[`docs/reference/invariants.md`](../reference/invariants.md#config-is-the-trust-boundary-boot-fails-on-the-unrecognized)
+for the live status.
 
 ## Alternatives considered
 **Warn and continue** (rejected): the failure modes above are all

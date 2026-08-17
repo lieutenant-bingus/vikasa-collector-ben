@@ -1,5 +1,5 @@
 // Package cloudevents builds the CE envelopes the collector publishes.
-// CE type = catalog ce-type verbatim; source = the profile URN (ADR 0006);
+// CE type = catalog ce-type verbatim; source = the profile URN (ADR 0015);
 // id = deterministic, so JetStream dedup survives restarts and redundant
 // publishers agree without coordinating.
 package cloudevents

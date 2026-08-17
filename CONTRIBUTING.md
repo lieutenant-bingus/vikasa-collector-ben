@@ -5,6 +5,12 @@ skim the architecture docs — the layering rules below are CI-enforced, and
 PRs that fight them will be asked to restructure rather than merged:
 
 - `README.md` — the one-diagram architecture and current status.
+- [`docs/README.md`](docs/README.md) — the documentation hub. It routes by
+  task, and it is the fastest way to find the page you actually need.
+- [`docs/reference/starter-tasks.md`](docs/reference/starter-tasks.md) — five
+  device domains are modeled, diffed and wired to real ce-types with no
+  adapter producing them. Landing one of those is the highest-leverage first
+  PR, and touches `internal/vendors/<vendor>/` alone.
 - `docs/adr/` — the accepted decision records. ADR 0002 (wire emitter
   boundary), ADR 0003 (in-tree adapters), and ADR 0008 (fixture bar) shape
   most contributions.

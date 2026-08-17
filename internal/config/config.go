@@ -1,6 +1,6 @@
 // Package config loads the collector YAML and enforces the boot trust
 // boundary: bad tenant tokens, unknown adapters, or malformed devices
-// refuse to start (spec §6).
+// refuse to start (ADR 0014).
 package config
 
 import (

@@ -1,6 +1,12 @@
 // Package runner drives one device: jittered poll loop, per-poll timeout,
 // panic isolation, reachability health transitions. One sick device can
-// never stall the cabinet (spec §7).
+// never stall the cabinet.
+//
+// Decided in the 2026-07-12 greenfield collector architecture spec, §7. That
+// spec is scheduled for deletion once its content is harvested into the
+// explanation tier; until then git history is the only copy, which is why the
+// spec is named in full here rather than cited as a bare "spec §7". See
+// docs/README.md's known-gaps list.
 package runner
 
 import (

@@ -177,8 +177,9 @@ func TestRunRejectsUnparseableSubjectTemplate(t *testing.T) {
 	}
 }
 
-// TestUnclaimedDomainEventIsDroppedLoudly covers spec §7: an event no
-// emitter claims must be dropped loudly (metric + log), never silently.
+// TestUnclaimedDomainEventIsDroppedLoudly covers the loud-drop rule stated
+// in README.md: an event no emitter claims must be dropped loudly (metric +
+// log), never silently.
 //
 // This matters right now, not hypothetically: only the collector-owned
 // health emitter is wired today (see Run's emitter chain comment); every

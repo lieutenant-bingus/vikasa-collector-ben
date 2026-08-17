@@ -17,16 +17,16 @@ valid values.
 | `agency` | string | Yes | — | Same pattern as `region`. |
 | `agency_unit` | string | Yes | — | Same pattern as `region`. |
 | `site` | string | Yes | — | Same pattern as `region`. Not part of the CE-source URN; used for stream naming and health context. |
-| `collector_id` | string | Yes | — | Must match `^[a-zA-Z0-9_-]+$` (`internal/config/config.go:60` `deviceIDRe`, checked at `config.go:113`). Published as `observed-by` on every event. |
-| `model_version` | string | Yes | — | Must be non-empty (`config.go:110`). No format beyond that — selecting between catalog versions is not yet wired (ADR 0005, ADR 0010). |
+| `collector_id` | string | Yes | — | Must match `^[a-zA-Z0-9_-]+$` (`deviceIDRe` in `internal/config/config.go`, checked by `Config.validate`). Published as `observed-by` on every event. |
+| `model_version` | string | Yes | — | Must be non-empty (`Config.validate`). No format beyond that — selecting between catalog versions is not yet wired (ADR 0005, ADR 0010). |
 | `subject` | object | No | Omitted entirely | No validation of its own; see `subject.template` and `subject.vars`. Omitting the block reproduces the default seven-token grammar exactly. |
-| `subject.template` | string | No | `"{namespace}.{region}.{agency}.{agency_unit}.{service}.{device_id}.{event}"` (`internal/subject/subject.go` `DefaultTemplate`) | Must parse, and must be able to yield a static stream binding — its leftmost token must not vary per event (`tmpl.ValidateBindable()`, `config.go:129`). A service-first or flat template fails this check. |
-| `subject.vars` | map[string]string | No | empty | Keys may not redefine a reserved name (`namespace`, `service`, `event`, `version`, `region`, `agency`, `agency_unit`, `site`, `device_id`) — enforced in `subject.New` (`internal/subject/subject.go:119`). |
-| `devices` | list of objects | Yes | — | At least one device is required (`config.go:132`). |
-| `devices.id` | string | Yes (per device) | — | Must be non-empty (`config.go:138`) and unique across all devices (`config.go:141`). |
-| `devices.vendor` | string | Yes (per device) | — | Combined with `device_kind`, must resolve to a registered adapter — registry key `"<vendor>-<device_kind>"` (`reg.Known`, `config.go:145`). |
+| `subject.template` | string | No | `"{namespace}.{region}.{agency}.{agency_unit}.{service}.{device_id}.{event}"` (`internal/subject/subject.go` `DefaultTemplate`) | Must parse, and must be able to yield a static stream binding — its leftmost token must not vary per event (`tmpl.ValidateBindable()`, called from `Config.validate`). A service-first or flat template fails this check. |
+| `subject.vars` | map[string]string | No | empty | Keys may not redefine a reserved name (`namespace`, `service`, `event`, `version`, `region`, `agency`, `agency_unit`, `site`, `device_id`) — enforced in `subject.New` against `reservedNames` (`internal/subject/subject.go`). |
+| `devices` | list of objects | Yes | — | At least one device is required (`Config.validate`). |
+| `devices.id` | string | Yes (per device) | — | Must be non-empty and unique across all devices (`Config.validate`'s per-device loop). |
+| `devices.vendor` | string | Yes (per device) | — | Combined with `device_kind`, must resolve to a registered adapter — registry key `"<vendor>-<device_kind>"` (`reg.Known`, called from `Config.validate`'s per-device loop). |
 | `devices.device_kind` | string | Yes (per device) | — | Validated together with `vendor`, above. |
-| `devices.poll_interval` | duration | No | `5s` | Must not be negative (`config.go:148`); a zero value is defaulted to `5s` rather than treated as "poll as fast as possible" (`config.go:151`). |
+| `devices.poll_interval` | duration | No | `5s` | Must not be negative; a zero value is defaulted to `5s` by `Config.validate` rather than treated as "poll as fast as possible". |
 | `devices.connection` | map[string]any | Yes (per device, shape adapter-defined) | — | Opaque to the core; parsed and validated by the selected adapter, not by `Config.validate`. |
 
 ## Notes on non-obvious fields

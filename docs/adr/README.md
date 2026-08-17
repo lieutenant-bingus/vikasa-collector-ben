@@ -22,4 +22,4 @@ immutable once accepted; reversals get a new ADR that supersedes the old.
 | [0014](0014-config-is-the-trust-boundary.md) | Config is the trust boundary; boot fails on the unrecognized |
 | [0015](0015-ce-source-urn-scheme.md) | The CE-source URN scheme (supersedes 0006's and 0009's CE-source clauses) |
 
-Companion spec: `../specs/2026-07-12-greenfield-collector-architecture-design.md`
+Start at the [documentation hub](../README.md) for everything that is not a decision record.

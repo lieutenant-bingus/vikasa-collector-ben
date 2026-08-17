@@ -6,7 +6,10 @@ package model
 import "time"
 
 // Kind identifies a facet family. Facets are per-device-KIND, never
-// per-vendor (governance rail in the architecture spec §4).
+// per-vendor — a governance rail from the 2026-07-12 greenfield collector
+// architecture spec, §4. That spec is scheduled for deletion once §4 is
+// harvested into the explanation tier, so it is named in full rather than
+// cited as a bare "spec §4"; see docs/README.md's known-gaps list.
 type Kind string
 
 // Facet is one typed slice of device state within a Snapshot.
