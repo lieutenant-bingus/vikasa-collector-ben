@@ -47,7 +47,7 @@ less. This ADR does not weaken the rule to make that tension smaller.
 
 **One sanctioned exception**: an absent broker at startup is a transient,
 not a config error, and tolerating it is scoped by fleet-plan Phase 1
-(`docs/plans/2026-08-09-fleet-deployment.md`) as "a narrow exception to
+(`docs/specs/2026-08-09-fleet-deployment.md`) as "a narrow exception to
 'config is the trust boundary' rather than a weakening of it: bad config
 still fails hard, an absent peer retries." The reason it must be an
 exception rather than a rule change: a broker slow to come up would

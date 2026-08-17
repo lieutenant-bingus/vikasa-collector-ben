@@ -4,7 +4,7 @@
 **Status:** Draft
 **Depends on:** ADR 0004 (pull-only), ADR 0007 (collector-owned health schema),
 ADR 0011 (namespace-rooted subjects), ADR 0012 (host-executed updates)
-**Context:** `docs/plans/2026-08-09-fleet-deployment.md`
+**Context:** `docs/specs/2026-08-09-fleet-deployment.md`
 
 ## Goal
 
