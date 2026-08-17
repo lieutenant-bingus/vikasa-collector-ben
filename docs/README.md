@@ -10,12 +10,14 @@ enough to skim:
 - `specs/` (not built yet) — a staging area for designs whose work has not
   shipped, **not** an archive. A spec is deleted once its design ships and
   its durable content has been promoted into the living tiers.
-- `plans/` (in flight) — how a shipped-or-shipping design is being executed.
-  Deleted when the work ships.
-- `notes/` (evidence) — probe ledgers: what was verified, when, against what
-  version. Immutable, never edited, never deleted. Evidence does not go
-  stale, so a ledger is not a tracker — findings that need action are
-  collected below.
+
+Implementation plans and probe ledgers are **not** committed to this repo.
+Both are working artifacts of building a change — not documentation of the
+system that resulted — and are kept outside the tree; this repo's agent
+tooling writes them under the git-ignored `.superpowers/`. `specs/` is the
+one staging tier that does live here, because a spec targets a reader
+deciding whether to build something, not the agent that built it, and it
+empties out as that work ships.
 
 | I want to... | Start here |
 |---|---|
@@ -46,12 +48,16 @@ the rule was **fix the code, never weaken the document** — so the document
 stands as written and the gap is open here.
 
 Each entry is written to stand on its own: what is wrong, where in the code,
-and what closing it involves. The audit ledger
-([`notes/2026-08-17-documentation-truth-audit.md`](notes/2026-08-17-documentation-truth-audit.md))
-holds the original probes and their output as supporting evidence, but no
-entry below depends on it — a ledger is immutable evidence of what was
-verified on one date, not a tracker, and it may not live in this repository
-forever.
+and what closing it involves. The audit ledger held the original probes and
+their output as supporting evidence; no entry below depends on it, and it
+has since left this repository — probe ledgers are working artifacts, not
+documentation (see the taxonomy note above). Every commit that touched it
+is still in history; retrieve it, and resolve any `Evidence: ledger` line
+number below against it, with:
+
+```
+git show e6e2b1f:docs/notes/2026-08-17-documentation-truth-audit.md
+```
 
 ### The code does not meet a bar the docs correctly state
 

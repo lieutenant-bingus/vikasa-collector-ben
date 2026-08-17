@@ -191,10 +191,11 @@ in both directions, failing on an emittable type with no channel *and* on a
 documented channel nothing can emit. The emitter whose ce-types actually
 come from an externally-versioned catalog is the one without that check.
 Building the equivalent against the pinned release's own
-`bindings/nats/asyncapi.yaml` is successor work; see the audit ledger's
-ADR 0008 catalog-conformance finding
-(`../notes/2026-08-17-documentation-truth-audit.md`) and
-[the gap list](../README.md#known-gaps-and-successor-work).
+`bindings/nats/asyncapi.yaml` is successor work; see
+[the gap list](../README.md#known-gaps-and-successor-work), whose first
+entry is this finding in full — the audit ledger that originally recorded
+it no longer lives in this repository (that section says how to retrieve it
+from history).
 
 ## No fixtures, no merge
 
