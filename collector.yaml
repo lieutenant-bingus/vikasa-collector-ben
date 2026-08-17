@@ -3,7 +3,10 @@
 # Every value here is validated at boot and the collector refuses to start on
 # anything it does not understand: unknown vendor/device_kind, malformed
 # connection block, or tenant tokens that could corrupt subject grammar
-# (spec §6 — config is the trust boundary).
+# (ADR 0014 — config is the trust boundary).
+#
+# Field-by-field reference — types, defaults, validation:
+#   docs/reference/configuration.md
 
 # Tenant identity. region/agency/agency_unit are the OpenITS profile's identity
 # triple and appear in the CloudEvent source URN on every event:
@@ -14,11 +17,11 @@
 # stream naming and health context, and because a device-less event (the boot
 # event) needs an id for the collector itself.
 #
-# All four must match ^[a-z0-9][a-z0-9-]*$. A dot would corrupt the subject and
-# a colon would corrupt the URN, so both are rejected at boot rather than
-# producing events nobody can route or parse. Note the source URN is
-# load-bearing beyond routing: ce-id is derived from its literal bytes, so
-# changing any of these values changes the id of every event published after.
+# A dot would corrupt the subject and a colon would corrupt the URN, so both
+# are rejected at boot rather than producing events nobody can route or parse.
+# Note the source URN is load-bearing beyond routing: ce-id is derived from
+# its literal bytes, so changing any of these values changes the id of every
+# event published after.
 region: us-ga
 agency: metro-atlanta
 agency_unit: d01
@@ -33,7 +36,7 @@ site: cabinet-042
 # Required, and deliberately has no default. Deriving it from agency/site would
 # be silently wrong the moment a cabinet runs two collectors, and the mistake
 # would surface as mislabelled provenance in the data lake rather than as a
-# refusal to start. Must match [a-zA-Z0-9_-]+ (the wire's device-id shape).
+# refusal to start.
 collector_id: cabinet-042-collector
 
 # Selects the wire emitter at boot — the ONE place a models version appears.
@@ -61,19 +64,18 @@ model_version: openits/v1
 # different retention, and so an operator can grant read access to traffic
 # telemetry without also exposing collector internals (ADR 0011).
 #
-# Placeholders are either instance-constants — anything under `vars`, plus
-# `region`, `agency`, `agency_unit` and `site` — or per-event values:
-# `namespace`, `service`, `event` and `version` decomposed from the ce-type,
-# plus `device_id`. Device-less events (the boot event) render `device_id` as the
-# literal "collector", so every event the collector can emit has a legal
-# subject and the token count never varies.
+# Placeholders split into instance-constants (`vars`, plus the tenant identity
+# fields) and per-event values decomposed from the ce-type. Device-less events
+# (the boot event) render `device_id` as the literal "collector", so every
+# event the collector can emit has a legal subject and the token count never
+# varies.
 #
 # Note there is no `{version}` in the default: the ce-type already carries the
 # major version, and repeating it here would be a second source of truth free
 # to disagree with the first. `{version}` stays available if you want it.
 #
-# Reserved names (namespace, region, agency, agency_unit, site, service, event,
-# version, device_id) cannot be redefined in vars — an operator var shadowing one would
+# Reserved names cannot be redefined in vars (full list in
+# docs/reference/configuration.md) — an operator var shadowing one would
 # produce subjects that disagree with the collector's own identity, and it
 # would surface as unroutable events rather than a config error.
 #
@@ -108,7 +110,7 @@ devices:
   - id: asc-main-and-5th
     vendor: ntcip
     device_kind: asc
-    poll_interval: 1s # optional; defaults to 5s
+    poll_interval: 1s # optional
     connection: # opaque to the core — parsed only by the adapter
       snmp:
         address: 10.0.0.12:161 # host:port, required
