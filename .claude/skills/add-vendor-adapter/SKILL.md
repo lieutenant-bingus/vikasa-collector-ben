@@ -61,7 +61,7 @@ only where the vendor genuinely differs.
      Facets fail independently; one bad table must not poison the poll.
    - Transport failure (device unreachable) → return a hard error from
      `Read`; the core's health tracking owns unreachability. Never
-     synthesize a fault event for it (see the ADR 0008 discussion — the
+     synthesize a fault event for it (see ADR 0013 — the
      differ's rule is "absence of evidence is never a state change").
    - Out-of-spec values from the device → clamp or skip *with a test
      proving it*; never let a misbehaving device panic the collector.

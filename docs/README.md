@@ -145,6 +145,18 @@ Phase 1 — the readiness signal, broker-absent tolerance, and expected-version
 drift reporting, all prerequisites for health-gated rollback. Evidence: ledger
 `:1376-1392`.
 
+**Unclaimed wire-emitter events drop without a metric.** The bar —
+"drop loudly (metric + log)," stated in the `wire-emitter` skill and
+originally from `docs/specs/2026-07-12-greenfield-collector-architecture-design.md`
+— is only half met. `internal/app/app.go`'s `encodeAndPublish` calls
+`slog.Warn` on the no-emitter-claimed path but emits no metric, and there is
+no metrics or observability library anywhere in the tree (`internal/` and
+`sdk/` import neither `prometheus`, `expvar`, nor `otel`). The skill's text
+is correct and stays as written. *Closing it:* the repo has no metrics
+subsystem at all today, so this isn't a one-counter patch — it starts with a
+decision about whether the collector should have one, then wiring a counter
+into the drop path alongside the existing log line.
+
 ### Documents that are stale and were not corrected
 
 **ADR 0003 says a contribution adds `internal/vendors/<vendor>/<kind>/`.** The

@@ -61,13 +61,17 @@ re-probes only what the pin bump could have moved.
 
 ## Rules that make the layer work
 
-- **openits-models is consumed as tagged semver releases** — never a
-  `replace` on a checkout, which would break reproducibility for everyone
-  who doesn't have your working tree. Version coexistence happens across
-  the fleet (config selects the emitter at boot, ADR 0005), never inside a
-  process. Whatever the current pin is, it is a real, immutable module
-  version in `go.mod`; check there rather than assuming, and see ADR 0002
-  and any ADR amending it for the pinning rule in force.
+- **openits-models is pinned at a main-HEAD pseudo-version while both
+  repos move in lockstep, pre-v1** (ADR 0010, amending ADR 0002's pinning
+  clause) — never a `replace` on a checkout, which would break
+  reproducibility for everyone who doesn't have your working tree. Version
+  coexistence happens across the fleet (config selects the emitter at boot,
+  ADR 0005), never inside a process. Whatever the current pin is, it is a
+  real, immutable module version in `go.mod` — a pseudo-version today, not
+  a tag; check there rather than assuming. Tagged semver releases (and the
+  versioned `internal/wire/<version>` layout) return at openits-models
+  v1.0.0, or sooner if one of ADR 0010's expiry triggers fires — see that
+  ADR for the pinning rule in force.
 - **The mapping is dumb by design.** Field-by-field copies, explicit enum
   switches. No reflection, no mapping DSL, no clever generality — a
   reviewer must be able to check each mapping against the two schemas by
@@ -92,10 +96,13 @@ re-probes only what the pin bump could have moved.
 1. Read the CHANGELOG (or the commit range) and diff its
    `bindings/nats/asyncapi.yaml` ce-type set against the current emitter's
    `CETypes()`.
-2. Move the pin to the new release, adjust mappings and `ce-dataschema`
-   constants, and claim any newly-available events that were dropping
-   (the drop warnings name the candidates). While only one models release
-   has to compile, edit the existing emitter package in place.
+2. Move the pin with
+   `go get -u github.com/Vikasa2M/openits-models@main` (ADR 0010's
+   lockstep mechanism while pre-v1; a tagged bump once ADR 0010 expires),
+   adjust mappings and `ce-dataschema` constants, and claim any
+   newly-available events that were dropping (the drop warnings name the
+   candidates). While only one models release has to compile, edit the
+   existing emitter package in place.
 3. When the fleet needs two releases at once, copy the emitter to
    `internal/wire/<newversion>` instead, so both compile together (ADR
    0002's S2). Update the `model_version` default only when the fleet is
