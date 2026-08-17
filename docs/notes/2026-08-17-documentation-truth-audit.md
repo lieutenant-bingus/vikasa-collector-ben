@@ -1749,7 +1749,11 @@ than double-scoring it. Counted directly from the summary table's Verdict
 column below (`awk` over the column, not eyeballed) — 37 TRUE (24 single-row
 + 13 bundled under the package-doc-comments row), 19 DOC WRONG, 2
 UNVERIFIABLE (blocked), 3 HOMELESS RULE, 1 cross-referenced DOC RIGHT/CODE
-WRONG, 5 non-scored administrative/pointer rows.
+WRONG, **6** non-scored administrative/pointer rows (1 not-a-harvest-source
++ 2 forward-looking-design + 2 ADR-already-resolved pointers + 1 folded row
+— corrected from an earlier miscount of 5 that enumerated only 4 items; see
+the fix-report appendix at the end of this document for the review finding
+that caught it).
 
 ## Summary table (Task 6)
 
@@ -2844,3 +2848,513 @@ side effect of documenting the false positive, not a workaround: the
 content is accurate and was written to explain the check, not to game it.
 **Task 6's completeness check passes**, with zero output, for the full
 target list.
+
+
+---
+
+# Task 6 fix report: greenfield spec §4/§6/§7/§8 and emitter-design §1/§5
+
+**What was missed and why it matters.** The original pass probed the
+greenfield spec's known subject-grammar defect and §1-§5 thoroughly, but
+never recorded a row for §6 (Poll path; Envelope, subjects, versioning;
+Publish), §8 (Testing strategy), or the four unscored subsections of §4
+(Domain events, Health events, Commands, Governance rails); §7 was touched
+only through a `.go` comment's citation accuracy, not its own claims. The
+design manifest (`docs/specs/2026-08-17-documentation-architecture-design.md:170,172`)
+names greenfield §2/§6 as the harvest source for `architecture.md`, §5/§6
+for `pluggability.md`, and §8 for `testing-strategy.md` — so roughly half of
+this spec's harvestable content had no evidence trail at all. The original
+report's "Where a probe contradicted the brief" section listed eight extra
+findings, all from §1-§5, without disclosing that §6-§9 were unscored —
+that made the audit read as more complete than it was. Both gaps are now
+closed by direct probes below, and the omission is disclosed here rather
+than left implicit.
+
+## §4 — remaining subsections (Domain events, Health events, Commands, Governance rails)
+
+### Claim: "Domain events" — typed events (`PlanChanged`, `FaultRaised`, `PreemptionActivated`, `DetectorReport`, `OperationalStatusReport`) produced by synth or returned by `EventReader` adapters; "Domain events are the emitters' only input"
+
+```
+$ grep -n 'type PlanChanged\|type FaultRaised\|type PreemptionActivated\|type DetectorReport\|type OperationalStatusReport' sdk/model/events.go
+35:type OperationalStatusReport struct {
+53:type PlanChanged struct {
+61:type PreemptionActivated struct {
+76:type FaultRaised struct {
+107:type DetectorReport struct {
+
+$ grep -n 'Encode(' internal/wire/emitter.go
+41:	Encode(ev model.Event) (enc *Encoded, ok bool, err error)
+```
+
+**Verdict: TRUE** for both — all five named event types exist, and
+`wire.Emitter.Encode` takes exactly one `model.Event` and nothing else, so
+domain events are structurally the emitter's only input.
+
+### Claim: "EventReader adapters skip synth and rejoin at the emitter" (part of the Poll path claim, §6, scored here since it is really a §4/§6 boundary claim)
+
+```
+$ grep -rn 'EventReader\|CapEvents' --include='*.go' . | grep -v _test
+sdk/adapter/adapter.go:19:	// CapEvents: implements EventReader...
+sdk/adapter/adapter.go:21:	CapEvents
+sdk/adapter/adapter.go:52:// EventReader polls a source that yields discrete events...
+sdk/adapter/adapter.go:54:type EventReader interface {
+sdk/model/events.go:6:// consecutive Snapshots) or returned directly by EventReader adapters.
+
+$ grep -n 'StateReader\|EventReader\|adapter\.' internal/runner/runner.go
+19:	dev        adapter.StateReader
+34:func New(dev adapter.StateReader, deviceID string, interval, timeout time.Duration,
+```
+
+**Verdict: DOC RIGHT, CODE WRONG.** `EventReader` is declared, but no
+dispatch mechanism for it exists anywhere in `internal/` — `runner.Runner`'s
+constructor is typed to `adapter.StateReader` specifically, not the common
+`adapter.Adapter` interface, so even a fully-implemented `EventReader`
+adapter has nothing in the poll path that would route its `Fetch()` output
+to an emitter today. This is a sharper finding than Task 5's ADR 0004 row
+(which established only that no adapter implements `EventReader` yet) — the
+runner package cannot dispatch on it structurally, not just "nobody has
+tried." Consistent with ADR 0004's "deferred to the first log-shaped
+adapter" framing (not a contradiction of that row), but this specific §4/§6
+claim describes a poll-path branch that has zero code today. Successor work
+item, not a doc edit.
+
+### Claim: "Health events" — collector-owned versioned schema, fully outside openits-models, documented in the collector's AsyncAPI
+
+**Verdict: TRUE, cross-referenced.** Identical substance to Task 5's ADR
+0007 probe (ce-type namespace, no openits-models import, documented in
+`asyncapi.yaml`) and this task's own `internal/wire/health` package-doc
+probe. Not re-run to avoid duplicating already-recorded evidence; cited so
+this subsection has an entry.
+
+### Claim: "Commands (reserved seam, dormant in v1)" — `model.Command` variants + `Commander` interface exist; no dispatcher, no safety-validation subsystem
+
+```
+$ cat sdk/model/command.go
+package model
+
+// Command is the reserved write-back seam (ADR 0004). v1 is collect-only:
+// these types exist so the Commander adapter capability compiles, but
+// nothing dispatches them yet.
+type Command interface{ CommandKind() string }
+
+type SetPlan struct{ PlanID uint32 }
+func (SetPlan) CommandKind() string { return "set-plan" }
+
+$ grep -n 'type Commander' sdk/adapter/adapter.go
+60:type Commander interface {
+
+$ grep -rln 'dispatcher\|Dispatcher\|safety.valid' --include='*.go' . | grep -v _test
+(no output)
+```
+
+**Verdict: TRUE.** `model.Command` and its one variant (`SetPlan`) exist,
+`Commander` exists, and no dispatcher or safety-validation subsystem exists
+anywhere — matches "reserved, dormant, collect-only" exactly. Consistent
+with, and slightly more specific than, Task 5's ADR 0004 row.
+
+### Claim: "Governance rails" — facets/events are per-device-kind, never per-vendor; synth never grows vendor knowledge
+
+```
+$ grep -n 'Vendor\b' internal/synth/*.go | grep -v _test
+(no output)
+
+$ grep -n 'func.*Kind() model.Kind' internal/synth/*.go | grep -v _test
+internal/synth/cctv.go:19:func (cctvDiffer) Kind() model.Kind { return model.KindCCTVStatus }
+internal/synth/detector.go:26:func (d *detectorDiffer) Kind() model.Kind { return model.KindDetectorSamples }
+internal/synth/trafficsensor.go:22:func (trafficIntervalDiffer) Kind() model.Kind { return model.KindTrafficIntervals }
+internal/synth/dms.go:17:func (dmsDiffer) Kind() model.Kind { return model.KindDMSStatus }
+internal/synth/fault.go:15:func (faultDiffer) Kind() model.Kind { return model.KindFaultSet }
+internal/synth/signal.go:11:func (signalDiffer) Kind() model.Kind { return model.KindSignalStatus }
+internal/synth/perception.go:21:func (zoneIncidentDiffer) Kind() model.Kind { return model.KindZoneIncidents }
+internal/synth/perception.go:121:func (zoneIntervalDiffer) Kind() model.Kind { return model.KindZoneIntervals }
+```
+
+**Verdict: TRUE.** No `Vendor` field or branch exists anywhere in
+`internal/synth`; every registered differ is keyed exclusively on
+`model.Kind` (facet kind). `internal/synth/synth.go`'s own package doc
+comment states this rail verbatim ("the engine never grows vendor or wire
+knowledge").
+
+---
+
+## §6 — Poll path
+
+### Claim: "Per-device runner goroutine: jittered interval, per-poll timeout, panic-guarded, transport I/O serialized per device"
+
+```
+$ grep -n 'jitter\|timeout\|recover()' internal/runner/runner.go
+1:// Package runner drives one device: jittered poll loop, per-poll timeout,
+2:// panic isolation, reachability health transitions. One sick device can
+23:	timeout    time.Duration
+28:	jitter func(time.Duration) time.Duration
+34:func New(dev adapter.StateReader, deviceID string, interval, timeout time.Duration,
+47:	jitter: func(d time.Duration) time.Duration { return time.Duration(rand.Int63n(int64(d))) },
+60:	case <-time.After(r.jitter(r.interval)):
+77:	pctx, cancel := context.WithTimeout(ctx, r.timeout)
+119:		if p := recover(); p != nil {
+
+$ grep -n 'func Run\|go func' internal/app/app.go
+113:		go func() {
+```
+```
+$ grep -n 'mu sync.Mutex\|c.mu.Lock' sdk/transport/snmp/client.go
+57:	mu sync.Mutex
+62:	c.mu.Lock()
+86:	c.mu.Lock()
+```
+
+**Verdict: TRUE.** Jittered start delay, `context.WithTimeout` per poll, a
+`recover()`-based panic guard, one goroutine per device (`app.go:113`), and
+a mutex-guarded SNMP client serializing I/O per device — every clause
+matches.
+
+### Claim: "`Read` → `Snapshot` → synth (per-facet registered differs; first poll yields current-state events) → emitter → CloudEvents envelope → publish. `EventReader` adapters skip synth and rejoin at the emitter."
+
+**Verdict: split.** The pipeline shape (`Read → Snapshot → synth → emitter →
+envelope → publish`) is **TRUE** — matches `app.go`'s wiring exactly (`sink`
+called from `engine.Apply`'s output, feeding `encodeAndPublish`). The
+`EventReader` clause is **DOC RIGHT, CODE WRONG** — see the §4 finding
+above (same claim, not double-counted).
+
+"First poll yields current-state events" is **DOC WRONG (overgeneralized)**:
+
+```
+$ sed -n '28,34p' internal/synth/trafficsensor_test.go
+func TestTrafficDiffer_FirstObservationEmits(t *testing.T) {
+	// Deliberately UNLIKE the detector differ, which stays silent on first
+	// poll because a cumulative counter has no basis yet. These sensors hand
+	// over a finished interval they binned themselves, so the first read is a
+	// complete, attributable measurement...
+```
+```
+$ grep -n 'func TestFirstPoll\|func TestDMSFirstPoll\|func TestCCTVDiffer_FirstObservation' internal/synth/*_test.go
+internal/synth/signal_test.go:...TestFirstPollEmitsOnlyStatusReport      → emits
+internal/synth/fault_test.go:...TestFirstPollRaisesEverythingCurrentlyRaised → emits
+internal/synth/detector_test.go:...TestFirstPollEmitsNoReport            → emits nothing
+internal/synth/dms_test.go:...TestDMSFirstPollEmitsNothing               → emits nothing
+internal/synth/cctv_test.go:...TestCCTVDiffer_FirstObservationEmitsNothing → emits nothing
+```
+
+Four of eight differs (detector, DMS, CCTV, plus — verified separately in
+the original ledger — the design is explicit that detector-style
+cumulative-counter facets stay silent) emit **nothing** on first poll, by
+deliberate design the code itself documents inline as an intentional split,
+not an oversight. "First poll yields current-state events" describes half
+the differs and is silent about the other half — the exact granularity
+`architecture.md` and `adapter-to-model.md` (both harvesting this section)
+need to get right, since a reader taking this sentence literally would
+expect every first poll to emit.
+
+### Claim: §6 "Envelope, subjects, versioning" — remaining unscored clauses (CE `type`, health subject scheme, `model_version` pins a catalog snapshot)
+
+```
+$ grep -n 'openits\.signal-control\.mode-changed\.v1' /home/josh/go/pkg/mod/github.com/\!vikasa2\!m/openits-models@v0.2.3-0.20260807005833-235e8780f44c/bindings/nats/asyncapi.yaml
+327:    openits.signal-control.mode-changed.v1:
+328:        address: openits.signal-control.mode-changed.v1
+```
+**Verdict (CE `type`): TRUE.** Verbatim match to the pinned catalog's own
+AsyncAPI address for the same ce-type.
+
+```
+$ sed -n '232,236p' internal/subject/subject.go
+// the collector-owned health schema (ADR 0007) — and it IS a subject
+// token: it roots each family in its own space so they can carry different
+// retention and different access control (ADR 0011).
+//
+// It was previously discarded, so both families shared one root.
+```
+**Verdict (health "same tenant-scoped subject scheme" as catalog): DOC
+WRONG (superseded by ADR 0011).** Health and catalog events are on
+*different* namespace roots and different JetStream streams by deliberate
+design today, precisely because sharing one root made retention and access
+control inexpressible (Task 5's ADR 0011 probe, re-confirmed here directly
+against `subject.go`'s own comment). "The same subject scheme" was true
+pre-ADR-0011 and is not true now.
+
+```
+$ grep -n 'ModelVersion' internal/config/config.go
+52:	ModelVersion string   `yaml:"model_version"`
+```
+**Verdict (`model_version` "pins a catalog snapshot"): TRUE, conceptually
+— cross-referenced, not double-scored.** This clause only describes what
+`model_version` conceptually represents (a models-release pin), not whether
+the code *selects* an emitter by it — that is the separate, already-scored
+DOC RIGHT/CODE WRONG gap (Task 5, ADR 0005/0010; cross-referenced in the
+original greenfield-spec section above). As a description of what the field
+means, it is accurate.
+
+### Claim: §6 "Publish" — "must-succeed with bounded retry and backpressure into the runner — never unbounded in-process buffering"
+
+```
+$ grep -n 'sink :=\|encodeAndPublish\|Runners call sink synchronously' internal/app/app.go
+77:	sink := func(events []model.Event) {
+121:	// Runners call sink synchronously, so wg.Wait returning means every event
+```
+```
+$ grep -n 'publishAttempts\|publishBackoff' internal/publish/publish.go
+20:	publishAttempts = 3
+21:	publishBackoff  = 250 * time.Millisecond
+```
+
+**Verdict: TRUE.** "Bounded retry" was already established (Task 4/5,
+cross-ref). New this pass: `app.go`'s own comment confirms runners call
+`sink` — and therefore `Publish` — **synchronously**, so a slow or failing
+publish (up to ~500ms of retries) blocks the calling runner's poll-loop
+goroutine directly. That is genuine backpressure into the runner, not a
+metaphor. "Never unbounded in-process buffering" also holds: there is no
+queue, channel, or slice anywhere that accumulates unpublished events after
+retries are exhausted — a failed publish is logged and discarded, not
+buffered.
+
+---
+
+## §7 — Error handling, on its own terms
+
+### Claim: "Runner isolation: one sick device never stalls the cabinet"
+
+**Verdict: TRUE.** Same evidence as the §6 Poll-path probe above (own
+goroutine per device, panic guard, per-poll timeout, serialized transport
+I/O) — recorded as its own row here per the review's request that §7 be
+scored on its own terms, not only through a citation check.
+
+### Claim: "Partial reads are first-class... iron rule: absence of evidence is never a state change"
+
+**Verdict: TRUE, cross-referenced.** Identical substance to Task 4's
+AGENTS.md probe and ADR 0013 (Task 5). Not re-run.
+
+### Claim: "Unmappable domain events: emitter drops loudly (metric + log), never silently. Health events structurally can't hit this."
+
+```
+$ grep -rln 'prometheus\|expvar\|metrics\.\|Metric' --include='*.go' . | grep -v _test | grep -v '/pkg/mod/'
+(no output)
+
+$ sed -n '138,178p' internal/app/app.go
+	if err != nil {
+		slog.Error("emit failed", ...)
+	...
+	slog.Warn("event dropped: no ce-source entity kind for device kind", ...)
+	...
+	slog.Warn("event dropped: no emitter for domain event", ...)
+```
+
+**Verdict: DOC WRONG.** No metrics subsystem exists anywhere in this
+codebase — no Prometheus client, no `expvar`, no counter type of any kind.
+Every drop path logs via `slog.Warn` only. "Drops loudly (metric + log)"
+promises a metric that does not exist; only the log half is true. This is
+the same root cause as §7's separate metrics claim below — scored once.
+
+```
+$ sed -n '44,56p' internal/wire/health/health.go
+func (emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
+	switch e := ev.(type) {
+	case model.DeviceStatusChanged: ...
+	case model.CollectorStarted: ...
+	default:
+		return nil, false, nil
+	}
+}
+```
+
+**Verdict (health events can't hit the drop path): TRUE.** The health
+emitter's `Encode` recognizes exactly the two event types the collector's
+health schema ever produces (`DeviceStatusChanged`, `CollectorStarted`);
+nothing else in the codebase constructs a third health-domain event, so
+the `default: return nil, false, nil` branch — which is what would trigger
+a loud drop — is structurally unreachable in practice.
+
+### Claim: "Boot fails fast; runtime metrics keep bounded label cardinality (device_id acceptable; nothing unbounded)"
+
+**Verdict: TRUE** for "boot fails fast" (cross-referenced — Task 4/5,
+ADR 0014, extensively established). **DOC WRONG** for the runtime-metrics
+half — same finding as above, not double-counted: there is no metrics
+subsystem, bounded or otherwise, so there is no cardinality policy to
+evaluate. `2026-08-09-management-surface-design.md`'s own `/status` design
+(§1: "events published, events dropped," "emitter drop counts by reason")
+proposes exactly this as *future* work, consistent with it not existing
+today.
+
+---
+
+## §8 — Testing strategy
+
+### Claim: "Adapters — fixture-golden: recorded raw transport responses... an adapter PR without fixtures does not merge"
+
+**Verdict: DOC RIGHT, CODE WRONG, cross-referenced.** Identical substance
+to Task 4's README/ADR 0008 finding (`healthyFixture` is a hand-typed map,
+not a genuine recording; no `testdata/` directory or recording tool exists
+anywhere). Not re-run; recorded here because `testing-strategy.md` harvests
+directly from this section and needs the row.
+
+### Claim: "Synth — table-driven per differ, fixed timestamps"
+
+```
+$ grep -n 'var t0' internal/synth/signal_test.go
+internal/synth/signal_test.go:10:var t0 = time.Date(2026, 7, 12, 10, 0, 0, 0, time.UTC)
+```
+**Verdict: TRUE, cross-referenced.** Same evidence as Task 5's ADR 0008
+probe.
+
+### Claim: "Emitters — two mechanical guards: (1) golden: domain event → exact proto bytes + ce-type; (2) catalog conformance"
+
+```
+$ grep -n 'func TestGoldens\b\|func TestGoldensCoverEveryCEType' internal/wire/openits/golden_test.go
+324:func TestGoldens(t *testing.T) {
+357:func TestGoldensCoverEveryCEType(t *testing.T) {
+```
+**Verdict (guard 1, golden): TRUE — stronger than previously recorded.**
+Beyond the bare `TestGoldens` existence Task 5 already noted, this pass
+found `TestGoldensCoverEveryCEType`, which asserts every ce-type in
+`New("x").CETypes()` has a golden fixture — an exhaustiveness check, not a
+sampled one.
+
+**Verdict (guard 2, catalog conformance): DOC RIGHT, CODE WRONG,
+cross-referenced.** Identical substance to Task 5's ADR 0008 finding: only
+`internal/wire/health` has a conformance test; `internal/wire/openits` —
+the emitter this rule is actually about — has none. Not re-run.
+
+### Claim: "Subjects — byte-literal golden for the tenant-splice rule"
+
+**Verdict: TRUE, cross-referenced.** Same evidence as Task 5's ADR 0008
+probe (`TestDefaultTemplateGolden`).
+
+### Claim: "End-to-end: in-process nats-server; config + fixture adapter → assert events on `openits.<agency>.<site>.>`"
+
+```
+$ grep -n 'nats-server\|func Test' internal/app/app_test.go internal/app/conformance_test.go
+internal/app/app_test.go:15:	"github.com/nats-io/nats-server/v2/server"
+internal/app/app_test.go:50:func TestEndToEndHealthEventsReachJetStream(t *testing.T) {
+internal/app/app_test.go:152:func TestRunRejectsUnparseableSubjectTemplate(t *testing.T) {
+internal/app/app_test.go:194:func TestUnclaimedDomainEventIsDroppedLoudly(t *testing.T) {
+internal/app/conformance_test.go:118:func TestTier2ProfileConformance(t *testing.T) {
+internal/app/conformance_test.go:187:func TestHealthEventsAreOffTheCatalogSubjectSpace(t *testing.T) {
+```
+
+**Verdict: TRUE — exceeds the spec's ambition.** An in-process `nats-server`
+end-to-end suite exists exactly as described (config + fixture adapter,
+asserting events land), plus two tests the spec didn't ask for
+(`TestTier2ProfileConformance`, `TestHealthEventsAreOffTheCatalogSubjectSpace`).
+The literal subject pattern the spec names (`openits.<agency>.<site>.>`) is
+stale — it's the known five-token grammar defect, not re-scored — and
+`TestHealthEventsAreOffTheCatalogSubjectSpace`'s own name is direct evidence
+that health events specifically do *not* land under `openits.*` today (see
+the §6 "same subject scheme" finding above).
+
+### Claim: "Boundary lint in CI: `sdk/` and `internal/vendors/` must not import openits-models; only `internal/wire/` may"
+
+**Verdict: TRUE, cross-referenced.** Extensively established (Task 4/5,
+this task's own `lint-boundary.sh` re-run in the `make check` output below).
+
+---
+
+## Emitter-design spec (`2026-07-21-openits-models-emitter-design.md`) — §1 and §5
+
+### Claim: §1 — pin at main HEAD/no `replace`; new `internal/wire/openits` package, unsuffixed; runner emitter chain becomes `[openits, health]`; CI boundary lint already enforces layering
+
+```
+$ grep -n 'emitters := \[\]wire.Emitter' internal/app/app.go
+43:	emitters := []wire.Emitter{openits.New(cfg.CollectorID), health.NewHealthEmitter()}
+```
+
+**Verdict: TRUE.** The pin/no-replace/package-naming/lint clauses are all
+cross-referenced against evidence already in the ledger (Task 5's ADR 0010
+probe; this task's `go.mod`/`lint-boundary.sh` re-checks). New this pass:
+the emitter chain order is `[openits, health]` in `app.go`, matching the
+spec's bracketed claim exactly, first-claim-wins semantics included.
+
+### Claim: §5 — fixture-driven goldens per mapped event; boot validation renders every `CETypes()` entry through the subject template; envelope/subject changes covered by existing test updates; Tier 2 conformance harness against a live stream is "follow-up, not a blocker"
+
+```
+$ grep -n 'ValidateCETypes' internal/app/app.go
+60:	if err := tmpl.ValidateCETypes(ceTypes, cfg.DeviceIDs()); err != nil {
+
+$ grep -rn 'tools/conformance\|Tier 2\|Tier2' .github/workflows/*.yml Makefile
+(no output)
+```
+
+**Verdict: TRUE.** The first three clauses are cross-referenced (goldens:
+`TestGoldens`/`TestGoldensCoverEveryCEType` above; boot validation:
+`app.go`'s `ValidateCETypes` call over the full `CETypes()` union). The
+Tier 2 conformance-harness-in-CI item is confirmed genuinely absent —
+matching the spec's own "follow-up, not a blocker" framing rather than
+contradicting it.
+
+---
+
+## Finding 2 fix: tally arithmetic
+
+The original tally prose said "5 non-scored administrative/pointer rows"
+but enumerated four. Corrected: 1 not-a-harvest-source row
+(`2026-07-10-vendor-adapter-architecture-design.md`) + 2 ADR-already-resolved
+pointer rows (absence-of-evidence → ADR 0013; config-trust-boundary → ADR
+0014) + 1 folded row (management-surface's "standing rule" citation, folded
+into the guard-testing HOMELESS RULE) + 2 forward-looking-design rows in
+kept documents (management-surface's not-yet-built surface;
+fleet-deployment's open questions) = **6** non-scored administrative/
+forward-looking rows, not 5. None of the five scored-verdict counts (TRUE,
+DOC WRONG, DOC RIGHT/CODE WRONG, UNVERIFIABLE (blocked), HOMELESS RULE)
+change — this is a labeling/count fix in the explanatory prose only.
+
+## Updated verdict tally (Task 6, after fix pass)
+
+Counted directly from this fix-report section's rows plus the original
+section's summary table (`grep`/`awk` over both, not eyeballed):
+
+- **New TRUE this pass:** 20 (§4: types-exist, emitters'-only-input,
+  Commands, Governance rails = 4; §6: jitter, per-poll timeout, panic-guard,
+  serialized I/O, pipeline order, CE-type-verbatim, model_version-pins-snapshot,
+  Publish-backpressure, Publish-no-unbounded-buffer = 9; §7:
+  runner-isolation, health-cant-hit-drop-path = 2; §8:
+  emitter-golden-exhaustiveness, end-to-end-nats-server = 2; emitter-design
+  §1 chain-order = 1; emitter-design §5 Tier2-harness-confirmed-absent = 1;
+  plus §4 Health-events, cross-ref = 1)
+- **New DOC WRONG this pass:** 3 ("first poll yields current-state events"
+  overgeneralized; health events "same subject scheme" superseded by ADR
+  0011; "drops loudly (metric + log)" / runtime-metrics — one finding, one
+  root cause, scored once)
+- **New DOC RIGHT, CODE WRONG this pass:** 1 fresh (`EventReader`
+  skip-synth-rejoin-at-emitter has no dispatch mechanism in the runner at
+  all — sharper than, and not a duplicate of, Task 5's ADR 0004 row)
+- **Cross-referenced, not double-counted:** §4 Health events (ADR 0007), §6
+  Publish bounded-retry, §6 model_version-conceptual, §7 iron-rule and
+  boot-fails-fast, §8 fixture-golden (DOC RIGHT/CODE WRONG), §8
+  synth-table-driven, §8 catalog-conformance (DOC RIGHT/CODE WRONG), §8
+  subject-golden, §8 boundary-lint, emitter-design §1 pin/naming/lint,
+  emitter-design §5 goldens/boot-validation clauses.
+
+**Running total (original pass + this fix pass):** TRUE 57 (37 + 20) · DOC
+WRONG 22 (19 + 3) · DOC RIGHT, CODE WRONG: 0 freshly-scored-and-counted (2
+cross-referenced/noted — 1 to Task 5's ADR 0005/0010 finding, 1 new-but-
+distinct EventReader-dispatch finding recorded as its own row above since it
+is not a duplicate) · UNVERIFIABLE (blocked): 2 (unchanged) · HOMELESS RULE:
+3 (unchanged).
+
+## Updated harvest whitelist — §6 and §8 specifically
+
+**Safe to promote from greenfield §6 (→ `architecture.md`):** the poll-path
+mechanics (jittered start, per-poll timeout, panic guard, serialized
+transport I/O, one goroutine per device), the `Read → Snapshot → synth →
+emitter → envelope → publish` pipeline shape, CE `type` = catalog-verbatim,
+and the Publish semantics (bounded retry, synchronous backpressure into the
+runner, no unbounded buffering).
+
+**Not safe to promote from §6 as written:** "first poll yields current-state
+events" (true for signal/fault/traffic-interval/zone-incident/zone-interval,
+false by design for detector/DMS/CCTV — needs the per-differ split, not a
+blanket statement); the NATS subject grammar, CE `source`, and CE `id`
+clauses (already-known defects); "health events use the same tenant-scoped
+subject scheme" (false since ADR 0011 — they're on separate roots/streams
+today); the `EventReader`-skip-synth clause (no dispatch mechanism exists).
+
+**Safe to promote from greenfield §8 (→ `testing-strategy.md`):** synth
+table-driven/fixed-timestamp testing, the subject byte-literal golden, the
+CI boundary lint, and — now confirmed exhaustive, not just present — the
+emitter golden guard (`TestGoldensCoverEveryCEType`). The in-process
+end-to-end suite is real and exceeds the spec's own ambition; promote it,
+but drop the specific stale subject-pattern example.
+
+**Not safe to promote from §8 as written:** "an adapter PR without fixtures
+does not merge" as a description of current fixture *quality* (the bar is
+enforced, but the one fixture in the repo doesn't meet ADR 0008's own
+recording standard — already flagged, Task 4); "catalog conformance" as a
+guard that exists for both emitters (it exists only for `health`, not for
+`openits`, the emitter the rule is actually about).
