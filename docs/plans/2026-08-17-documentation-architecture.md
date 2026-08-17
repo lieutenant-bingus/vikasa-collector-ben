@@ -1042,7 +1042,7 @@ Run:
 grep -n 'yaml:"' internal/config/config.go
 ```
 
-Expected thirteen names: `region`, `agency`, `agency_unit`, `site`,
+Expected fifteen names: `region`, `agency`, `agency_unit`, `site`,
 `collector_id`, `model_version`, `subject`, `subject.template`, `subject.vars`,
 `devices`, `devices.id`, `devices.vendor`, `devices.device_kind`,
 `devices.poll_interval`, `devices.connection`. Write the document from this
@@ -1381,10 +1381,17 @@ fail=0
 checked=0
 
 # ---- A: relative links resolve ---------------------------------------------
+# Fenced code blocks are skipped. Documents that TEACH markdown — this repo's
+# plans and skills show example link syntax — would otherwise be flagged for
+# links that were never meant to resolve from the containing file's directory.
+strip_fences() {
+  awk '/^[[:space:]]*```/ { infence = !infence; next } !infence { print }' "$1"
+}
+
 while IFS= read -r md; do
   dir=$(dirname "$md")
   # [text](target) where target is neither absolute nor a URL nor an anchor.
-  grep -oE '\]\([^)#][^)]*\)' "$md" 2>/dev/null | sed 's/^](//; s/)$//' | while read -r link; do
+  strip_fences "$md" | grep -oE '\]\([^)#][^)]*\)' | sed 's/^](//; s/)$//' | while read -r link; do
     case "$link" in
       http*://* | mailto:*) continue ;;
     esac
@@ -1396,7 +1403,8 @@ while IFS= read -r md; do
     fi
   done || fail=1
   checked=$((checked + 1))
-done < <(find docs -name '*.md' -not -path 'docs/specs/*')
+done < <({ find docs -name '*.md' -not -path 'docs/specs/*'; \
+           ls README.md CONTRIBUTING.md AGENTS.md CODE_OF_CONDUCT.md SECURITY.md; })
 
 # ---- B: skill structure -----------------------------------------------------
 required=("## When this applies" "## Invariants" "## Procedure" "## Verify" "## Canonical doc")
@@ -1430,6 +1438,10 @@ Note: `docs/specs/` is excluded from the link check. Specs are point-in-time
 records and may reference files that have since been deleted; holding history
 to a live-link standard would force edits to documents that are supposed to be
 frozen.
+
+The root-level documents ARE included. `README.md` is the most-read file in the
+repository, and a check that skipped it would miss the links most likely to be
+followed.
 
 - [ ] **Step 2: Run it to verify it fails**
 
