@@ -23,7 +23,18 @@ strip_fences() {
   awk '/^[[:space:]]*```/ { infence = !infence; next } !infence { print }' "$1"
 }
 
+# The root documents are listed with printf, not `ls`. A process substitution
+# runs in a subshell whose exit status `set -e` never sees, so an `ls` that
+# failed because one of the five was renamed would abort the list at that point
+# and silently drop the rest -- fewer documents checked, still "clean". printf
+# cannot fail that way, and a genuinely missing file now surfaces as a real
+# error from the loop body instead of as a shorter list.
 while IFS= read -r md; do
+  if [ ! -f "$md" ]; then
+    echo "MISSING DOCUMENT: $md is listed as a required document but does not exist" >&2
+    fail=1
+    continue
+  fi
   dir=$(dirname "$md")
   # [text](target) where target is neither absolute nor a URL nor an anchor.
   # The grep's own exit status is neutralized with `|| true`: under
@@ -44,7 +55,7 @@ while IFS= read -r md; do
   done || fail=1
   checked=$((checked + 1))
 done < <({ find docs -name '*.md' -not -path 'docs/specs/*'; \
-           ls README.md CONTRIBUTING.md AGENTS.md CODE_OF_CONDUCT.md SECURITY.md; })
+           printf '%s\n' README.md CONTRIBUTING.md AGENTS.md CODE_OF_CONDUCT.md SECURITY.md; })
 
 # ---- B: skill structure -----------------------------------------------------
 required=("## When this applies" "## Invariants" "## Procedure" "## Verify" "## Canonical doc")

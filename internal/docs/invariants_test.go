@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -15,8 +16,13 @@ var backtickRe = regexp.MustCompile("`([^`]+)`")
 // an empty cell.
 const manualEscape = "Review (manual)"
 
-// tableRows returns the body rows of the first markdown table in src, each as
-// its trimmed cells. Header and separator rows are skipped.
+// tableRows returns the body rows of every markdown table in src, each as its
+// trimmed cells. Header and separator rows are skipped: the first pipe-prefixed
+// line seen is treated as the header, and any row whose first cell starts with
+// "---" is a separator. A second table's header therefore survives as a body
+// row, which is harmless here — the invariants table is the first table in the
+// file and every later row fails the 3-column shape check loudly rather than
+// silently.
 func tableRows(t *testing.T, src string) [][]string {
 	t.Helper()
 	var rows [][]string
@@ -76,7 +82,7 @@ func TestInvariantsTableNamesRealEnforcers(t *testing.T) {
 // assertEnforcerExists resolves one backticked enforcer. A token containing a
 // slash is a path (file or directory); a token starting with "Test" is a Go
 // test function that must exist somewhere in the tree; a token starting with
-// "make " is a Makefile target that must be defined in the Makefile.
+// "make " is a Makefile target that must be defined AND wired into `check:`.
 func assertEnforcerExists(t *testing.T, rule, name string) {
 	t.Helper()
 	switch {
@@ -90,24 +96,64 @@ func assertEnforcerExists(t *testing.T, rule, name string) {
 		}
 	case strings.HasPrefix(name, "make "):
 		target := strings.TrimPrefix(name, "make ")
-		if !makeTargetExists(t, target) {
+		defined, wired := makeTargetState(t, target)
+		switch {
+		case !defined:
 			t.Errorf("rule %q names make target %q, which is not defined in the Makefile", rule, name)
+		case !wired:
+			t.Errorf("rule %q names make target %q, which is defined but is not a "+
+				"prerequisite of `check:` — so `make check` never runs it and the "+
+				"rule is unenforced in CI", rule, name)
 		}
 	default:
 		t.Errorf("rule %q names enforcer %q, which is neither a path, a Test function, nor a make target", rule, name)
 	}
 }
 
-// makeTargetExists reports whether the Makefile defines the named target
-// (a line of the form "target:" or "target: prereqs").
-func makeTargetExists(t *testing.T, target string) bool {
+// makeTargetState reports whether the Makefile defines the named target (a
+// line of the form "target:" or "target: prereqs") and whether `check:` lists
+// it as a prerequisite.
+//
+// Existence alone is not enough. invariants.md's "Every guard must be shown to
+// fail" row claims its two selftest targets "are wired into check: in the
+// Makefile and run as part of make check" — a claim an existence check cannot
+// see becoming false. Deleting both targets from the `check:` prerequisite list
+// leaves them defined, leaves this test green, and silently stops CI from
+// running the only guards-of-the-guard the repo has. So the row's own claim is
+// what gets checked.
+//
+// `check` itself is exempt from the wiring half: it is the root of the graph,
+// not a prerequisite of itself.
+func makeTargetState(t *testing.T, target string) (defined, wired bool) {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join(repoRoot, "Makefile"))
 	if err != nil {
 		t.Fatalf("read Makefile: %v", err)
 	}
-	targetRe := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(target) + `:`)
-	return targetRe.Match(b)
+	src := string(b)
+
+	defined = regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(target) + `:`).MatchString(src)
+	if target == "check" {
+		return defined, defined
+	}
+	return defined, slices.Contains(checkPrereqs(t, src), target)
+}
+
+// checkPrereqRe captures the prerequisite list of the `check:` rule, following
+// backslash continuations so a multi-line rule is read whole.
+var checkPrereqRe = regexp.MustCompile(`(?m)^check:[ \t]*((?:.*\\\n)*.*)$`)
+
+// checkPrereqs returns the targets `check:` depends on. A Makefile with no
+// `check:` rule at all is a hard failure: every enforcer cell naming a make
+// target would otherwise report "not wired" for the same uninformative reason.
+func checkPrereqs(t *testing.T, src string) []string {
+	t.Helper()
+	m := checkPrereqRe.FindStringSubmatch(src)
+	if m == nil {
+		t.Fatal("Makefile defines no `check:` rule; the CI gate invariants.md " +
+			"describes does not exist")
+	}
+	return strings.Fields(strings.ReplaceAll(m[1], "\\\n", " "))
 }
 
 func testFuncExists(t *testing.T, fn string) bool {

@@ -154,14 +154,25 @@ func TestAsyncAPICESourceDescriptionMatchesSourceFor(t *testing.T) {
 }
 
 // ceIDDigestFormula is the digest formula asyncapi.yaml documents for
-// ce-id. It must appear in the doc verbatim, field order included: this is
-// the exact string that catches a future edit reverting the field order to
-// the original defect (SHA-256(type, source, …) instead of the correct
+// ce-id. It must appear in the doc with its field order intact: this is the
+// exact string that catches a future edit reverting the field order to the
+// original defect (SHA-256(type, source, …) instead of the correct
 // SHA-256(source ‖ ce-type ‖ stable-time ‖ payload-bytes)). The "ULID" and
 // shape checks below do not catch that regression — a reordered digest
-// input still produces a 26-character Crockford ULID — so this literal
-// substring check is the only guard on the field order itself.
-const ceIDDigestFormula = "SHA-256(source ‖ ce-type ‖ stable-time ‖\npayload-bytes)"
+// input still produces a 26-character Crockford ULID — so this substring
+// check is the only guard on the field order itself.
+//
+// Compared after whitespace normalization (collapseSpace), NOT verbatim. The
+// YAML wraps this description, and an earlier version of this constant
+// embedded a literal newline at the wrap point — which made a purely cosmetic
+// re-wrap of the block scalar fail CI with a message about digest field order,
+// pointing every reader at a regression that had not happened. Field order is
+// what this guards; line breaks are not.
+const ceIDDigestFormula = "SHA-256(source ‖ ce-type ‖ stable-time ‖ payload-bytes)"
+
+// collapseSpace reduces every run of whitespace to a single space so a
+// documentation string can be compared on its words rather than its wrapping.
+func collapseSpace(s string) string { return strings.Join(strings.Fields(s), " ") }
 
 // crockfordULIDRe matches a 26-character Crockford base32 ULID: exactly what
 // asyncapi.yaml's ce-id description now claims EventID produces.
@@ -183,8 +194,8 @@ func TestAsyncAPICEIDDescriptionMatchesEventIDShape(t *testing.T) {
 	if !strings.Contains(desc, "ULID") {
 		t.Errorf("ce-id description no longer mentions ULID; it must not describe the id as a bare content hash:\n%s", desc)
 	}
-	if !strings.Contains(desc, ceIDDigestFormula) {
-		t.Errorf("ce-id description does not contain the documented digest formula %q (field order matters — this is the guard against reverting to SHA-256(type, source, …)):\n%s", ceIDDigestFormula, desc)
+	if !strings.Contains(collapseSpace(desc), ceIDDigestFormula) {
+		t.Errorf("ce-id description does not contain the documented digest formula %q (field order matters — this is the guard against reverting to SHA-256(type, source, …); the comparison ignores line wrapping, so this is a real change, not a re-wrap):\n%s", ceIDDigestFormula, desc)
 	}
 
 	id := cloudevents.EventID("urn:openits:controller:us-ga:metro-atlanta:d01:asc-1",
