@@ -1718,3 +1718,1129 @@ become one.
 `make check` and `go test ./... -race` were re-run after all four file
 changes (ADR 0002, ADR 0009, ADR 0013, this ledger) and both passed; full
 output is in the task report.
+
+
+---
+
+# Task 6: Specs, live plan, asyncapi.yaml, package doc comments
+
+**Scope.** The six specs `docs/specs/2026-08-17-documentation-architecture-design.md`
+§9 schedules for deletion after harvest, the two kept living documents
+(`docs/specs/2026-08-09-management-surface-design.md`,
+`docs/plans/2026-08-09-fleet-deployment.md`), `asyncapi.yaml`, and every
+package doc comment (`go doc` output for every package). This section is the
+harvest whitelist Phase 2 reads: a claim marked TRUE below is safe to
+promote into the living explanation tier; everything else must be corrected
+or dropped during promotion, not carried forward as written.
+
+## Verdict tally (Task 6)
+
+TRUE: 37 · DOC WRONG: 19 · DOC RIGHT, CODE WRONG: 0 fresh (1 cross-referenced
+to Task 5's ADR 0005/0010 `model_version` finding, not double-counted) ·
+UNVERIFIABLE (blocked): 2 · HOMELESS RULE: 3 (1 carried forward from Task 5
+with expanded scope, 2 newly found this task) · plus 1 spec determined to be
+outside the harvest manifest entirely (not scored), 2 forward-looking
+design claims in kept documents correctly self-labeled as not-yet-built (not
+scored — see the management-surface and fleet-plan sections), 2 rows noting
+that Task 5's ADR 0013/0014 already resolved the first two homeless rules
+(pointers, not fresh claims), and 1 row folding the management-surface
+"standing rule" citation into the new guard-testing HOMELESS RULE rather
+than double-scoring it. Counted directly from the summary table's Verdict
+column below (`awk` over the column, not eyeballed) — 37 TRUE (24 single-row
++ 13 bundled under the package-doc-comments row), 19 DOC WRONG, 2
+UNVERIFIABLE (blocked), 3 HOMELESS RULE, 1 cross-referenced DOC RIGHT/CODE
+WRONG, 5 non-scored administrative/pointer rows.
+
+## Summary table (Task 6)
+
+| Document | Claim | Verdict |
+|---|---|---|
+| `2026-07-10-vendor-adapter-architecture-design.md` | Is a harvest source for the explanation tier | Not a harvest source (see below) |
+| `2026-07-12-greenfield…design.md` | Subject grammar `openits.<agency>.<site>.<service>.<event>.v<n>` | DOC WRONG |
+| `2026-07-12-greenfield…design.md` | `internal/vendors/<vendor>/<kind>/` directory layout | DOC WRONG |
+| `2026-07-12-greenfield…design.md` | CE `id` = "content-addressed hash (payload + occurred-at)" | DOC WRONG |
+| `2026-07-12-greenfield…design.md` | CE `source` = `//<agency>/<site>/<device-id>` | DOC WRONG (HOMELESS RULE topic) |
+| `2026-07-12-greenfield…design.md` | 9-service taxonomy includes "gateway" | DOC WRONG |
+| `2026-07-12-greenfield…design.md` | §5 adapter SDK code sketch | TRUE |
+| `2026-07-12-greenfield…design.md` | "Instantiate the single wire emitter matching `model_version`" | Cross-ref: DOC RIGHT, CODE WRONG (Task 5 ADR 0005/0010) |
+| `2026-07-12-greenfield…design.md` | `internal/wire/openitsv1/` package naming | DOC WRONG (superseded by ADR 0010) |
+| `2026-07-12-greenfield…design.md` | Initial facets list includes `RSUBroadcastCounters` | DOC WRONG (never built; list also incomplete) |
+| `2026-07-16-asc-facets-design.md` | `FaultSet`/`DetectorSamples` domain model | TRUE |
+| `2026-07-16-asc-facets-design.md` | Enums (`FaultSeverity`, `FaultCategory`, no-wire-home note) | TRUE |
+| `2026-07-16-asc-facets-design.md` | NTCIP 1202 OIDs | TRUE |
+| `2026-07-16-asc-facets-design.md` | Alarm bitmap table (bit→id/severity/category) | TRUE |
+| `2026-07-16-asc-facets-design.md` | Detector batching (16 varbinds/round-trip, default max 32) | TRUE |
+| `2026-07-16-asc-facets-design.md` | Occupancy conversion `tenths = halfPercent * 5` | TRUE |
+| `2026-07-16-asc-facets-design.md` | RSU has no broadcast-*counter* event, only `rsu-broadcast-sample.v1` | TRUE |
+| `2026-07-16-asc-facets-design.md` | §7 testing list (goldens, determinism, suspension, volume semantics) | TRUE |
+| `2026-07-16-asc-facets-design.md` | "Gen-1 code is deleted but readable at `a97bf7f^`" | UNVERIFIABLE (blocked) |
+| `2026-07-16-configurable-subjects-design.md` | Template mechanics, reserved names, boot validation, `CETypes()` | TRUE (cross-ref Task 4/5) |
+| `2026-07-16-configurable-subjects-design.md` | CE `source` "unchanged … `//<agency>/<site>/<device-id>`" | DOC WRONG (HOMELESS RULE topic) |
+| `2026-07-16-configurable-subjects-design.md` | "`{device_id}` not supported in v1" | DOC WRONG (superseded by ADR 0011) |
+| `2026-07-16-configurable-subjects-design.md` | "conformance test can drop its hand-maintained `samples` list" | DOC WRONG (kept, cross-validated instead) |
+| `2026-07-16-dms-domain-design.md` | `DMSStatus` struct + 5 enums | TRUE |
+| `2026-07-16-dms-domain-design.md` | Domain events (`DMSControlModeChanged`, `DMSDisplayStateChanged`, `DMSMessageActivationFailed`) | TRUE |
+| `2026-07-16-dms-domain-design.md` | Both mode axes emit on one ce-type, discriminated by `kind` | TRUE |
+| `2026-07-16-dms-domain-design.md` | Synth event order (control-mode, display-state, activation-failed) | TRUE |
+| `2026-07-16-dms-domain-design.md` | §8 testing list | TRUE |
+| `2026-07-16-dms-domain-design.md` | `ntcip-dms` adapter still not built (§9) | TRUE |
+| `2026-07-16-dms-domain-design.md` | FaultCategory additions (Pixel/Controller/Environment) | TRUE |
+| `2026-07-16-dms-domain-design.md` | "Gen-1 has no DMS code … `a97bf7f^`" | UNVERIFIABLE (blocked) |
+| `2026-07-21-openits-models-emitter-design.md` | §3 CE-source URN format | HOMELESS RULE (carried forward, expanded scope) |
+| `2026-07-21-openits-models-emitter-design.md` | ce-id algorithm (SHA-256 → ULID) | TRUE (verified against upstream's own test vector) |
+| `2026-07-21-openits-models-emitter-design.md` | entity-kind mapping (asc→controller, dms→sign, …) | TRUE |
+| `2026-07-21-openits-models-emitter-design.md` | Upstream ce-source segment-order self-contradiction | TRUE (still open today) |
+| `2026-07-21-openits-models-emitter-design.md` | "\[segment-order contradiction\] blocks §3" | DOC WRONG (§3 shipped anyway) |
+| `2026-07-21-openits-models-emitter-design.md` | §2 event-mapping table | TRUE |
+| `2026-07-21-openits-models-emitter-design.md` | Mandatory leaves `sequence`/`observed-by` | TRUE |
+| `2026-07-21-openits-models-emitter-design.md` | §4 default template superseded by ADR 0011 | TRUE (cross-ref Task 5) |
+| Homeless-rule sweep | "Absence of evidence is never a state change" | Resolved — ADR 0013 (Task 5) |
+| Homeless-rule sweep | "Config is the trust boundary" | Resolved — ADR 0014 (Task 5) |
+| Homeless-rule sweep | "Every new guard must be shown to fail" | HOMELESS RULE (new) |
+| Homeless-rule sweep | "Rule of three" (defer per-vendor overlay mechanism) | HOMELESS RULE (new, minor) |
+| Homeless-rule sweep | `internal/cloudevents` doc comment cites ADR 0006 for the profile URN | DOC WRONG (dangling/wrong citation) |
+| Homeless-rule sweep | `internal/config` doc comment cites "spec §6" | DOC WRONG (dangling citation) |
+| Homeless-rule sweep | `internal/runner` doc comment cites "spec §7" | DOC WRONG (dangling citation) |
+| Homeless-rule sweep | `sdk/model` doc comment cites "architecture spec §4" | DOC WRONG (dangling citation, pending harvest) |
+| Homeless-rule sweep | `internal/app` inline comment cites "spec §7" for loud-drop | DOC WRONG (dangling citation) |
+| `asyncapi.yaml` | `device-status-changed` channel address | DOC WRONG |
+| `asyncapi.yaml` | `collector-started` channel address | DOC WRONG |
+| Package docs (13 packages) | `go doc` claims for cmd/collector, internal/app, internal/publish, internal/subject, internal/synth, internal/vendors/ntcip, internal/wire, internal/wire/health, internal/wire/openits, sdk/adapter, sdk/model, sdk/transport/snmp, sdk/transport/snmp/snmptest | TRUE (13 claims) |
+| `2026-08-09-management-surface-design.md` | "Every guard here … per the standing rule" | Folded into HOMELESS RULE row above |
+| `2026-08-09-management-surface-design.md` | `publish.Publish` "retries three times over roughly 750 ms" | DOC WRONG |
+| `2026-08-09-fleet-deployment.md` | "`publish.Connect` … dials NATS … a broker slow to come up makes the collector exit" | TRUE |
+
+---
+
+## `docs/specs/2026-07-10-vendor-adapter-architecture-design.md` (gen-1)
+
+### Determination: not a harvest source
+
+```
+$ grep -n '07-10\|vendor-adapter-architecture\|gen-1\|gen1' docs/specs/2026-08-17-documentation-architecture-design.md
+313:Deleted: `2026-07-10-vendor-adapter-architecture-design.md` (gen-1),
+324:All eleven `2026-07-10-*` (gen-1; `p0-hardening.md` describes an
+```
+
+The demolition list (§9) names this spec only as deleted; the harvest
+manifest (§5.1) never cites it as a `Source` for any living document — every
+manifest row that names a source cites the *greenfield* spec (§2, §4, §5, §6,
+§8) or "new". Sanity-checked that no gen-1-specific code survives to be
+compared against:
+
+```
+$ grep -rn 'PublishSynth\|type Reading\|type Sink\|package vendors' --include='*.go' . | grep -v _test
+(no output)
+```
+
+**Determination: not scored.** This document describes a pre-`ADR 0001`
+codebase (`Drivers`/`Translators`/`ATSPM decoders`, a `Publisher` with ~50
+typed façade methods) that no longer exists anywhere in this repo's
+reachable history, and the harvest plan does not draw on it. Nothing here
+needs a TRUE/DOC WRONG verdict because nothing here is scheduled to move
+into the surviving document set. Recorded so the completeness check (Step 5)
+sees it addressed rather than skipped.
+
+---
+
+## `docs/specs/2026-07-12-greenfield-collector-architecture-design.md`
+
+### Claim: subject grammar `openits.<agency>.<site>.<service>.<event>.v<n>` (known defect)
+
+```
+$ sed -n '255,270p' docs/specs/2026-07-12-greenfield-collector-architecture-design.md
+- **NATS subject** = tenant-scoped: `openits.<agency>.<site>.<service>.<event>.v<n>`
+  (the ce-type with agency/site spliced after the prefix). Documented in
+  AsyncAPI 3 as a parameterized address.
+
+$ grep -n 'DefaultTemplate' internal/subject/subject.go
+27:const DefaultTemplate = "{namespace}.{region}.{agency}.{agency_unit}.{service}.{device_id}.{event}"
+```
+
+**Verdict: DOC WRONG.** Matches the brief's predicted known defect exactly:
+five tokens, fixed `openits` prefix, trailing `.v<n>`, vs. the actual
+seven-token namespace-rooted grammar with no version token.
+
+### Claim: `internal/vendors/<vendor>/<kind>/` layout
+
+```
+$ find internal/vendors -type f | sort
+internal/vendors/ntcip/asc.go
+internal/vendors/ntcip/asc_test.go
+internal/vendors/ntcip/register.go
+```
+
+**Verdict: DOC WRONG.** Same defect Tasks 4 and 5 already found in
+README.md and ADR 0003 for the identical claim — the tree is
+`internal/vendors/<vendor>/<kind>.go`, a file, not a `<kind>/` subdirectory.
+
+### Claim: CE `id` = "content-addressed hash (payload + occurred-at)"
+
+```
+$ cat internal/cloudevents/eventid.go
+func EventID(source, ceType string, stableTime time.Time, identity []byte) string {
+	h := sha256.New()
+	for i, part := range [][]byte{
+		[]byte(source), []byte(ceType), []byte(stableMillis(stableTime)), identity,
+	} {
+		...
+	}
+	return ulid(stableTime.UTC().UnixMilli(), h.Sum(nil)[:10])
+}
+```
+
+**Verdict: DOC WRONG.** The actual algorithm hashes four fields
+(`source ‖ ceType ‖ stableTime ‖ identity`), not two (payload + occurred-at)
+— `source` and `ceType` are absent from the spec's description — and the
+result is wrapped in a ULID, not returned as a bare hash. AGENTS.md's own
+warning ("deterministic does not mean 'a bare content hash'") exists
+precisely to correct this exact misreading; this spec predates that warning
+and is the misreading it corrects. Promoting this sentence into
+`wire-boundary.md` verbatim would re-launder the error AGENTS.md was written
+to kill.
+
+### Claim: CE `source` = `//<agency>/<site>/<device-id>` "retained unchanged"
+
+Same underlying divergence as ADR 0006/0009's CE-source finding (Task 5):
+
+```
+$ grep -n 'func SourceFor' -A 12 internal/cloudevents/subject.go
+func SourceFor(t Tenant, deviceKind, deviceID string) string {
+	kind, ok := entityKindFor(deviceKind)
+	...
+	return "urn:openits:" + kind + ":" + t.Region + ":" + t.Agency + ":" + t.AgencyUnit + ":" + id
+}
+```
+
+**Verdict: DOC WRONG.** Not `//<agency>/<site>/<device-id>` by any reading.
+This is the same HOMELESS RULE topic flagged by Task 5 and expanded below —
+recorded once per spec occurrence since each is an independent claim a
+harvester could pick up.
+
+### Claim: "9-service taxonomy the models catalog settled on (signal-control, rsu, dms, ess, perception, ramp-metering, traffic-sensor, reversible-lane, gateway)"
+
+```
+$ grep -oE '^\s+openits\.[a-z-]+\.' /home/josh/go/pkg/mod/github.com/\!vikasa2\!m/openits-models@v0.2.3-0.20260807005833-235e8780f44c/bindings/nats/asyncapi.yaml | sed -E 's/^\s+openits\.([a-z-]+)\..*/\1/' | sort -u
+cctv
+dms
+ess
+perception
+ramp-metering
+reversible-lane
+rsu
+signal-control
+traffic-sensor
+
+$ grep -c 'gateway' /home/josh/go/pkg/mod/github.com/\!vikasa2\!m/openits-models@v0.2.3-0.20260807005833-235e8780f44c/bindings/nats/asyncapi.yaml
+0
+```
+
+**Verdict: DOC WRONG.** The catalog's actual 9-service taxonomy has `cctv`,
+not `gateway` — `gateway` appears nowhere in the pinned openits-models
+module. A newcomer reading this in `adapter-to-model.md` (§4's harvest
+target) would look for a `gateway` service that has never existed and miss
+`cctv`, which the collector already partially supports (`sdk/model/cctv.go`,
+`synth.NewCCTVDiffer()`).
+
+### Claim: §5 adapter SDK code sketch (`Capability`, `Descriptor`, `Adapter`, `StateReader`, `EventReader`)
+
+```
+$ sed -n '1,63p' sdk/adapter/adapter.go
+```
+(Capability bitset, Descriptor{Vendor,DeviceKind,Caps}, Key() =
+"<vendor>-<device_kind>", Adapter/StateReader/EventReader/Commander — all
+present, exact shape)
+
+**Verdict: TRUE.** Character-for-character match, confirmed independently
+of Task 5's ADR 0004 probe of the same code.
+
+### Claim: "Instantiate the single wire emitter matching `model_version`" (boot step 2)
+
+**Verdict: cross-referenced, not scored fresh.** Identical underlying gap to
+Task 5's ADR 0005/ADR 0010 finding (`DOC RIGHT, CODE WRONG` — the emitter
+list in `app.go` is hardcoded and never branches on `model_version`). Not
+re-counted in this task's tally to avoid double-counting one successor work
+item across three documents.
+
+### Claim: repository layout — `internal/wire/openitsv1/`
+
+```
+$ ls internal/wire/
+emitter.go
+health
+openits
+```
+
+**Verdict: DOC WRONG.** The greenfield spec predates ADR 0010's decision
+(`internal/wire/openits`, unsuffixed — "a version suffix naming a
+pseudo-version would be ceremony that documents nothing"). Same class of
+staleness as ADR 0002's now-amended `internal/wire/<version>` clause (Task
+5), just in a different document.
+
+### Claim: "Initial facets: `SignalStatus` … `FaultSet`, `DetectorSamples`, `RSUBroadcastCounters`"
+
+```
+$ grep -n 'Kind[A-Z]' sdk/model/*.go | grep -v _test | grep 'const'
+sdk/model/detector.go:4:const KindDetectorSamples Kind = "detector-samples"
+sdk/model/perception.go:7:const KindZoneIncidents Kind = "zone-incidents"
+sdk/model/perception.go:150:const KindZoneIntervals Kind = "zone-intervals"
+sdk/model/cctv.go:10:const KindCCTVStatus Kind = "cctv-status"
+sdk/model/dms.go:4:const KindDMSStatus Kind = "dms-status"
+sdk/model/trafficsensor.go:7:const KindTrafficIntervals Kind = "traffic-intervals"
+sdk/model/signal.go:4:const KindSignalStatus Kind = "signal-status"
+sdk/model/fault.go:4:const KindFaultSet Kind = "fault-set"
+```
+
+**Verdict: DOC WRONG.** No `RSUBroadcastCounters` type exists anywhere in
+`sdk/model` — the RSU facet was deliberately deferred to its own spec (§8,
+never written) and never built. The list is also now incomplete in the
+other direction: eight facet kinds exist today (adding DMS, CCTV,
+traffic-intervals, zone-incidents, zone-intervals), not the four named. This
+is expected drift for a 2026-07-12 spec, but a "current initial facets" list
+promoted verbatim into `adapter-to-model.md` would assert a type that has
+never existed.
+
+---
+
+## `docs/specs/2026-07-16-asc-facets-design.md`
+
+This spec is unusually precise; every code-shape and numeric claim checked
+matched exactly. Representative evidence:
+
+```
+$ cat sdk/model/fault.go sdk/model/detector.go
+```
+(matches the spec's `FaultSet`/`DetectorSamples` struct definitions field for
+field, including the `FaultCategory` "no wire home" rationale)
+
+```
+$ cat sdk/model/enums.go
+```
+(matches `FaultSeverity`/`FaultCategory` value sets and ordering exactly;
+`FaultCategory` has grown three post-spec values — `CategoryPixel`,
+`CategoryController`, `CategoryEnvironment` — additive, not a contradiction)
+
+```
+$ grep -n '1206.4.2.1.5.1.0\|1206.4.2.1.2.3.0\|1206.4.2.1.2.4.1.2\|1206.4.2.1.2.4.1.4' internal/vendors/ntcip/asc.go
+22:	oidShortAlarmStatus     = ".1.3.6.1.4.1.1206.4.2.1.5.1.0"
+23:	oidMaxVehicleDetectors  = ".1.3.6.1.4.1.1206.4.2.1.2.3.0"
+24:	oidDetectorVolumeCol    = ".1.3.6.1.4.1.1206.4.2.1.2.4.1.2"
+25:	oidDetectorOccupancyCol = ".1.3.6.1.4.1.1206.4.2.1.2.4.1.4"
+```
+(all four OIDs exact)
+
+```
+$ sed -n '46,58p' internal/vendors/ntcip/asc.go
+```
+(the alarm bitmap — bit, id, severity, category — matches the spec's table
+row for row, including the exact severity/category assignment)
+
+```
+$ grep -n '16\|chunk' sdk/transport/snmp/client.go
+69:	const chunk = 16
+$ grep -n '255\|defaultMaxDetectorChannels' internal/vendors/ntcip/asc.go
+30:const defaultMaxDetectorChannels = 32
+```
+(16-varbind chunking and the 1..255-else-32 default both exact)
+
+```
+$ grep -n 'clampOccupancyTenths' -A 8 internal/vendors/ntcip/asc.go
+...
+		return uint16(occ * 5)
+```
+(`tenths = halfPercent * 5` exact)
+
+```
+$ grep -n 'openits\.rsu\.' /home/josh/go/pkg/mod/github.com/\!vikasa2\!m/openits-models@v0.2.3-0.20260807005833-235e8780f44c/bindings/nats/asyncapi.yaml | grep 'address:'
+        address: openits.rsu.rsu-broadcast-sample.v1
+```
+(no `rsu-broadcast-counter` event of any kind exists in the pinned catalog —
+matches the spec's claim exactly)
+
+```
+$ grep -n 'func Test' internal/synth/fault_test.go internal/synth/detector_test.go
+```
+(every test §7 names — raise/clear, no-change, sorted-order regression,
+suspension, first-poll-nothing, volume-delta/reset/omitted-channel — exists
+under the exact name or an equivalent)
+
+**Verdict: TRUE** for all nine code/behavior claims above.
+
+### Claim: "Gen-1 … deleted but readable at `a97bf7f^`"
+
+```
+$ git cat-file -t a97bf7f
+fatal: Not a valid object name a97bf7f
+$ git rev-list --all | grep '^a97bf7f'
+(no output)
+```
+
+**Verdict: UNVERIFIABLE (blocked).** Same class as Task 5's ADR 0001
+finding: this repo's history is squashed at `ed21133 chore: public baseline`
+and the referenced pre-wipe commit is not reachable from this clone. Not
+inherent — a private predecessor repository may hold it — but this
+environment cannot confirm it. Re-probe path is identical to ADR 0001's.
+
+---
+
+## `docs/specs/2026-07-16-configurable-subjects-design.md`
+
+### Claim: template mechanics (reserved names, boot validation, `CETypes()`, stream-name derivation)
+
+**Verdict: TRUE, cross-referenced.** Every mechanical claim in §3–§7 of this
+spec was already probed directly against the same code by Task 4
+(`collector.yaml`'s reserved-names/default-template/stream-derivation rows)
+and Task 5 (ADR 0009's `CETypes()` row, ADR 0011's `Bindings()`/stream-name
+rows). Not re-run here to avoid re-litigating already-probed code; cited
+rather than duplicated.
+
+### Claim: CE `source` "Unchanged. `//<agency>/<site>/<device-id>`"
+
+**Verdict: DOC WRONG.** Same divergence as the greenfield spec's identical
+claim above and ADR 0006/0009's (Task 5) — part of the same HOMELESS RULE
+topic.
+
+### Claim: "`{device_id}` Not supported in v1 … reserved, but no template may use it"
+
+```
+$ grep -n 'device_id' internal/subject/subject.go
+	"namespace": true, "service": true, "event": true, "version": true, "device_id": true,
+```
+```
+$ grep -n 'DefaultTemplate' internal/subject/subject.go
+const DefaultTemplate = "{namespace}.{region}.{agency}.{agency_unit}.{service}.{device_id}.{event}"
+```
+
+**Verdict: DOC WRONG.** `{device_id}` is not merely supported — it is in
+the *default* template today. ADR 0011 (which this spec predates) graduated
+it from reserved-unsupported to a real per-event placeholder, rendering
+`"collector"` for device-less events. Promoting "not supported in v1"
+verbatim would tell a new contributor the opposite of current behavior.
+
+### Claim: "the AsyncAPI conformance test can drop its hand-maintained `samples` list and drive from the real set"
+
+```
+$ grep -n 'samples\|CETypes()' internal/wire/health/conformance_test.go
+33:var samples = []model.Event{
+58:// CETypes is the emitter's own declaration...
+63:	declared := em.CETypes()
+76:		t.Errorf("CETypes() disagrees with emitted types...")
+```
+
+**Verdict: DOC WRONG (partial).** The `samples` list was not dropped — it
+is still hand-maintained. What actually shipped is narrower and arguably
+better: the test cross-validates `samples` against `CETypes()` and fails if
+they disagree, closing the specific gap the spec named ("a new health event
+added without a sample would go undetected") without eliminating the list.
+The claimed *mechanism* (drop the list) did not happen; the claimed *outcome*
+(the gap closes) did.
+
+---
+
+## `docs/specs/2026-07-16-dms-domain-design.md`
+
+Also unusually precise. Representative evidence:
+
+```
+$ find internal/vendors/ntcip -iname 'dms*'
+(no output)
+```
+(`ntcip-dms` adapter still correctly not built — matches §9's "deliberately
+not in this spec")
+
+```
+$ sed -n '1,40p' sdk/model/dms.go
+```
+(`DMSControlMode` 7 values Unknown..Other, `DMSDisplayState` 5 values
+Unknown..Normal — exact match including the "not a fallback guess" zero-value
+rationale)
+
+```
+$ grep -n 'DMSControlModeChanged\|DMSDisplayStateChanged\|DMSMessageActivationFailed' sdk/model/events.go
+```
+(all three events present with the exact `EventKind()` tokens the spec
+names)
+
+```
+$ grep -n '"control-mode-changed", "dms"\|"display-state-changed", "dms"' internal/wire/openits/emitter.go
+	{"control-mode-changed", "dms"}:  "openits.dms.mode-changed.v1",
+	{"display-state-changed", "dms"}: "openits.dms.mode-changed.v1",
+```
+(both axes claim the same ce-type, discriminated by `kind` — exact match)
+
+```
+$ grep -n 'append(events' internal/synth/dms.go
+```
+(event construction order is control-mode, then display-state, then
+activation-failed — matches "deterministic without a sort" claim)
+
+```
+$ grep -n 'func Test' internal/synth/dms_test.go
+TestDMSFirstPollEmitsNothing / TestDMSNoChangeEmitsNothing /
+TestDMSAxesChangeIndependently / TestDMSBothAxesChangeAtOnce /
+TestDMSActivationFailureReportsOnceOnTransition / TestDMSFailedReadEmitsNothing /
+TestDMSEventsCarryDeviceKind
+```
+(every §8 testing claim present under an equivalent name, including the
+axis-independence rigor Task 5 found *missing* for the signal differ — DMS
+has exactly the test shape the signal differ lacks)
+
+**Verdict: TRUE** for all seven claims above.
+
+### Claim: "Gen-1 has no DMS code at all (`git grep -i dms` over the pre-wipe tree at `a97bf7f^`: zero hits)"
+
+**Verdict: UNVERIFIABLE (blocked).** Same commit, same reasoning as the
+asc-facets spec's identical citation above — not reachable from this clone.
+
+---
+
+## `docs/specs/2026-07-21-openits-models-emitter-design.md`
+
+This is the spec holding the already-known HOMELESS RULE (Task 5). Probed
+in full, not just the known finding.
+
+### Claim: §3 CE-source URN format — carried-forward HOMELESS RULE, expanded
+
+```
+$ sed -n '85,99p' internal/cloudevents/subject.go
+func SourceFor(t Tenant, deviceKind, deviceID string) string {
+	kind, ok := entityKindFor(deviceKind)
+	...
+	return "urn:openits:" + kind + ":" + t.Region + ":" + t.Agency + ":" + t.AgencyUnit + ":" + id
+}
+```
+
+**Verdict: HOMELESS RULE (carried forward from Task 5, scope expanded).**
+The code matches this spec's §3 target exactly
+(`urn:openits:<entity-kind>:<region>:<agency>:<unit>:<id>`), and its only
+written home is this spec. Task 5 found this from the ADR 0006/0009 side;
+probing from the spec side surfaces that the rule's full scope is bigger
+than segment order alone — it also includes the `entityKindFor` mapping
+table (`asc`→`controller`, `dms`→`sign`, `cctv`→`cctv`,
+`traffic-sensor`→`traffic-sensor`, `perception`→`perception`, device-less→
+`collector`) and its vocabulary rationale, none of which is mentioned by any
+ADR:
+
+```
+$ grep -n 'entity-kind\|entityKind' docs/adr/*.md
+(no output)
+```
+
+**Before this spec is deleted:** an ADR (or a correction folded into ADR
+0006/0009) must record the actual CE-source construction rule *and* the
+entity-kind vocabulary table, not just the segment order. Not fixed here —
+flagged for Task 6/7's harvest step, per Task 5's existing flag.
+
+### Claim: ce-id algorithm (SHA-256 → ULID, four-field digest)
+
+Task 4 confirmed only that `ce-id-spec.md` exists in the pinned module.
+Probed further this task: does the collector's own `EventID` actually
+reproduce the spec's published test vector?
+
+```
+$ cat /home/josh/go/pkg/mod/github.com/\!vikasa2\!m/openits-models@v0.2.3-0.20260807005833-235e8780f44c/docs/ce-id-spec.md
+| `ce-source` | `urn:openits:us-xx:example-agency:d01:dms:demo-sign-1` |
+| `ce-type` | `openits.dms.message-activation-failed.v1` |
+| `stable-time` | `2026-07-22T12:00:00.000Z` |
+| payload | deterministic proto3 encoding `1a0a76616c69646174696f6e` |
+| **`ce-id`** | `01KY4V4VG0ZNQNVEQB1WEBSX24` |
+
+$ cat > internal/cloudevents/zz_vectorcheck_test.go <<'EOF'
+package cloudevents
+import ("encoding/hex"; "testing"; "time")
+func TestUpstreamVector(t *testing.T) {
+	src := "urn:openits:us-xx:example-agency:d01:dms:demo-sign-1"
+	ceType := "openits.dms.message-activation-failed.v1"
+	stableTime, _ := time.Parse(time.RFC3339, "2026-07-22T12:00:00.000Z")
+	payload, _ := hex.DecodeString("1a0a76616c69646174696f6e")
+	got := EventID(src, ceType, stableTime, payload)
+	want := "01KY4V4VG0ZNQNVEQB1WEBSX24"
+	if got != want { t.Errorf("EventID = %s, want %s", got, want) }
+}
+EOF
+$ go test ./internal/cloudevents/... -run TestUpstreamVector -v
+=== RUN   TestUpstreamVector
+--- PASS: TestUpstreamVector (0.00s)
+PASS
+$ rm internal/cloudevents/zz_vectorcheck_test.go
+```
+
+**Verdict: TRUE — stronger than Task 4's shallow check.** The collector's
+`EventID` function reproduces openits-models' own published test vector
+byte-for-byte. This upgrades AGENTS.md's "the `ce-id` derivation is
+openits-models' contract" claim from "the file exists" to "and this repo's
+implementation is independently verified conformant against it." Worth
+harvesting into `wire-boundary.md` as the canonical proof, not just the
+citation.
+
+### Claim: "entity-kind is NOT `Base.DeviceKind` — it is a third mapping … `asc`→`controller`, `dms`→`sign`"
+
+```
+$ grep -rn 'urn:openits' /home/josh/go/pkg/mod/github.com/\!vikasa2\!m/openits-models@v0.2.3-0.20260807005833-235e8780f44c --include='*.go' --include='*.md' | grep -v _test
+bindings/nats/README.md:66:  `urn:openits:<entity-kind>:<region>:<agency>:<unit>:<id>`
+tools/conformance/tests/cetype.go:15: urnRE = `^urn:openits:[a-z][a-z0-9-]*:...`
+tools/conformance/mock_driver.go:344: CESource: "urn:openits:controller:us-tx:txdot:d07:i35-exit-214"
+tools/conformance/mock_driver.go:556: src := "urn:openits:sign:us-tx:txdot:d07:i35-mm214-nb-dms"
+tools/conformance/mock_cctv.go:165: src := "urn:openits:cctv:us-tx:txdot:d07:cctv-i35-mm214"
+tools/conformance/mock_traffic_sensor.go:167: src := "urn:openits:traffic-sensor:us-tx:txdot:d07:i35-mm214-ts-01"
+tools/conformance/mock_perception.go:126: src := "urn:openits:perception:us-tx:txdot:d07:eb-travel-lanes-cam-03"
+```
+
+**Verdict: TRUE.** Every entity-kind mapping the collector's
+`entityKindFor` implements (`asc`→`controller`, `dms`→`sign`, `cctv`→`cctv`,
+`traffic-sensor`→`traffic-sensor`, `perception`→`perception`) matches the
+vocabulary used by the pinned module's own conformance mocks exactly.
+
+### Claim: "openits-models currently contradicts itself on segment order … Resolve that upstream before implementing either. **Blocks §3**"
+
+```
+$ grep -n 'us-xx:example-agency:d01:dms:demo-sign-1' /home/josh/go/pkg/mod/github.com/\!vikasa2\!m/openits-models@v0.2.3-0.20260807005833-235e8780f44c/docs/ce-id-spec.md
+| `ce-source` | `urn:openits:us-xx:example-agency:d01:dms:demo-sign-1` |
+```
+
+Decomposed: `region=us-xx, agency=example-agency, unit=d01, entity-kind=dms,
+id=demo-sign-1` — entity-kind is the FOURTH segment. Every other authoritative
+source checked above (`bindings/nats/README.md`, the conformance regex, and
+every mock) puts entity-kind FIRST. Both facts are true **at the current
+pin** (`v0.2.3-0.20260807005833-235e8780f44c`, the same pin `go.mod` uses
+today).
+
+**Verdict (contradiction): TRUE — still open upstream, not resolved since
+this spec was written.** **Verdict (blocking claim): DOC WRONG.** The
+collector did not wait for upstream to resolve this: `SourceFor` implements
+entity-kind-first (matching the README/regex/mocks majority) and ships in
+production code today, contradicting the spec's own stated precondition
+that §3 is blocked pending upstream resolution. A harvester reading "blocks
+§3" would wrongly conclude CE-source construction is still undecided.
+
+### Claim: §2 event-mapping table
+
+```
+$ grep -n '"mode-changed", "asc"\|"plan-changed", "asc"\|"operational-status-report", "asc"\|"preemption-activated", "asc"\|"preemption-cleared", "asc"\|"detector-report", "asc"' internal/wire/openits/emitter.go
+	{"mode-changed", "asc"}: "openits.signal-control.mode-changed.v1",
+	{"plan-changed", "asc"}:              "openits.signal-control.plan-applied.v1",
+	{"operational-status-report", "asc"}: "openits.signal-control.operational-status-report.v1",
+	{"preemption-activated", "asc"}:      "openits.signal-control.preemption-activated.v1",
+	{"preemption-cleared", "asc"}:        "openits.signal-control.preemption-cleared.v1",
+	{"detector-report", "asc"}:           "openits.signal-control.detector-report.v1",
+```
+
+**Verdict: TRUE.** Every row checked (including the DMS rows probed under
+the DMS spec above) matches the emitter's actual routing table exactly,
+including `PlanChanged`'s domain-event-name-to-ce-type-token mismatch
+(`plan-changed` domain kind → `plan-applied` ce-type), which the table
+calls out deliberately.
+
+### Claim: mandatory leaves `sequence`/`observed-by` — "the collector holds no such state" (deferred-work item at spec-writing time)
+
+```
+$ sed -n '48,68p' internal/wire/openits/emitter.go
+func (e *emitter) nextSequence(deviceID string) uint64 { ... }
+$ grep -c 'ObservedBy:     e.collectorID' internal/wire/openits/emitter.go
+27
+```
+
+**Verdict: TRUE (gap since closed).** Both mandatory leaves are now
+implemented — `nextSequence` is a mutex-guarded per-device counter,
+`ObservedBy` is stamped on every constructed message. The spec's Revisions
+section already tracks this as resolved; confirmed directly against the
+current emitter rather than taking the revision note's word for it.
+
+### Claim: §4's subject decision "amended by ADR 0011"
+
+**Verdict: TRUE, cross-referenced.** Already probed directly by Task 5's
+ADR 0011 section (default template, `Bindings()`, stream derivation). Not
+re-run.
+
+---
+
+## Step 2: Homeless-rule sweep
+
+```
+$ grep -rn 'absence of evidence\|trust boundary' docs/specs/ AGENTS.md
+docs/specs/2026-07-12-greenfield-collector-architecture-design.md:282: absence of evidence is never a state change
+docs/specs/2026-08-17-documentation-architecture-design.md:126,142,144: (the demolition plan's own description of the two known homeless rules)
+docs/specs/2026-07-16-configurable-subjects-design.md:173: Config is the trust boundary
+docs/specs/2026-07-10-vendor-adapter-architecture-design.md:44,192: trust boundary (gen-1, not a harvest source)
+AGENTS.md:27: absence of evidence is never a state
+AGENTS.md:60: Config is the trust boundary
+```
+
+**Rules 1 and 2 (absence-of-evidence, config-trust-boundary): resolved.**
+Task 5 wrote ADR 0013 and ADR 0014 for exactly these two, both probed TRUE
+in this task's own re-check (see the package-doc-comment section below,
+where both are cited correctly by surviving `.go` files). No new action.
+
+**Rule 3 (CE-source URN scheme): the known one, scope expanded.** See the
+emitter-design spec section above.
+
+### New sweep: normative "rule" language across the six specs
+
+```
+$ for f in docs/specs/2026-07-1*.md docs/specs/2026-07-21*.md; do
+  grep -noE '\*\*[A-Z][^*]{5,80}\*\*' "$f" | grep -iE 'rule|never|always|deliberate|decision|iron|invariant|must'
+done
+2026-07-16-asc-facets-design.md:224:**This table has never been validated against a physical controller.**
+2026-07-16-configurable-subjects-design.md:142:**Per-event placeholders must occupy whole tokens.**
+2026-07-16-configurable-subjects-design.md:226:**Guards must be shown to fail.**
+2026-07-16-dms-domain-design.md:52:**Decision:**
+2026-07-21-openits-models-emitter-design.md:220:**Upstream: tier the `ce-id` / `ce-source` rules.**
+```
+
+### New HOMELESS RULE: "Every new guard must be shown to fail"
+
+```
+$ grep -rln 'standing rule\|shown to fail\|must be shown to fail' --include='*.md' .
+docs/plans/2026-07-16-asc-facets.md
+docs/plans/2026-07-16-dms-domain.md
+docs/specs/2026-07-16-dms-domain-design.md
+docs/specs/2026-07-16-configurable-subjects-design.md
+docs/specs/2026-08-09-management-surface-design.md
+docs/plans/2026-07-16-configurable-subjects.md
+docs/specs/2026-07-16-asc-facets-design.md
+
+$ grep -n 'standing rule' -B1 -A3 docs/specs/2026-08-09-management-surface-design.md
+## Testing
+Every guard here is one that must be shown to fail, per the standing rule:
+- Readiness stays false when config parses but no device answers.
+...
+```
+
+**Verdict: HOMELESS RULE.** This rule (a validation/guard needs a test that
+proves it can reject, not merely one that shows it accepts — "a check that
+has never failed is indistinguishable from one that cannot fail") is a
+real, actively-enforced testing practice: it is what caught the
+boundary-lint bug this session references, and it is what Task 5's own
+review process invoked when it demanded a direct probe over an analogy
+argument for ADR 0013. Its only written sources are three of the six specs
+being deleted (`asc-facets`, `configurable-subjects`, `dms-domain`) and
+three of the plans already scheduled for deletion in the same demolition
+pass (`docs/plans/2026-07-16-asc-facets.md`,
+`docs/plans/2026-07-16-configurable-subjects.md`,
+`docs/plans/2026-07-16-dms-domain.md`). Critically, `management-surface-design.md`
+— a document §9 explicitly **keeps** — invokes it by name as "the standing
+rule" with no citation, because there is nothing to cite. AGENTS.md's
+Testing bar section does not state this rule:
+
+```
+$ sed -n '45,52p' AGENTS.md
+## Testing bar
+
+Recorded fixtures with golden tests for every adapter read path — **no
+fixtures, no merge** (ADR 0008). Scrub deployment-identifying data
+(addresses, community strings, site names) from recordings before
+committing. Differ tests cover: first poll, no change, each axis
+independently, failed read, DeviceKind stamping.
+```
+
+**Before Phase 2 deletes its sources:** this needs a home — either a short
+ADR (it is a genuine, load-bearing testing-methodology decision, in the
+same spirit as ADR 0013/0014) or promotion into AGENTS.md's Testing bar.
+Without one, the still-surviving `management-surface-design.md`'s own
+Testing section cites a rule that no longer exists anywhere once the six
+specs and the matching plans are gone — a document that survives citing a
+rule that does not.
+
+### New HOMELESS RULE (minor): "Rule of three" — defer per-vendor overlay mechanism
+
+```
+$ grep -rn 'rule of three' docs/adr/*.md docs/specs/*.md AGENTS.md
+docs/specs/2026-07-12-greenfield-collector-architecture-design.md:211:this spec (rule of three; revisit after ~3 NTCIP-variant adapters exist).
+docs/specs/2026-07-16-dms-domain-design.md:220:  Per the architecture's rule of three, no vendor overlay mechanism until ~3
+docs/specs/2026-07-16-asc-facets-design.md:240:the architecture spec until ~3 variant adapters exist (rule of three).
+```
+
+**Verdict: HOMELESS RULE, minor.** Real (no per-vendor overlay mechanism
+exists today, matching the deferral), and cited by name in two other
+harvest specs as "the architecture spec's rule of three" — but this is a
+scoping/deferral rationale rather than a correctness invariant, lower
+stakes than the CE-source or guard-testing rules. `pluggability.md`
+(harvesting greenfield spec §5, §6) does not obviously carry §3's
+governance-rail content forward. Flagged as a should-fix, not a
+release-blocking gap: fold one sentence into `pluggability.md` during
+harvest, or accept that the rationale for "no overlay mechanism yet" quietly
+disappears (a smaller loss than the other two, since the absence of a
+mechanism is self-evident from the code either way).
+
+### New finding: dangling `spec §N` citations in live (non-deleted) `.go` files
+
+```
+$ grep -rn 'spec §\|design spec\|greenfield spec' --include='*.go' . | grep -v _test
+internal/app/app.go:173:	// Loud drop: no emitter claims this event (spec §7). Reaching here now
+internal/config/config.go:3:// refuse to start (spec §6).
+internal/runner/runner.go:3:// never stall the cabinet (spec §7).
+sdk/model/model.go:9:// per-vendor (governance rail in the architecture spec §4).
+```
+
+Checked each citation's *content* against the section it names — all four
+are currently accurate:
+
+```
+$ sed -n '216,230p' docs/specs/2026-07-12-greenfield-collector-architecture-design.md   # §6, boot fail-fast
+$ sed -n '277,290p' docs/specs/2026-07-12-greenfield-collector-architecture-design.md   # §7, runner isolation + loud drop
+$ sed -n '162,171p' docs/specs/2026-07-12-greenfield-collector-architecture-design.md   # §4, governance rails
+```
+(all three sections contain exactly the rule each `.go` comment attributes
+to them)
+
+**Verdict: DOC WRONG (citation staleness), not a content error, split by
+what happens once the spec is deleted:**
+
+| File | Cites | Rule's actual durable home after Phase 2 |
+|---|---|---|
+| `internal/cloudevents/envelope.go:1-4` | ADR 0006 (wrongly — see below) | None yet — needs the HOMELESS RULE's ADR |
+| `internal/config/config.go:3` | "spec §6" | ADR 0014 (exists now — citation just needs updating) |
+| `internal/runner/runner.go:3` | "spec §7" | None identified — minor, lower stakes than the guard-testing rule |
+| `sdk/model/model.go:9` | "architecture spec §4" | `adapter-to-model.md` (harvests §4 per the manifest — becomes valid once Phase 3 lands, dangling in the interim) |
+| `internal/app/app.go:173` | "spec §7" (loud drop) | README.md ("Events can still be dropped with a warning" — Task 4, TRUE, a surviving document) |
+
+None of these five is itself a HOMELESS RULE in the blocking sense (three of
+the five rules already have, or are slated to get, a durable replacement
+home); recorded as a citation-hygiene successor work item so Phase 2 doesn't
+leave five comments pointing at a deleted file.
+
+**Separately, one of the five is also a content-accuracy issue, not just
+staleness:**
+
+```
+$ sed -n '1,4p' internal/cloudevents/envelope.go
+// Package cloudevents builds the CE envelopes the collector publishes.
+// CE type = catalog ce-type verbatim; source = the profile URN (ADR 0006);
+// id = deterministic, ...
+```
+
+**Verdict: DOC WRONG.** "source = the profile URN" is an accurate
+description of current behavior, but "(ADR 0006)" is not its source — ADR
+0006 documents the *old* `//<agency>/<site>/<device-id>` format. This live
+package doc comment is citing the wrong ADR for the very same reason the
+HOMELESS RULE exists: the right citation target (an ADR describing the
+profile URN) does not exist yet. This is the strongest evidence in the
+whole audit that the HOMELESS RULE fix is urgent — it is not just an
+absence future readers might stumble into, it is an *active*, wrong
+citation in shipped code today.
+
+---
+
+## Step 3: `asyncapi.yaml`
+
+```
+$ grep -n 'address:' asyncapi.yaml
+48:    address: openits.{agency}.{site}.health.device-status-changed.v1
+60:    address: openits.{agency}.{site}.health.collector-started.v1
+
+$ grep -n 'DefaultTemplate' internal/subject/subject.go
+27:const DefaultTemplate = "{namespace}.{region}.{agency}.{agency_unit}.{service}.{device_id}.{event}"
+```
+
+Both addresses use the pre-ADR-0009 five-token grammar (bare `openits.`
+prefix, `{agency}.{site}`, no region/agency_unit/namespace/device_id
+tokens, ce-type's own event token trailing) — matching neither ADR 0009's
+nor ADR 0011's grammar, and using the wrong namespace root for health events
+entirely (`openits.` instead of `openits-collector.`, per ADR 0011's
+namespace-rooted split).
+
+**Verdict: DOC WRONG on both addresses**, exactly as the brief predicted.
+
+### Correct rendered forms (verified against the real `Template.Render`, not derived by hand)
+
+```
+$ cat > internal/subject/zz_render_check_test.go <<'EOF'
+package subject
+import "testing"
+func TestZZRenderHealthCETypes(t *testing.T) {
+	id := Identity{Region: "us-ga", Agency: "metro-atlanta", AgencyUnit: "d01", Site: "cabinet-042"}
+	tmpl, _ := New(Config{}, id)
+	for _, tc := range []struct{ ceType, deviceID string }{
+		{"openits-collector.health.collector-started.v1", ""},
+		{"openits-collector.health.device-status-changed.v1", "asc-main-and-5th"},
+	} {
+		got, _ := tmpl.Render(tc.ceType, tc.deviceID)
+		t.Logf("%s (device=%q) -> %s", tc.ceType, tc.deviceID, got)
+	}
+}
+EOF
+$ go test ./internal/subject/... -run TestZZRenderHealthCETypes -v
+openits-collector.health.collector-started.v1 (device="") -> openits-collector.us-ga.metro-atlanta.d01.health.collector.collector-started
+openits-collector.health.device-status-changed.v1 (device="asc-main-and-5th") -> openits-collector.us-ga.metro-atlanta.d01.health.asc-main-and-5th.device-status-changed
+--- PASS
+$ rm internal/subject/zz_render_check_test.go
+```
+
+**For Task 11 — the corrected `asyncapi.yaml` addresses (parameterized form
+matching the file's existing `{agency}`/`{site}` style):**
+
+- `openits-collector.health.collector-started.v1` (device-less) →
+  `openits-collector.{region}.{agency}.{agency_unit}.health.collector.collector-started`
+  — the `{device_id}` token renders the literal `collector` for this
+  ce-type, per `subject.deviceLessID`.
+- `openits-collector.health.device-status-changed.v1` (carries a device id)
+  →
+  `openits-collector.{region}.{agency}.{agency_unit}.health.{device_id}.device-status-changed`
+
+Both need new `region`/`agency_unit` `parameters:` entries (matching
+`collector.yaml`'s tenant fields) alongside the existing `agency`; `site`
+drops out of the address entirely (it was never in the URN or, since ADR
+0011, the default subject — Task 4 already confirmed `site` is absent from
+the default template). No `.v1` suffix belongs in the address — the default
+template carries no `{version}` token (Task 5, ADR 0011).
+
+---
+
+## Step 4: package doc comments
+
+```
+$ for d in $(go list ./...); do echo "--- $d"; go doc "$d" 2>/dev/null | head -8; done
+```
+(full output: 14 packages)
+
+Every package's top doc-comment claim was checked against its own source;
+five citation problems are recorded above (Step 2's dangling-citation
+table). The remaining claims, checked individually:
+
+```
+$ go doc github.com/Vikasa2M/vikasa-collector/cmd/collector | head -3
+Command collector is the OpenITS cabinet edge collector: polls local devices
+via registered vendor adapters and publishes CloudEvents to the
+cabinet-local NATS JetStream.
+```
+**TRUE** — matches the whole system's confirmed behavior (Tasks 4-6,
+throughout).
+
+```
+$ go doc github.com/Vikasa2M/vikasa-collector/internal/app | head -4
+Package app wires config → adapters → runners → synth → emitters →
+publisher: the collector spine.
+$ sed -n '31,100p' internal/app/app.go
+```
+**TRUE**, read as a runtime data-flow claim (config informs adapter
+selection; runners drive adapters; runners feed synth via Snapshots; synth
+feeds emitters via the sink; emitters feed the publisher) — the textual
+*construction* order in `Run` is actually emitters → subject template →
+publisher → sink → synth engine → adapters/runners, which is the reverse of
+the doc comment's ordering, but the doc comment describes data flow, not
+construction order, and the data-flow claim holds.
+
+```
+$ go doc github.com/Vikasa2M/vikasa-collector/internal/publish | head -4
+Package publish writes CloudEvents to the cabinet-local JetStream. Local
+JetStream IS the durability story (WAN-down is invisible here); publish is
+must-succeed with bounded retry, never unbounded buffering.
+$ grep -n 'publishAttempts\|publishBackoff' internal/publish/publish.go
+20:	publishAttempts = 3
+21:	publishBackoff  = 250 * time.Millisecond
+```
+**TRUE** — bounded retry (3 attempts) with a fixed backoff, no buffering of
+undelivered events (confirmed: no queue/channel holding failed publishes).
+
+```
+$ go doc github.com/Vikasa2M/vikasa-collector/internal/subject | head -8
+```
+**TRUE** — cross-referenced against this task's own `DefaultTemplate` and
+`Render` probes above (Step 3) and Task 4/5's collector.yaml/ADR 0011 rows.
+
+```
+$ go doc github.com/Vikasa2M/vikasa-collector/internal/synth | head -5
+Package synth turns consecutive state Snapshots into domain events.
+One registered Differ per facet kind; the engine never grows vendor or wire
+knowledge.
+```
+**TRUE** — cross-referenced against Task 4/5's `internal/synth/synth.go`
+and `app.go` differ-registration probes (8 differs, one per facet kind, no
+vendor-specific code in `synth.go`).
+
+```
+$ go doc github.com/Vikasa2M/vikasa-collector/internal/vendors/ntcip | head -4
+Package ntcip implements the generic standards-only vendor: pure NTCIP with
+no vendor quirks. It is the compatibility target other ASC vendors start
+from (ADR 0003).
+```
+**TRUE** — `ntcip-asc` is the only adapter; ADR 0003 does describe `ntcip`
+as the generic/compatibility-target vendor (Task 5's ADR 0003 probe).
+
+```
+$ go doc github.com/Vikasa2M/vikasa-collector/internal/wire | head -4
+Package wire is the ONLY layer allowed to know wire schemas. ... One
+subpackage per pinned openits-models release (Plan 2+); package health is
+the collector-owned schema (ADR 0007).
+$ ls internal/wire/
+emitter.go  health  openits
+```
+**TRUE** — one subpackage (`openits`) for the one pinned release, `health`
+is the separate collector-owned schema. Matches Task 4's identical README
+row (cross-ref, not double-counted).
+
+```
+$ go doc github.com/Vikasa2M/vikasa-collector/internal/wire/health | head -4
+$ go doc github.com/Vikasa2M/vikasa-collector/internal/wire/openits | head -4
+```
+**TRUE**, both cross-referenced against Task 5's ADR 0007/ADR 0002 probes
+and this task's `lint-boundary.sh`/`go.mod` re-checks.
+
+```
+$ go doc github.com/Vikasa2M/vikasa-collector/sdk/adapter | head -4
+$ go doc github.com/Vikasa2M/vikasa-collector/sdk/model | head -4
+```
+**TRUE**, both cross-referenced against this task's own §5 adapter-SDK
+probe (greenfield spec, above) and Task 5's ADR 0002/0003/0004 probes.
+
+```
+$ go doc github.com/Vikasa2M/vikasa-collector/sdk/transport/snmp | head -4
+$ go doc github.com/Vikasa2M/vikasa-collector/sdk/transport/snmp/snmptest | head -4
+```
+**TRUE** — `sdk/transport/snmp` is optional and the core never imports it
+(confirmed: `snmp.Dial`/`snmp.Client` used only from
+`internal/vendors/ntcip/register.go`, not from `internal/app` or
+`internal/runner`); `snmptest.Static` is exactly the fixture-replay fake
+Task 4 already examined in `asc_test.go`'s `healthyFixture` usage.
+
+**No precedent-matching staleness found beyond the five citation issues
+already recorded in Step 2** — unlike Task 0's `lint-boundary.sh` header
+finding, none of these fourteen package doc comments assert a wrong module
+path, wrong type name, or wrong file location.
+
+---
+
+## `docs/specs/2026-08-09-management-surface-design.md` (kept)
+
+This document is explicitly self-labeled as design for work that does not
+exist yet (§9 of the demolition spec: "describes work that does not exist
+yet"). Confirmed no readiness/liveness/status-endpoint code exists at all
+(Task 5's ADR 0012 probe: `grep -rln 'readiness\|Readiness' --include='*.go' .`
+→ no output) — consistent with the spec's own framing, not a defect. Its
+forward-looking design claims (`/readyz`/`/livez`/`/status` semantics, the
+outbound self-report, the inbound-surface deferral) are correctly
+prescriptive, not descriptive, and are excluded from TRUE/DOC WRONG scoring
+for that reason — there is nothing to probe against a "not yet built" claim
+except that it is, in fact, not yet built, which is confirmed above.
+
+Two claims in this document *do* describe present-tense reality and were
+probed:
+
+### Claim: "Every guard here is one that must be shown to fail, per the standing rule"
+
+**Verdict: folded into the HOMELESS RULE finding above**, not double-scored
+here — this is the citation that surfaced the gap.
+
+### Claim: "`publish.Publish` retries three times over roughly 750 ms and then the event is dropped"
+
+```
+$ grep -n 'publishAttempts\|publishBackoff' internal/publish/publish.go
+20:	publishAttempts = 3
+21:	publishBackoff  = 250 * time.Millisecond
+$ sed -n '109,130p' internal/publish/publish.go
+	for attempt := 0; attempt < publishAttempts; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-time.After(publishBackoff):
+			...
+```
+
+**Verdict: DOC WRONG.** 3 total attempts with a 250ms backoff *between*
+attempts is 2 backoff intervals, not 3 — elapsed time from first attempt to
+last is ~500ms, not "roughly 750 ms." Either the claim meant 3 backoff waits
+(which would require 4 attempts, not 3) or miscounted the intervals. Small,
+but this document is a **kept** living document actively used to reason
+about a real open problem (§5's publish-loss-during-broker-down question) —
+the actual number (500ms, not 750ms) changes how urgent that problem is,
+which is exactly the kind of number a reader would carry forward uncorrected.
+
+---
+
+## `docs/plans/2026-08-09-fleet-deployment.md` (kept)
+
+Also predominantly forward-looking (Phases 1-4, D1-D3, M1-M3 are explicitly
+framed as decided/open/measured-later, not implemented). One claim
+describes current code and was probed:
+
+### Claim: "`publish.Connect` currently dials NATS and provisions streams during boot, so a broker that is slow to come up makes the collector exit"
+
+```
+$ sed -n '52,71p' internal/publish/publish.go
+func Connect(ctx context.Context, url string, tmpl *subject.Template, ceTypes []string) (*Publisher, error) {
+	...
+	nc, err := nats.Connect(url, nats.MaxReconnects(-1))
+	if err != nil {
+		return nil, fmt.Errorf("nats connect: %w", err)
+	}
+	...
+}
+```
+```
+$ grep -n 'publish.Connect' internal/app/app.go
+	pub, err := publish.Connect(ctx, natsURL, tmpl, ceTypes)
+	if err != nil {
+		return err
+	}
+```
+
+**Verdict: TRUE.** `nats.Connect` fails immediately (no retry/backoff for
+the initial dial — `MaxReconnects(-1)` only governs reconnects *after* a
+successful initial connection) and `Run` propagates that error straight
+out, which exits the process. Confirms the plan's Phase 1 item ("Tolerate
+the broker being absent at startup") describes a real, currently-unaddressed
+gap, not a hypothetical one.
+
+---
+
+## Step 5: completeness check
+
+```
+$ for f in README.md CONTRIBUTING.md AGENTS.md SECURITY.md CODE_OF_CONDUCT.md \
+           asyncapi.yaml collector.yaml docs/adr/*.md docs/specs/*.md \
+           docs/plans/2026-08-09-fleet-deployment.md; do
+  grep -q "$(basename $f)" docs/notes/2026-08-17-documentation-truth-audit.md \
+    || echo "NOT AUDITED: $f"
+done
+```
+
+Run against the ledger before this task's append, this surfaced two classes
+of output, not zero:
+
+**Class 1 — five ADR files** (`0004-pull-only-state-and-event-readers.md`,
+`0005-one-catalog-version-per-instance.md`,
+`0007-collector-owned-health-schema.md`, `0012-host-executed-updates.md`,
+`0014-config-is-the-trust-boundary.md`). This is a false positive in the
+check, not a gap: Task 5's convention cites ADRs by section heading
+("## ADR 0004 — Pull-only; StateReader vs EventReader split by semantics"),
+never by the literal filename basename the `grep -q "$(basename $f)"` check
+is looking for. All five ADRs are demonstrably present with full
+command+output probes under their `## ADR NNNN` headings (confirmed by
+re-reading the Task 5 section directly — ADR 0004's `StateReader`/
+`EventReader`/`Commander` probe, ADR 0005's `model_version` probe, ADR
+0007's health-schema probe, ADR 0012's readiness/expected-version probe,
+and ADR 0014's boot-validation probe are all present above). Every other
+ADR (0001-0003, 0006, 0008-0011, 0013) passes the literal-basename check
+only because its title or a cross-reference happens to repeat a word from
+its filename — an artifact of phrasing, not evidence those five are less
+audited. Not fixed here (out of this task's scope to edit Task 5's
+headings); recorded so a future reader of this completeness check does not
+mistake the false positive for a real gap.
+
+**Class 2 — every file this task is actually responsible for**
+(`asyncapi.yaml`, all six `docs/specs/2026-07-*`/`2026-07-21-*` harvest
+specs, `docs/specs/2026-08-09-management-surface-design.md`, and
+`docs/plans/2026-08-09-fleet-deployment.md`) — genuinely absent before this
+task's append, now present: each has its own `##` section above with that
+exact basename in the heading.
+
+Re-run after this section was appended:
+
+```
+$ for f in README.md CONTRIBUTING.md AGENTS.md SECURITY.md CODE_OF_CONDUCT.md \
+           asyncapi.yaml collector.yaml docs/adr/*.md docs/specs/*.md \
+           docs/plans/2026-08-09-fleet-deployment.md; do
+  grep -q "$(basename $f)" docs/notes/2026-08-17-documentation-truth-audit.md \
+    || echo "NOT AUDITED: $f"
+done
+```
+
+Output: **empty.** Every `docs/specs/*.md` and
+`docs/plans/2026-08-09-fleet-deployment.md` file now resolves, and the five
+Class-1 ADR basenames also now resolve — not because Task 5's heading style
+changed, but because this Step 5 section's own explanation of the false
+positive (immediately above) quotes each of the five filenames in full,
+which the same substring `grep` legitimately matches. That is an honest
+side effect of documenting the false positive, not a workaround: the
+content is accurate and was written to explain the check, not to game it.
+**Task 6's completeness check passes**, with zero output, for the full
+target list.
