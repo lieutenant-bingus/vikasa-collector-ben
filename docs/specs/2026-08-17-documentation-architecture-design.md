@@ -80,6 +80,14 @@ local development loop — that `snmptest.Static` fakes a device and that
 
 ## 3. Taxonomy
 
+> **Superseded in part, later in this same effort.** `docs/notes/` and
+> `docs/plans/` as described below are no longer committed to this
+> repository at all — not "empties as work ships" but gone entirely; both
+> are now working artifacts kept outside the tree. `docs/README.md` is the
+> live, authoritative description of the current layout. What follows is
+> the taxonomy as originally designed and as Phase 1 built it, left as
+> written per §3.1's own rule against rewriting settled sections.
+
 Five tiers, each with one job and an explicit lifecycle.
 
 | Tier | Answers | Lifetime | May restate a rule? |
@@ -289,6 +297,10 @@ Output is `docs/notes/2026-08-17-documentation-truth-audit.md` — one row per
 document, each load-bearing claim probed against the code, and the probe itself
 recorded so a reviewer can re-run it.
 
+*(`docs/notes/` was later removed from this repository entirely — see the
+§3 note. The ledger this step produced is retrievable from git history;
+§11.2 has the command.)*
+
 ### 8.2 Verdicts
 
 - **True** — leave it.
@@ -474,7 +486,10 @@ and durable content is harvested before deletion rather than after.
 1. Two artifacts; how-to canonical, skills terse pointers.
 2. `invariants.md` is the sole restatement of enforced rules, CI-verified.
 3. Five tiers; specs stage unbuilt designs; notes are immutable evidence.
+   *(Later refined — see the §3 note: notes left the repository entirely.)*
 4. Specs and plans are deleted when their work ships, after harvest.
+   *(Plans were refined further still — see the §3 note: no longer
+   committed here at all, not even in flight.)*
 5. ADRs are never deleted; only inaccurate status lines are corrected.
 6. `configuration.md` is canonical; `collector.yaml` keeps rationale only.
 7. Truth pass runs first, using probe-and-ledger, with four verdicts.
