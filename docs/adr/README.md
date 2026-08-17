@@ -20,5 +20,6 @@ immutable once accepted; reversals get a new ADR that supersedes the old.
 | [0012](0012-host-executed-updates.md) | Host-executed updates; the collector participates but never self-updates |
 | [0013](0013-absence-of-evidence.md) | Absence of evidence is never a state change |
 | [0014](0014-config-is-the-trust-boundary.md) | Config is the trust boundary; boot fails on the unrecognized |
+| [0015](0015-ce-source-urn-scheme.md) | The CE-source URN scheme (supersedes 0006's and 0009's CE-source clauses) |
 
 Companion spec: `../specs/2026-07-12-greenfield-collector-architecture-design.md`
