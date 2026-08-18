@@ -57,6 +57,12 @@ go run ./cmd/collector -config collector.yaml
 
 ## Contributing an adapter
 
+Never seen this repo before? [Build your first
+adapter](docs/tutorial/build-your-first-adapter.md) takes a fresh clone
+through to a real event on the bus in one sitting. When you're writing the
+real thing, [`docs/how-to/add-a-vendor-adapter.md`](docs/how-to/add-a-vendor-adapter.md)
+is the canonical guide.
+
 Implement `sdk/adapter.StateReader` (or `EventReader`) returning
 `sdk/model` types, register a `Descriptor{Vendor, DeviceKind}`, and ship
 recorded fixtures with golden tests — see [the fixture

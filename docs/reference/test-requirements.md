@@ -133,7 +133,9 @@ new differ; copy `dms_test.go`'s.
 
 Wire-emitter version bumps and configuration changes have their own
 workflows and validation surfaces documented elsewhere — see
-`.claude/skills/wire-emitter/` and
-[`docs/reference/configuration.md`](configuration.md) respectively. This
-document covers the three contribution shapes most new contributors touch
-first: a differ, an adapter, or a ce-type mapping.
+[`docs/how-to/adopt-an-openits-models-release.md`](../how-to/adopt-an-openits-models-release.md)
+(with [`map-an-event-to-the-wire.md`](../how-to/map-an-event-to-the-wire.md)
+for a single mapping, and `.claude/skills/wire-emitter/` for the checklist
+form) and [`docs/reference/configuration.md`](configuration.md)
+respectively. This document covers the three contribution shapes most new
+contributors touch first: a differ, an adapter, or a ce-type mapping.

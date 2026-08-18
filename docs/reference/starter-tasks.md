@@ -48,9 +48,13 @@ first.
 
 Before writing an adapter, read
 [`docs/reference/test-requirements.md`](test-requirements.md)'s "A new
-adapter" checklist and `.claude/skills/add-vendor-adapter/` for the
-step-by-step workflow (reader contract, registration, connection parsing,
-fixtures).
+adapter" checklist. The step-by-step workflow — reader contract,
+registration, connection parsing, fixtures — is
+[`docs/how-to/add-a-vendor-adapter.md`](../how-to/add-a-vendor-adapter.md),
+the canonical guide; `.claude/skills/add-vendor-adapter/` is the same
+workflow in terse checklist form for an agent. If you have never seen this
+repo before, [`docs/tutorial/build-your-first-adapter.md`](../tutorial/build-your-first-adapter.md)
+walks a throwaway adapter end to end first.
 
 ## The reference implementation
 

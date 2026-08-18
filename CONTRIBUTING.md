@@ -8,6 +8,10 @@ and PRs that fight them will be asked to restructure rather than merged:
 - `README.md` — the one-diagram architecture and current status.
 - [`docs/README.md`](docs/README.md) — the documentation hub. It routes by
   task, and it is the fastest way to find the page you actually need.
+- [`docs/tutorial/build-your-first-adapter.md`](docs/tutorial/build-your-first-adapter.md)
+  — never seen this repo? This takes a fresh clone through to a real event
+  on the bus in one sitting. It is the fastest way to learn the shape of a
+  contribution before making one.
 - [`docs/reference/starter-tasks.md`](docs/reference/starter-tasks.md) — five
   device domains are modeled, diffed and wired to real ce-types with no
   adapter producing them. Landing one of those is the highest-leverage first
@@ -24,7 +28,9 @@ make check    # vet + tests + boundary lint — exactly what CI runs
 
 ## Contributing a vendor adapter
 
-Adapters are the most common contribution. The contract:
+Adapters are the most common contribution.
+[`docs/how-to/add-a-vendor-adapter.md`](docs/how-to/add-a-vendor-adapter.md)
+is the canonical step-by-step guide; the contract it implements:
 
 - Implement `sdk/adapter.StateReader` (or `EventReader`) returning only
   `sdk/model` types, and register a `Descriptor{Vendor, DeviceKind}`.

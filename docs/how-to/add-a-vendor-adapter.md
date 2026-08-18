@@ -170,9 +170,11 @@ If your device reports something none of the eight existing facet kinds
 can hold — not "a value I have to squeeze into an existing field," but a
 genuinely different kind of state — that is not a reason to bend an
 existing facet or reach for an ad hoc field. It's a **facet contribution**,
-with its own bar and its own workflow: read the `add-domain-facet` skill
-(`.claude/skills/add-domain-facet/SKILL.md`) for the shape a new facet,
-differ, and event set has to take, and
+with its own bar and its own workflow:
+[`add-a-domain-facet.md`](add-a-domain-facet.md) is the guide for the shape
+a new facet, differ, and event set has to take (the `add-domain-facet`
+skill, `.claude/skills/add-domain-facet/SKILL.md`, is the same workflow in
+checklist form), and
 [`adapter-to-model.md`'s "Facets are per-device-kind, never per-vendor" section](../explanation/adapter-to-model.md#facets-are-per-device-kind-never-per-vendor)
 for why the domain model draws that line where it does.
 

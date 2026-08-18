@@ -12,6 +12,12 @@ file, link this file instead.
 no longer restate any rule's wording — each place that used to state a
 rule now links the row below instead.
 
+`docs/tutorial/` is the one deliberate exception. A tutorial that only
+linked out at the moment a rule matters would fail its own job, so it
+states the rule it is teaching in place and links the row here for the
+canonical wording — the teaching copy is a paraphrase, this file is what
+is kept true, and the tutorial says so where it does it.
+
 Each row names an **enforcer**: something that actually fails if the rule
 is broken, not just a place the rule is written down. `internal/docs`'s
 `TestInvariantsTableNamesRealEnforcers` parses this table on every `go

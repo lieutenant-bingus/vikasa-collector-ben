@@ -386,13 +386,20 @@ happens in step 8.
 
 Write this test before the happy path. It is the invariant most likely to
 be got wrong on a first adapter, and it is worth understanding *why* before
-you write the version that succeeds: **absence of evidence is never a state
-change.** A facet the device didn't answer must never be reported as a
-default or empty value — it must be absent from the snapshot entirely, with
-a `FacetError` explaining why. Get this backwards and a timed-out OID reads
+you write the version that succeeds: **[absence of evidence is never a state
+change](../reference/invariants.md#absence-of-evidence-is-never-a-state-change).**
+A facet the device didn't answer must never be reported as a default or
+empty value — it must be absent from the snapshot entirely, with a
+`FacetError` explaining why. Get this backwards and a timed-out OID reads
 downstream as "the controller reported mode unknown," which is a real,
 false, published event about a device that never said anything of the
 kind.
+
+That one sentence is this tutorial's paraphrase, kept here because you need
+it in front of you while writing the test. The linked row in
+`invariants.md` is the canonical wording — it names the ADR that decided
+the rule and the tests that enforce it today, and it is the one kept true
+if the two ever drift apart.
 
 Create `internal/vendors/acme/asc_test.go`:
 
@@ -720,6 +727,14 @@ read before you do them for real:
   [`docs/reference/starter-tasks.md`](../reference/starter-tasks.md) explains
   why landing one of those is the safest, highest-leverage first PR in this
   repo, and lists exactly what each of the five needs.
+- **The canonical steps, without the training wheels.**
+  [`docs/how-to/add-a-vendor-adapter.md`](../how-to/add-a-vendor-adapter.md)
+  is the guide this tutorial is a rehearsal for — the same path written for
+  someone shipping a real adapter instead of an invented one: package
+  layout, connection parsing, capability bits, what belongs in the PR and
+  what does not. Read it before you write the real one; the
+  [`add-vendor-adapter`](../../.claude/skills/add-vendor-adapter/SKILL.md)
+  skill is the terse checklist form of the same workflow.
 
 Before you start that PR, delete your throwaway clone from step 2 — nothing
 in it should follow you into a real branch. And if you skipped ahead and
