@@ -149,11 +149,11 @@ here to an entire poll.
 
 ## What stays canonical: the envelope vs. the subject
 
-The worked trace above renders two different things from the same
+The worked trace above produced two different outputs from the same
 `ModeChanged` event: a ce-type (`openits.signal-control.mode-changed.v1`),
 fixed by the wire emitter's routing table, and a subject
 (`openits.us-ga.metro-atlanta.d01.signal-control.asc-main-and-5th.mode-changed`),
-built from the operator's configured template. These are deliberately
-independent, and neither is derived from the other; see
-[`docs/reference/invariants.md`](../reference/invariants.md#subjects-are-operator-configurable-the-cloudevents-envelope-stays-canonical)
-for the canonical statement of that rule and what holds it apart today.
+built from the operator's configured template. What relationship, if any, is
+allowed to hold between the two is a load-bearing rule with its own
+canonical statement, not restated here; see
+[`docs/reference/invariants.md`](../reference/invariants.md#subjects-are-operator-configurable-the-cloudevents-envelope-stays-canonical).

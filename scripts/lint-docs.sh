@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 # Two structural checks on documentation.
 #
-#   A. Every relative markdown link under docs/ resolves to a real file. The
-#      documentation tiers link heavily by design — rules live in exactly one
-#      place and everything else points at it — so a broken link is not a
-#      cosmetic defect, it is a rule becoming unreachable.
+#   A. Every relative markdown link under docs/ resolves to a real file, and
+#      every #fragment on a link to a local markdown file matches a real
+#      heading in that file (GitHub's slug rules: lowercase, punctuation
+#      dropped, spaces to hyphens). The documentation tiers link heavily by
+#      design — rules live in exactly one place and everything else points
+#      at it — so a broken link, or a link whose heading moved out from
+#      under it, is not a cosmetic defect, it is a rule becoming
+#      unreachable.
 #
 #   B. Every SKILL.md carries the sections the skill contract requires. Skills
 #      are read by agents that will not notice a missing section; they will
@@ -21,6 +25,40 @@ checked=0
 # links that were never meant to resolve from the containing file's directory.
 strip_fences() {
   awk '/^[[:space:]]*```/ { infence = !infence; next } !infence { print }' "$1"
+}
+
+# heading_slugs prints one GitHub-style slug per ATX heading ("# ".."######")
+# in the given file, fenced code blocks excluded (reuses strip_fences so a
+# "#" inside an example code block is never mistaken for a real heading).
+heading_slugs() {
+  strip_fences "$1" \
+    | grep -E '^#{1,6}[[:space:]]' \
+    | sed -E 's/^#{1,6}[[:space:]]+//; s/[[:space:]]+$//' \
+    | while IFS= read -r heading; do
+        printf '%s\n' "$heading" \
+          | tr '[:upper:]' '[:lower:]' \
+          | sed -E 's/[^a-z0-9 _-]//g; s/[[:space:]]+/ /g; s/^ //; s/ $//; s/ /-/g'
+      done
+}
+
+# anchor_exists checks whether $2, a #fragment already stripped of its
+# leading "#", matches some heading's slug in file $1.
+#
+# Deliberately not "heading_slugs "$1" | grep -Fxq -- "$2"": under
+# `set -o pipefail` a "-q" grep that matches early closes the pipe before
+# heading_slugs finishes writing, so heading_slugs can exit SIGPIPE (141)
+# and pipefail reports that as the pipeline's failure even though the match
+# was found — turning a real anchor into a false BROKEN ANCHOR. Reading via
+# process substitution and returning from inside the loop avoids ever
+# putting heading_slugs on the failing side of a pipe.
+anchor_exists() {
+  local file="$1" frag="$2" slug
+  while IFS= read -r slug; do
+    if [ "$slug" = "$frag" ]; then
+      return 0
+    fi
+  done < <(heading_slugs "$file")
+  return 1
 }
 
 # The root documents are listed with printf, not `ls`. A process substitution
@@ -52,6 +90,21 @@ while IFS= read -r md; do
       echo "BROKEN LINK: $md -> $link" >&2
       exit 1
     fi
+    # A fragment on a link to a local markdown file is a heading reference,
+    # not just a file reference — check it resolves too. Anything that is
+    # not a markdown file (or carries no fragment at all) cannot be parsed
+    # for headings, so it is left to the file-existence check above only.
+    case "$target" in
+      *.md)
+        frag="${link#*#}"
+        if [ "$frag" != "$link" ] && [ -n "$frag" ]; then
+          if ! anchor_exists "$dir/$target" "$frag"; then
+            echo "BROKEN ANCHOR: $md -> $link (no heading in $dir/$target slugs to '#$frag')" >&2
+            exit 1
+          fi
+        fi
+        ;;
+    esac
   done || fail=1
   checked=$((checked + 1))
 done < <({ find docs -name '*.md' -not -path 'docs/specs/*'; \
