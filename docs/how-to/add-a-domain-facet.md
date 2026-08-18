@@ -4,7 +4,7 @@ This is the guide for adding a new concept to the domain model: a kind of
 device state nothing in `sdk/model` represents yet. If you already know
 which facet you need and just want to get a device onto the bus, you
 probably want
-[`add-a-vendor-adapter.md`](add-a-vendor-adapter.md#when-the-device-exposes-something-no-facet-models)
+[`add-a-vendor-adapter.md`](add-a-vendor-adapter.md#choose-the-device-kind-and-check-for-an-existing-facet)
 instead — most adapter work reuses an existing facet, and that document's
 starter-tasks table names five facets that are modeled and diffed with no
 adapter producing them yet.
@@ -29,17 +29,17 @@ A facet is a plain struct implementing `FacetKind() Kind`, with its own
 `sdk/model/model.go`'s `Facet` interface is the whole contract).
 
 - **Keep it lossless.** Store what the device reports at the precision it
-  reports, not the precision the wire needs. `DetectorSamples`' occupancy
-  field keeps half-percent resolution exactly; the wire emitter rounds
-  later, in `internal/wire`, never here — a fidelity loss belongs at the
-  mapping layer, where it's a reviewable, one-line decision, not baked
-  silently into the domain type.
+  reports, not the precision the wire needs. `DetectorSample`'s
+  `OccupancyTenths` field keeps half-percent resolution exactly; the wire
+  emitter rounds later, in `internal/wire`, never here — a fidelity loss
+  belongs at the mapping layer, where it's a reviewable, one-line
+  decision, not baked silently into the domain type.
 - **Document zero-value and empty semantics on the type.** Say, on the
   type itself, whether "this device doesn't have this subsystem" is
   representable as an empty facet rather than an error. See
   [`adapter-to-model.md`'s "Present, absent, or empty" section](../explanation/adapter-to-model.md#present-absent-or-empty-three-states-a-facet-can-be-in)
-  for the three states a facet can be in and the worked `readFaultSet`
-  example of what happens when this is gotten wrong.
+  for the three states a facet can be in and `readFaultSet`'s worked
+  example of getting both non-obvious cases right.
 - **Enums get their own named type with a `String()` and an explicit
   "unknown" zero value**, the way `DMSControlMode` and `DMSDisplayState`
   do in `sdk/model/dms.go` (see `sdk/model/enums.go` for the pattern

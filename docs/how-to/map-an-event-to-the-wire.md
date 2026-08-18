@@ -36,8 +36,8 @@ is the only type implementing `wire.Emitter`
    the whole event rather than encode a partial or approximate payload.
 3. **Attaches `ce-dataschema`** from `dataSchemaFor`
    (`internal/wire/openits/identities.go`), a hard-coded
-   `map[string]string` keyed on ce-type — hard-coded because
-   openits-models ships no Go catalog API to read the URL from at runtime.
+   `map[string]string` keyed on ce-type (why it's hard-coded rather than
+   read from the catalog is covered where step 4 below links it).
 4. **Returns `wire.Encoded`** (`internal/wire/emitter.go`): `Data` (what
    ships) and `Identity` (`Data` with producer-assigned leaves like
    `sequence` cleared — what `internal/cloudevents`' `ce-id` derivation
@@ -161,9 +161,7 @@ conformance test against an external document; `internal/wire/openits`
 does not, and this is a tracked gap rather than an oversight this document
 is the first to notice — see
 [`docs/README.md`'s known-gaps entry for it](../README.md#the-code-does-not-meet-a-bar-the-docs-correctly-state)
-for the full account. Practically: adding a ce-type is a manual
-cross-check against the pinned release's own `bindings/nats/asyncapi.yaml`
-today, not something CI will prompt you for if you get it wrong.
+for the full account.
 
 ## Verify
 
