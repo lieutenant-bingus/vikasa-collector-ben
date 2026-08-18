@@ -35,9 +35,9 @@ point the collector returns to tagged pins and a versioned
 **What did not change:** a bump is still never a `replace` directive.
 `scripts/lint-boundary.sh`'s Rule C fails the build on one in `go.mod`,
 lockstep or not — see
-[the two openits-models rows in `invariants.md`](../reference/invariants.md#the-openits-models-pin-carries-no-replace-directive)
-for both halves stated precisely, including which half is machine-enforced
-and which is `Review (manual)` today.
+[the "no `replace` directive" row in `invariants.md`](../reference/invariants.md#the-openits-models-pin-carries-no-replace-directive),
+whose neighboring row covers the other, still-manual half of this rule
+(staying on `main`, not a stale pin).
 
 ## Procedure
 
@@ -103,12 +103,12 @@ go test ./... -race
 gofmt -l .
 ```
 
-`make check` runs `go vet`, the full suite, and `scripts/lint-boundary.sh`
-— the same gate that fails the build on a stray `replace` directive or on
-anything outside `internal/wire` reaching for an openits-models type.
-`go test ./... -race` matters here because emitters are called
-concurrently, one goroutine per polled device. `gofmt -l .` should print
-nothing.
+See [`map-an-event-to-the-wire.md`'s Verify
+section](map-an-event-to-the-wire.md#verify) for what each command checks
+and why. Worth calling out for a pin bump specifically: `make check`'s
+`scripts/lint-boundary.sh` run is also what catches a `replace` directive
+left behind from local debugging during the bump — the exact shortcut ADR
+0010 still forbids.
 
 ## What this does not check for you
 

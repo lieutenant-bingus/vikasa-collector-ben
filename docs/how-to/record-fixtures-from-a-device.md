@@ -11,11 +11,12 @@ documentation effort.
 ADR 0008 requires an adapter's fixtures to be recorded raw transport
 responses, not hand-typed values — see
 ["No fixtures, no merge" in `invariants.md`](../reference/invariants.md#no-fixtures-no-merge).
-This repo has no tool that captures a real device session into a fixture,
-and no `testdata/` mechanism of any kind: every fixture, including the
-one shipping adapter's, is a Go literal committed alongside the test that
-uses it. That means the recorded-fixture bar cannot currently be met by
-anything this repo provides — see
+No tool in this repo captures a real device session into a fixture; what
+that means for the fixtures that do exist is
+[`testing-strategy.md`'s "Fixture replay: reproducible, not verified"
+section](../explanation/testing-strategy.md#fixture-replay-reproducible-not-verified).
+The recorded-fixture bar cannot currently be met by anything this repo
+provides — see
 [`docs/README.md`'s known-gaps entry](../README.md#the-code-does-not-meet-a-bar-the-docs-correctly-state)
 for the full account, including that `ntcip-asc`'s own `healthyFixture` is
 a hand-typed map and its alarm-bitmap table has never been validated
@@ -23,18 +24,14 @@ against a physical controller.
 
 ## What to do meanwhile
 
-Capture a real session by hand: run the adapter's transport against the
-actual device (or the vendor's simulator, if one exists), record the raw
-values it returns, and commit them as the Go literal this repo's fixtures
-already take the form of. Then write, in the fixture's own comment, what
-you captured, from what device or simulator, and when — that comment is
-what a reviewer will actually judge the fixture on.
+Capture a real session by hand and document its provenance in the
+fixture's own comment — what you captured, from what device or simulator,
+and when.
+[`add-a-vendor-adapter.md`'s "Meet the test bar"
+section](add-a-vendor-adapter.md#meet-the-test-bar) already walks through
+this in full for the one place it currently matters, a new adapter's
+fixtures, and none of that guidance is adapter-specific — it applies here
+unchanged until a recorder exists. Why the comment is what actually
+counts, not the file it's written in, is
 [`testing-strategy.md`'s "Provenance is a review question, not a
-test" section](../explanation/testing-strategy.md#provenance-is-a-review-question-not-a-test)
-is why: file format can't distinguish a recording from an invention, so
-provenance is the only thing that can, and it explains what to write and
-what a reviewer looks for.
-
-[`add-a-vendor-adapter.md`](add-a-vendor-adapter.md) covers the rest of an
-adapter contribution's testing bar; this stub only covers the fixture
-step it currently can't hand you a tool for.
+test" section](../explanation/testing-strategy.md#provenance-is-a-review-question-not-a-test).
