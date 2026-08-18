@@ -184,14 +184,6 @@ both bodies stand as written under the immutability convention. Nothing
 further is required unless the convention changes. Evidence: ledger
 `:1041-1044`, `:1220-1224`.
 
-**The "rule of three" deferral has no home outside the specs being deleted.**
-The greenfield spec defers any per-vendor overlay mechanism until roughly
-three NTCIP-variant adapters exist, and two other specs scheduled for deletion
-cite it by name as the reason no such mechanism exists. No ADR records it.
-*Closing it:* fold one sentence into `pluggability.md` during harvest, or
-accept losing the rationale — the absence of a mechanism is self-evident from
-the code either way. Evidence: ledger `:2448-2466`.
-
 ### A guard that was deliberately not built
 
 **No duplicate-prose lint exists.** Across Phase 2, a document reproducing

@@ -56,7 +56,9 @@ by any agent or human):
 
 - `add-vendor-adapter` — new vendor × device-kind integrations
 - `add-domain-facet` — new facets, differs, and domain events
+- `add-transport` — a new `sdk/transport/<name>` package for a protocol nothing speaks yet
 - `wire-emitter` — openits-models mappings and release pin bumps
+- `review-adapter-contribution` — the maintainer-side checklist for an incoming adapter PR
 
 ## Testing bar
 

@@ -446,23 +446,22 @@ and `wire-emitter` describing openits-models as consumed via tagged semver
 releases when ADR 0010 pins it at a main-HEAD pseudo-version instead.
 Recorded here as done, not as an open item.
 
-**Citations with no durable home.** Phase 2 deletes the six harvested specs
-(§9). These live `.go` comments cite "spec §N" and will dangle. Phase 1
-repointed the ones with an existing target; these two have none yet and need
-one created or the citation dropped:
+**Citations with no durable home — resolved.** Phase 2 deleted the six
+harvested specs (§9); these live `.go` comments cited "spec §N" and would
+have dangled. Both now have a home:
 
-- `internal/runner/runner.go:3` — cites the greenfield spec §7 for the poll
-  loop's jitter / per-poll timeout / panic isolation. No ADR or reference doc
-  covers it; the natural home is the explanation tier's `architecture.md`.
-- `sdk/model/model.go:9` — cites the architecture spec §4 for the
-  "facets are per-device-kind, never per-vendor" governance rail. The
-  manifest harvests §4 into `adapter-to-model.md`; repoint once that exists.
+- `internal/runner/runner.go`'s package comment cites
+  `docs/explanation/architecture.md`'s "The poll loop: jitter, per-poll
+  timeout, and panic isolation" section for the poll loop's jitter,
+  per-poll timeout, and panic isolation.
+- `sdk/model/model.go`'s `Kind` doc comment cites
+  `docs/explanation/adapter-to-model.md`'s "Facets are per-device-kind,
+  never per-vendor" section for the governance rail.
 
-Also: the greenfield spec's "rule of three" deferral (no per-vendor overlay
-mechanism until ~3 variant adapters exist) is cited by name from two other
-harvest specs and has no home outside them — fold one sentence into
-`pluggability.md` during harvest or accept losing the rationale (ledger
-`:2448-2466`).
+The greenfield spec's "rule of three" deferral (no per-vendor overlay
+mechanism until ~3 variant adapters exist) also has a home now:
+`docs/explanation/pluggability.md`'s "The rule of three" section (commit
+`9b87523`). Recorded here as done, not as an open item.
 
 ### 11.2 Harvest dependency: the audit ledger (historical)
 
