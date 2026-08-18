@@ -30,13 +30,14 @@ none of this during a pin bump.
 
 ### Adding a ce-type mapping
 
-1. Probe the pinned module before mapping anything: resolve it at the
-   version in `go.mod` in a scratch Go module and **run** it — construct
-   the message, marshal it, print the bytes. Shapes looking right in the
-   generated code is not a result. Watch for: enums with no
-   `UNSPECIFIED` zero value, `identityref` leaves as plain strings, YANG
-   `decimal64` leaves as strings, and reproduce the `ce-id-spec.md` test
-   vector before trusting any `ce-id` implementation.
+1. **Probe the pinned module before mapping anything.** A shape that looks
+   right in the generated code is not a result — only bytes you produced
+   are. The scratch-module recipe and the list of things that have caught
+   people out before (enums with no `UNSPECIFIED` zero value, `identityref`
+   and `decimal64` leaves that are plain strings, the `ce-id-spec.md` test
+   vector) are
+   [`map-an-event-to-the-wire.md`'s "Ground truth: probe, don't read"](../../../docs/how-to/map-an-event-to-the-wire.md#ground-truth-probe-dont-read).
+   Do not work from this list; work from that section.
 2. Add the routing entry to `ceTypeFor` (`internal/wire/openits/emitter.go`),
    keyed on `key{event.EventKind(), deviceKind}` — the catalog's ce-type
    string verbatim, never templated.

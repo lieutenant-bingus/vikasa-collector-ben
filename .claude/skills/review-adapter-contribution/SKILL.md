@@ -75,11 +75,11 @@ each value "should" mean. Signals of recording: unexplained extra fields,
 values the test ignores, device quirks nobody would invent.
 Ask directly if unclear — provenance is a question, not an accusation.
 
-**Absence of evidence — trace it, do not judge it.** A failed or absent read
-must produce a `model.FacetError` in `Snapshot.Errors` and leave that facet
-out of `Snapshot.Facets`. A zero-valued facet is indistinguishable downstream
-from a real reading of zero, so it manufactures events the device never
-reported.
+**Absence of evidence — trace it, do not judge it.** The rule, what
+violating it looks like, and the `Snapshot` mechanism behind it are the
+[absence-of-evidence row](../../../docs/reference/invariants.md#absence-of-evidence-is-never-a-state-change)
+linked above; read it there rather than from memory. What review adds on top
+of the rule is the trace.
 
 This is the easiest item here to get wrong, because it is the easiest to
 *feel* checked. Reading the adapter and concluding "it looks like failures are
@@ -101,7 +101,9 @@ detail — it means the domain model is being bent to fit a device.
 **`Descriptor()` capability bits** match what the adapter actually implements.
 
 **Connection parsing rejects malformed config at build time** rather than
-dialing something broken and failing later. Config is the trust boundary.
+dialing something broken and failing later — the
+[config-is-the-trust-boundary row](../../../docs/reference/invariants.md#config-is-the-trust-boundary-boot-fails-on-the-unrecognized)
+applied to the adapter's own `connection` block.
 
 **Scope creep.** An adapter contribution should touch:
 
@@ -161,6 +163,12 @@ Before posting, confirm:
 
 ## Canonical doc
 
-`docs/reference/test-requirements.md` — the "A new adapter" section is the bar
-a contribution is measured against, and it names the reference tests for each
-requirement. `docs/reference/invariants.md` holds the rules themselves.
+[`docs/reference/test-requirements.md`](../../../docs/reference/test-requirements.md#a-new-adapter)
+— the "A new adapter" section is the bar a contribution is measured
+against, and it names the reference tests for each requirement.
+
+[`docs/reference/invariants.md`](../../../docs/reference/invariants.md) —
+the rules themselves.
+
+[`docs/how-to/add-a-vendor-adapter.md`](../../../docs/how-to/add-a-vendor-adapter.md)
+— the guide the contributor was working from.

@@ -66,8 +66,10 @@ Every adapter read path ships recorded fixtures with golden tests — see
 [the fixture
 rule](docs/reference/invariants.md#no-fixtures-no-merge). Scrub
 deployment-identifying data (addresses, community strings, site names)
-from recordings before committing. Differ tests cover: first poll, no
-change, each axis independently, failed read, DeviceKind stamping.
+from recordings before committing. Differ tests have their own matrix —
+see [`test-requirements.md`'s "A new differ"
+section](docs/reference/test-requirements.md#a-new-differ) for what a
+differ PR must cover.
 
 ## Conventions
 
