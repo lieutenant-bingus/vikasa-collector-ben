@@ -1,146 +1,96 @@
 ---
 name: wire-emitter
 description: Work on the wire-emitter layer — mapping domain events to openits-models payloads, adopting a new openits-models release (pin bump), or adding ce-type mappings. Use this whenever a task touches internal/wire, mentions openits-models versions/protos/ce-types, CloudEvents encoding, or "publish X to the bus" — and when reviewing changes under internal/wire.
+contract: v1
 ---
 
 # Wire emitters and openits-models pins
 
-`internal/wire` is the ONLY layer allowed to know wire schemas
-(ADR 0002; CI-enforced by `scripts/lint-boundary.sh`). An emitter maps
-domain events to `(proto payload, ce-type)` via the `wire.Emitter`
-interface in `internal/wire/emitter.go`. Everything below `internal/wire`
-— adapters, `sdk/model`, the synth engine — must stay ignorant of
-openits-models, so that model-release churn is always a one-package edit.
+## When this applies
 
-Two emitter families exist by design:
-- `internal/wire/health` — the collector-owned health schema (ADR 0007),
-  JSON bodies, `openits-collector.health.*` ce-types. It does not track
-  openits-models releases; leave it alone during pin bumps.
-- `internal/wire/openits` — the openits-models emitter: protobuf bodies,
-  catalog ce-types. It splits into `internal/wire/<version>` packages once
-  more than one models release has to compile at the same time (ADR 0002's
-  S2). For why the boundary is drawn here, what rides in the envelope
-  (`ce-type`, `ce-source`, `ce-id`, `ce-dataschema`), and the drop-vs-degrade
-  rule for unmappable events, see
-  [`docs/explanation/wire-boundary.md`](../../../docs/explanation/wire-boundary.md)
-  and [ADR 0015](../../../docs/adr/0015-ce-source-urn-scheme.md) for the
-  `ce-source` URN scheme specifically.
+Mapping a domain event onto an openits-models `(ce-type, payload)`, adding
+a ce-type mapping, or moving the openits-models pin forward. Also applies
+when reviewing a change under `internal/wire`.
 
-## Ground truth: probe, don't read
+This skill covers `internal/wire/openits` — the openits-models emitter
+family. It does not cover `internal/wire/health`, the collector-owned
+health schema (ADR 0007, JSON bodies, `openits-collector.health.*`
+ce-types) — that family does not track openits-models releases and needs
+none of this during a pin bump.
 
-openits-models' prose and its generated code have disagreed more than
-once, and the prose is the one that lies. Before mapping anything, resolve
-the module at the pinned version in a scratch Go module and **run** it —
-construct the message, marshal it, print the bytes. Shapes looking right
-is not a result; a probe that never produced a byte proves nothing.
+## Invariants
+
+- [Adapters and `sdk/` never import openits-models](../../../docs/reference/invariants.md#adapters-and-sdk-never-import-openits-models) — inverted here: `internal/wire` is the one place allowed to; that's this skill's whole reason to exist.
+- [The openits-models pin carries no `replace` directive](../../../docs/reference/invariants.md#the-openits-models-pin-carries-no-replace-directive)
+- [The openits-models pin is main HEAD, not a stale tag](../../../docs/reference/invariants.md#the-openits-models-pin-is-main-head-not-a-stale-tag)
+- [Every mapped ce-type has a byte-exact golden](../../../docs/reference/invariants.md#every-mapped-ce-type-has-a-byte-exact-golden)
+- [Subjects are operator-configurable; the CloudEvents envelope stays canonical](../../../docs/reference/invariants.md#subjects-are-operator-configurable-the-cloudevents-envelope-stays-canonical) — `ce-type`, `ce-source`, and `ce-id` never derive from the operator's subject template, or vice versa.
+
+## Procedure
+
+### Adding a ce-type mapping
+
+1. Probe the pinned module before mapping anything: resolve it at the
+   version in `go.mod` in a scratch Go module and **run** it — construct
+   the message, marshal it, print the bytes. Shapes looking right in the
+   generated code is not a result. Watch for: enums with no
+   `UNSPECIFIED` zero value, `identityref` leaves as plain strings, YANG
+   `decimal64` leaves as strings, and reproduce the `ce-id-spec.md` test
+   vector before trusting any `ce-id` implementation.
+2. Add the routing entry to `ceTypeFor` (`internal/wire/openits/emitter.go`),
+   keyed on `key{event.EventKind(), deviceKind}` — the catalog's ce-type
+   string verbatim, never templated.
+3. Add the `Encode` case: field-by-field copies, explicit enum switches.
+   No reflection, no mapping DSL. Where the domain value has no honest
+   wire identity, return `ok=false` and let the case decline rather than
+   encode an approximation.
+4. Add a `dataSchemaFor` entry pointing at the defining module's own
+   schema-registry revision — never a base or types module the payload
+   happens to compose.
+5. Add a golden case to `goldenCases`
+   (`internal/wire/openits/golden_test.go`): the fixture event, expected
+   ce-type, expected `ce-dataschema`, and exact hex bytes for both `Data`
+   and `Identity`.
+
+### Adopting a new openits-models release
+
+1. `grep openits-models go.mod` for the current pin — a main-HEAD
+   pseudo-version, never a tag, never a `replace`.
+2. Probe the new module (step 1 above) and diff its release's
+   `bindings/nats/asyncapi.yaml` ce-type set against the emitter's current
+   `CETypes()`.
+3. `go get -u github.com/Vikasa2M/openits-models@main`. While only one
+   release compiles at a time, edit `internal/wire/openits` in place; copy
+   to `internal/wire/<version>` only once the fleet genuinely needs two
+   releases compiled together.
+4. Add or adjust mappings for anything the probe turned up, and claim any
+   newly-available ce-types that were previously dropping (the drop
+   warnings name the candidates) — follow "Adding a ce-type mapping"
+   above.
+5. Re-run the goldens; treat every byte diff as a decision to confirm
+   against the actual models change, never a regenerate-and-move-on.
+
+## Verify
 
 ```bash
-mkdir /tmp/probe && cd /tmp/probe && go mod init probe
-go get github.com/Vikasa2M/openits-models@<the version in our go.mod>
-# then a main.go that builds the message, marshals it, and prints hex
+make check
+go test ./... -race
+gofmt -l .
 ```
 
-Things that have surprised people, worth checking rather than assuming:
+Expected: `make check` and `go test ./... -race` both pass; `gofmt -l .`
+prints nothing. For a pin bump specifically, `make check`'s boundary lint
+is what catches a `replace` directive left behind from local debugging.
 
-- **Enums may have no `UNSPECIFIED` zero value.** Several start their
-  first real member at 0, so a zero field is a meaningful value, not
-  "unset" — you cannot distinguish them on the wire.
-- **`identityref` leaves are plain `string`** on the generated structs,
-  carrying `defining-module:identity-name`. They are not Go enums, and the
-  identity set is not always what the domain enum's name suggests — check
-  which module defines the identity you mean, since several services
-  define same-named ones.
-- **Some numeric-looking leaves are strings** (YANG `decimal64` renders as
-  a string), so a field the domain holds as an integer may need formatting
-  rather than conversion.
-- **`ce-id-spec.md` ships a test vector.** Reproduce it from the real
-  generated type before trusting any `ce-id` implementation — it exercises
-  the payload encoding and the digest chain together. If it doesn't
-  reproduce, the implementation is wrong, not the vector.
+```bash
+go test ./internal/wire/openits/... -run TestGoldens -v
+```
 
-Record what you verify, and against which version, so the next person
-re-probes only what the pin bump could have moved.
+Expected: every golden case passes. A golden that moved with no matching
+mapping edit means the module changed under you, not that the golden
+needs regenerating.
 
-## Rules that make the layer work
+## Canonical doc
 
-- **openits-models is pinned at a main-HEAD pseudo-version while both
-  repos move in lockstep, pre-v1** (ADR 0010, amending ADR 0002's pinning
-  clause) — never a `replace` on a checkout, which would break
-  reproducibility for everyone who doesn't have your working tree. Version
-  coexistence happens across the fleet (config selects the emitter at boot,
-  ADR 0005), never inside a process. Whatever the current pin is, it is a
-  real, immutable module version in `go.mod` — a pseudo-version today, not
-  a tag; check there rather than assuming. Tagged semver releases (and the
-  versioned `internal/wire/<version>` layout) return at openits-models
-  v1.0.0, or sooner if one of ADR 0010's expiry triggers fires — see that
-  ADR for the pinning rule in force.
-- **The mapping is dumb by design.** Field-by-field copies, explicit enum
-  switches. No reflection, no mapping DSL, no clever generality — a
-  reviewer must be able to check each mapping against the two schemas by
-  reading it. Where the domain is richer than the wire model, make an
-  explicit **map-or-drop** decision per field/event and record it in a
-  comment at the decision site.
-- **Unclaimed events drop loudly** (metric + log) at the emitter chain —
-  `Encode` returns `ok=false` for "not mine". Never claim an event you
-  can't faithfully encode, and never guess: a shared event (fault-raised,
-  mode-changed) with an unknown `DeviceKind` is not claimed.
-- **`CETypes()` must be complete and sorted.** Boot validation renders
-  every reported ce-type through the operator's subject template; an
-  emitter that under-reports defeats that check silently.
-- **ce-types are catalog-verbatim** (`openits.<service>.<event>.v<major>`),
-  and each carries a constant `ce-dataschema` URL pinned to that release's
-  schema-registry revision. openits-models ships no Go catalog API, so
-  these are hard-coded constants locked by golden tests — that's
-  deliberate: a pin bump should *show up* as a reviewable constants diff.
-
-## Adopting a new openits-models release (pin bump)
-
-1. Read the CHANGELOG (or the commit range) and diff its
-   `bindings/nats/asyncapi.yaml` ce-type set against the current emitter's
-   `CETypes()`.
-2. Move the pin with
-   `go get -u github.com/Vikasa2M/openits-models@main` (ADR 0010's
-   lockstep mechanism while pre-v1; a tagged bump once ADR 0010 expires),
-   adjust mappings and `ce-dataschema` constants, and claim any
-   newly-available events that were dropping (the drop warnings name the
-   candidates). While only one models release has to compile, edit the
-   existing emitter package in place.
-3. When the fleet needs two releases at once, copy the emitter to
-   `internal/wire/<newversion>` instead, so both compile together (ADR
-   0002's S2). Update the `model_version` default only when the fleet is
-   ready to move; two packages coexisting is the normal state, not a
-   migration to rush.
-4. Re-probe the generated code for anything the release could have moved
-   (see "Ground truth" above) — enum numbering and identityref spellings
-   change without any signal at the Go type level.
-5. Goldens: fixture event in → exact header set + payload bytes out, per
-   mapped event. Every diff is a decision — confirm each against the
-   models change, never regenerate wholesale. **A golden that moved
-   without a mapping edit means the module changed under you**, which is
-   the whole reason the goldens pin bytes rather than shapes.
-
-## Envelope invariants (all emitters, `internal/publish` + `internal/cloudevents`)
-
-CloudEvents binary mode: `ce-*` NATS headers, raw payload body.
-`ce-type` stays catalog-verbatim and `ce-source` stays canonical
-regardless of the operator's subject template — subjects are routing, the
-envelope is identity (ADR 0009).
-
-`ce-id` and `ce-source` are **openits-models' contract, not ours** — the
-collector is only its reference *implementation*. Read that repo's
-`ce-id-spec.md` and `bindings/nats/README.md`; do not reason from the
-current code, which predates both.
-
-- `ce-id` is a **ULID**: `SHA-256(ce-source ‖ ce-type ‖ stable-time ‖
-  payload)` with `0x1f` separators, then `ULID(timestamp = ce-time-ms,
-  randomness = digest[0:10])`. Its leading 48 bits ARE `ce-time` — that
-  is an input, not a clock read, so it stays deterministic and replay
-  dedup still works. Never randomize it, and never "simplify" it back to
-  a bare content hash; the published test vector is the golden.
-- `ce-source` is `urn:openits:<entity-kind>:<region>:<agency>:<unit>:<id>`.
-  `entity-kind` is NOT `DeviceKind` — `asc` → `controller`, `dms` →
-  `sign`, collector-level → `collector`.
-- The two are coupled: `ce-id` hashes the literal `ce-source` bytes, so a
-  change to source formatting changes every id.
-
-Gate: `make check` and `go test ./... -race`.
+[`docs/how-to/map-an-event-to-the-wire.md`](../../../docs/how-to/map-an-event-to-the-wire.md) — mapping a single event.
+[`docs/how-to/adopt-an-openits-models-release.md`](../../../docs/how-to/adopt-an-openits-models-release.md) — moving the pin forward.

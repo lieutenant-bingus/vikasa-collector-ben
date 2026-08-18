@@ -7,16 +7,10 @@ one that is kept true, and the one CI checks. If you find yourself about to
 write "never import openits-models outside internal/wire" anywhere but this
 file, link this file instead.
 
-`AGENTS.md`, `CONTRIBUTING.md`, `README.md`, and
-`.github/pull_request_template.md` no longer restate any rule's wording —
-each place that used to state a rule now links the row below instead. The
-three `.claude/skills/*/SKILL.md` files (`add-vendor-adapter`,
-`add-domain-facet`, `wire-emitter`) still restate rules without linking
-here; converting them is pending in
-[`../specs/2026-08-17-documentation-architecture-design.md`](../specs/2026-08-17-documentation-architecture-design.md#111-phase-2-scope)'s
-Phase 2 scope, and depends on how-to guides that don't exist yet. Until
-that lands, this file wins any disagreement with those three: a paraphrase
-that contradicts a row below is the paraphrase's defect.
+`AGENTS.md`, `CONTRIBUTING.md`, `README.md`,
+`.github/pull_request_template.md`, and every `.claude/skills/*/SKILL.md`
+no longer restate any rule's wording — each place that used to state a
+rule now links the row below instead.
 
 Each row names an **enforcer**: something that actually fails if the rule
 is broken, not just a place the rule is written down. `internal/docs`'s

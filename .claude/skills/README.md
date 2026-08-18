@@ -27,12 +27,12 @@ carries every section below except frontmatter.
 ## Opting in
 
 `scripts/lint-docs.sh` only holds a skill to sections 2–6 once the skill's
-frontmatter declares `contract: v1`. The three skills that predate this
-contract (`add-vendor-adapter`, `add-domain-facet`, `wire-emitter`) do not
-declare it yet — the lint lists them as non-conforming rather than either
-silently skipping them or failing the build on work this task does not
-cover. Retargeting them to this shape is Phase 2. A new skill should declare
-`contract: v1` and follow the shape from the start.
+frontmatter declares `contract: v1`. Every skill in this directory declares
+it today. A skill that doesn't would be listed as non-conforming rather
+than either silently skipped or failing the build — but that's a
+mechanism for a future skill that hasn't been retargeted yet, not the
+current state. A new skill should declare `contract: v1` and follow the
+shape from the start.
 
 ## Template
 
