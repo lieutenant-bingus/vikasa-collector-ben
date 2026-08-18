@@ -22,6 +22,7 @@ empties out as that work ships.
 | I want to... | Start here |
 |---|---|
 | See the repo for the first time | [`../README.md`](../README.md) — the one-diagram architecture and current Status |
+| Learn the codebase by building something | [`tutorial/build-your-first-adapter.md`](tutorial/build-your-first-adapter.md) — clone to a real event on the bus, in one sitting |
 | Add a vendor adapter | [`reference/starter-tasks.md`](reference/starter-tasks.md) for the highest-leverage first PR, then [`.claude/skills/add-vendor-adapter/`](../.claude/skills/add-vendor-adapter/SKILL.md) for the step-by-step workflow |
 | Know what will fail my PR | [`reference/invariants.md`](reference/invariants.md) for the rules and what enforces them, [`reference/test-requirements.md`](reference/test-requirements.md) for the testing bar per contribution type |
 | Understand why it's built this way | [`adr/README.md`](adr/README.md) — the accepted decision records, in order |
@@ -35,10 +36,8 @@ empties out as that work ships.
 - [`wire-emitter`](../.claude/skills/wire-emitter/SKILL.md) — openits-models mappings and release pin bumps
 - [`.claude/skills/README.md`](../.claude/skills/README.md) — the contract new skills are written against
 
-A tutorial, four how-to guides, and an explanation tier promoted from the
-designs still staged in `specs/` are tracked as follow-on work and will be
-linked here as they land — this hub only points at documents that exist
-today.
+Four how-to guides are tracked as follow-on work and will be linked here as
+they land — this hub only points at documents that exist today.
 
 ## Known gaps and successor work
 
