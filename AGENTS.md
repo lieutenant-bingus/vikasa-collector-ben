@@ -3,9 +3,11 @@
 Open-source edge collector for ITS cabinets: vendor adapters poll field
 devices, the core diffs snapshots into domain events, wire emitters encode
 them, and the publisher ships CloudEvents to the cabinet's local NATS
-JetStream. Architecture rationale lives in `docs/adr/` (accepted decision
-records) and `docs/specs/` (design specs) — consult them before
-restructuring anything. The rules CI actually enforces are catalogued
+JetStream. Architecture rationale for the built system lives in
+`docs/adr/` (accepted decision records) and `docs/explanation/` (how the
+pieces fit together) — consult them before restructuring anything.
+[`docs/README.md`](docs/README.md) is the documentation hub and routes to
+all of it by task. The rules CI actually enforces are catalogued
 canonically in
 [`docs/reference/invariants.md`](docs/reference/invariants.md) — that
 table is what to trust for exact wording, not this file.
@@ -18,21 +20,25 @@ go test ./... -race     # CI runs this too; poll loops are concurrent
 go run ./cmd/collector -config collector.yaml
 ```
 
-## Layering rules (CI-enforced)
+## Layering rules
 
-The openits-models boundary is two rules, both CI-enforced — see
+The openits-models boundary is three rules, not all machine-checked — see
 [the boundary
 rule](docs/reference/invariants.md#adapters-and-sdk-never-import-openits-models)
-and [the pin
-rules](docs/reference/invariants.md#the-openits-models-pin-carries-no-replace-directive)
 for exact wording:
 
 - Adapters (`internal/vendors/`) and `sdk/` stay on `sdk/model` types and
-  don't reach for openits-models.
-- The dependency pin tracks openits-models' `main` HEAD while the two
-  repos move in lockstep pre-v1. Tagged pins and versioned emitter
-  packages return at openits-models v1.0.0, or sooner if an outside
-  consumer pins it.
+  don't reach for openits-models. CI-enforced.
+- The dependency pin carries no `replace` directive — see [that
+  rule](docs/reference/invariants.md#the-openits-models-pin-carries-no-replace-directive).
+  CI-enforced.
+- The pin also has to actually track openits-models' `main` HEAD, not
+  quietly go stale, while the two repos move in lockstep pre-v1 — see
+  [that
+  rule](docs/reference/invariants.md#the-openits-models-pin-is-main-head-not-a-stale-tag).
+  **Not CI-enforced** — caught by review, if at all. Tagged pins and
+  versioned emitter packages return at openits-models v1.0.0, or sooner if
+  an outside consumer pins it.
 
 The synth engine's iron rule concerns what a differ or adapter may do with
 a failed or absent facet read — see [absence of

@@ -21,7 +21,9 @@ local NATS JetStream using versioned openits-models payloads.
   separate streams — collector-internal traffic and ITS telemetry differ in
   retention and in who should be able to read them (ADR 0011).
 - **Wire emitters** (`internal/wire/`) are the only code that knows
-  openits-models. One package per pinned models release.
+  openits-models — see [the boundary
+  rule](docs/reference/invariants.md#adapters-and-sdk-never-import-openits-models).
+  One package per pinned models release.
 
 Why it's built this way: see `docs/adr/`. Start here for everything else —
 task guides, configuration, what will fail a PR: [`docs/README.md`](docs/README.md).

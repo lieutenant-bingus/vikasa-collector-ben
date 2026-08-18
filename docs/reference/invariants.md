@@ -7,7 +7,7 @@ one that is kept true, and the one CI checks. If you find yourself about to
 write "never import openits-models outside internal/wire" anywhere but this
 file, link this file instead.
 
-`AGENTS.md`, `CONTRIBUTING.md`, `README.md`'s contributing section, and
+`AGENTS.md`, `CONTRIBUTING.md`, `README.md`, and
 `.github/pull_request_template.md` no longer restate any rule's wording —
 each place that used to state a rule now links the row below instead. The
 three `.claude/skills/*/SKILL.md` files (`add-vendor-adapter`,
