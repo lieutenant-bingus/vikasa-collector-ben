@@ -93,13 +93,14 @@ today. That gap is tracked, not hidden — see
 
 Because no test can tell a recording from an invention, **provenance has to
 be judged by a reviewer reading the diff**, not asserted by CI. This
-distinction is not academic: during an evaluation of the maintainer-review
-skill for this repo, a reviewer without this context blocked a genuinely
-good adapter contribution on the grounds that its fixture was "a Go map
-literal, not a recording" — a category error, since *every* fixture in this
-repo is a Go map literal, recorded or not. That objection would have burned
-a real contributor over a property the file format was never capable of
-proving in the first place.
+distinction is not academic: while evaluating the `review-adapter-contribution`
+skill against synthetic adapter PRs, the unaided review — without the
+skill's guidance — blocked a clean adapter contribution twice, both times
+"over a fixture being a Go literal — the only form a fixture takes in this
+repo" (commit `5161b3f`). Literal-vs-file-format is not evidence of
+anything, since it is universal here; that objection would have burned a
+real contributor over a property no fixture in this repo could ever not
+have.
 
 What a reviewer can actually look for is signal in the *values themselves*,
 not the format:
@@ -129,10 +130,13 @@ differ emits exactly the domain events the change actually represents — one
 test per axis that can change independently, a test for the first poll (no
 prior state to diff against), and a test confirming no events fire when
 nothing changed. Critically, differ tests are also where this repo proves
-its most load-bearing invariant: **absence of evidence is never a state
-change** (ADR 0013). A failed or absent facet read must produce zero
-events and leave the engine's remembered state untouched — not clear a
-fault that never cleared, not report a mode change that never happened.
+its most load-bearing invariant — a rule with its own canonical statement,
+not restated here; see
+["Absence of evidence is never a state change"](../reference/invariants.md#absence-of-evidence-is-never-a-state-change)
+in `invariants.md`. What a differ test for this actually looks like: feed
+the engine a failed read for a facet that previously reported a fault, and
+assert zero events came out and the next successful poll still diffs
+against the pre-failure state, not a blank one.
 
 **What they do not prove:** that the underlying mechanism is exercised for
 *every* facet kind. The absence-of-evidence gate lives once, in shared code
@@ -211,11 +215,25 @@ and CI runs it as a separate, required pass alongside `make check`. This
 matters here specifically because poll loops and the publisher are not
 incidentally concurrent — each configured device polls on its own timer in
 its own goroutine, and the publisher drains a shared event channel while
-new events keep arriving. A bug that only manifests under concurrent access
-(a snapshot mutated while being read, a map written from two goroutines) can
-pass every sequential test and still corrupt state or crash in the field.
-`-race` is what stands between "the tests pass" and "the tests pass and
-nothing raced to get there."
+new events keep arriving.
+
+**What `-race` proves:** for every goroutine interleaving that actually
+occurred during that run, no two goroutines touched the same memory without
+synchronization. A bug that only manifests under concurrent access (a
+snapshot mutated while being read, a map written from two goroutines) can
+pass every sequential test and still corrupt state or crash in the field —
+`-race` is aimed exactly at that class of bug.
+
+**What it does not prove:** that no race exists. The race detector is
+*dynamic*, not static — it instruments and watches one actual execution,
+not the space of all possible ones. A race on a code path the test suite
+never exercises, or one that only occurs on an interleaving that didn't
+happen to occur this run, is invisible to it; nothing about a clean `-race`
+run rules out a schedule the next run (or production, under real load) does
+hit. A green `-race` pass is real evidence of a bug's absence, not a proof
+of one — which is also why it's worth re-running rather than trusting a
+single cached pass, and why concurrency-sensitive code still deserves
+reasoning about its synchronization, not just a green checkmark.
 
 ## Doc guards: structural, not semantic
 
@@ -261,7 +279,7 @@ never fail on real decay would read as coverage without being coverage.
 | Fixture replay | The adapter parses what it was handed | Whether what it was handed resembles a real device |
 | Differ tests | State transitions are correct, including the absence rule | Only for the facets that have a failed-read case (4 of 8) |
 | Conformance tests | Published shape matches an external contract | Only the contract the test actually loads — see the catalog-conformance gap above |
-| `-race` | No data race under concurrent polling/publishing | Logic bugs that don't involve concurrent access |
+| `-race` | No race occurred on the interleavings this run actually exercised | Races on paths not run, or interleavings that didn't happen to occur — it is dynamic, not exhaustive |
 | Doc guards | A specific structural claim still matches the code | Whether the claim is relevant, or the surrounding prose is accurate |
 
 None of these layers is a substitute for another. A golden test cannot catch
