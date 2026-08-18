@@ -36,6 +36,12 @@ shape from the start.
 
 ## Template
 
+Copy this into `.claude/skills/<name>/SKILL.md`. Relative links are written
+from *that* file's directory — two levels below the repo root — so a link
+into `docs/` starts `../../../`, not the `../../` that would be correct
+from this README. `lint-docs.sh` checks the real skills, so a copy that
+gets the depth wrong fails the build rather than shipping a dead link.
+
 ```markdown
 ---
 name: <skill-name>
@@ -51,7 +57,7 @@ contract: v1
 
 ## Invariants
 
-- [Rule name](../../docs/reference/invariants.md#anchor) — one line on how
+- [Rule name](../../../docs/reference/invariants.md#anchor) — one line on how
   this skill's procedure respects it.
 
 ## Procedure

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Two structural checks on documentation.
 #
-#   A. Every relative markdown link under docs/ resolves to a real file, and
+#   A. Every relative markdown link under docs/, in the root documents, and
+#      in .claude/skills/ resolves to a real file, and
 #      every #fragment on a link to a local markdown file matches a real
 #      heading in that file (GitHub's slug rules: lowercase, punctuation
 #      dropped, spaces to hyphens). The documentation tiers link heavily by
@@ -61,6 +62,13 @@ anchor_exists() {
   return 1
 }
 
+# `.claude/skills/**/*.md` is in the set for the same reason `docs/` is: the
+# skills link into `docs/reference/invariants.md` and into the how-to guides
+# by relative path, and a skill is read by an agent that will follow a dead
+# link without noticing. Their depth differs from every other scanned file —
+# a SKILL.md sits two levels below the root, so a link into docs/ starts
+# `../../../` — which is exactly the mistake this catches.
+#
 # The root documents are listed with printf, not `ls`. A process substitution
 # runs in a subshell whose exit status `set -e` never sees, so an `ls` that
 # failed because one of the five was renamed would abort the list at that point
@@ -108,6 +116,7 @@ while IFS= read -r md; do
   done || fail=1
   checked=$((checked + 1))
 done < <({ find docs -name '*.md' -not -path 'docs/specs/*'; \
+           find .claude/skills -name '*.md'; \
            printf '%s\n' README.md CONTRIBUTING.md AGENTS.md CODE_OF_CONDUCT.md SECURITY.md; })
 
 # ---- B: skill structure -----------------------------------------------------
