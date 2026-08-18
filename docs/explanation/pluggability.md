@@ -197,16 +197,21 @@ public API would get.
 
 [ADR 0004](../adr/0004-pull-only-state-and-event-readers.md) decided every
 adapter is pull-driven — the runner calls `Read` or `Fetch`; nothing an
-adapter does calls back into the core. The reason is where these devices
-live: a cabinet collector sits behind cellular or carrier NAT with no
-reachable inbound address (the same fact
-[ADR 0012](../adr/0012-host-executed-updates.md) and
-[ADR 0014](../adr/0014-config-is-the-trust-boundary.md) cite for why the
-collector cannot be remotely dialed into). A push or callback design
-would need something on the core side listening for connections nothing on
-the public internet — or even the operator's own network, most of the
-time — can actually reach. Pull sidesteps the problem entirely: the
-collector always initiates, so there is never a listener to expose.
+adapter does calls back into the core. The reason is what is on the other
+end of the local link: an ASC controller answering an SNMP poll or an
+ATSPM log endpoint being fetched has no push source to build a listener
+for — the field devices this collector talks to do not call out on their
+own. ADR 0004's alternatives explicitly considered a push or callback sink
+and rejected it for exactly that reason (no push sources exist), plus
+YAGNI: building a listener for a source that does not exist is speculative
+infrastructure with nothing to drive it. This is a different, narrower
+boundary than the cabinet's WAN uplink — the cellular/carrier NAT that
+keeps a fleet control plane from dialing *into* the collector
+([ADR 0012](../adr/0012-host-executed-updates.md),
+[ADR 0014](../adr/0014-config-is-the-trust-boundary.md)). That fact governs
+why the collector can't be remotely reached from outside the cabinet; it
+says nothing about the collector's own local link to the devices inside
+it, which is where ADR 0004's decision actually operates.
 
 `StateReader` and `EventReader` exist as two interfaces rather than one
 because "pull" describes the transport direction, not what the data means
