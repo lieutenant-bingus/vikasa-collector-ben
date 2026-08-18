@@ -1,7 +1,8 @@
 # Documentation Architecture — Design
 
 **Date:** 2026-08-17
-**Status:** Proposed
+**Status:** Phase 1 and Phase 2 shipped (§10, §11.1). Successors A and B are
+open — see §11.
 **Scope:** This repo's documentation, skills, and the checks that keep both
 true. Contributor tooling (fixture recorder, conformance kit) and the deploy
 path are successor efforts — see §11.
@@ -370,7 +371,17 @@ historical reference, not a broken link.
 
 Steps 1–2 carry the leverage. Steps 3–4 carry the writing.
 
-## 11. Successors (out of scope here)
+## 11. Successors
+
+Phase 2 (§11.1) has shipped: the explanation tier, the tutorial, all six
+how-to guides (two of them honest stubs), and the skill retargeting this
+spec's manifest (§5, §6) describes — three skills retargeted to the §6.1
+contract plus `add-transport` and `review-adapter-contribution` added, all
+five now at `contract: v1`. The rule-restatement conversions landed too:
+`AGENTS.md`, `CONTRIBUTING.md`, `README.md`, `.github/pull_request_template.md`,
+and all three retargeted skills link into `invariants.md` instead of
+restating a rule. Two successors remain, both out of scope for this design
+from the start:
 
 - **A — contributor tooling.** Fixture recorder, migration of inline fixtures
   and hex goldens into `testdata/` with a sanctioned regeneration path, and an
@@ -380,10 +391,15 @@ Steps 1–2 carry the leverage. Steps 3–4 carry the writing.
 - **B — deploy path.** Fleet plan Phases 1–2: readiness signal, broker-absent
   tolerance, expected-version drift, container image, systemd unit. Unblocks
   `deploy-a-collector.md` and the `deploy-collector` skill.
-- **C — Phase 2 of this design.** The explanation tier, tutorial, how-to
-  guides, and skill retargeting this spec's manifest (§5, §6) describes.
-  Phase 1 shipped the truth pass, the reference tier, and the checks; Phase 2
-  is the writing. Scope in full: §11.1. Its harvest whitelist: §11.2.
+
+One more item surfaced during Phase 2 itself rather than being anticipated
+here: a duplicate-prose lint, the natural fifth `lint-docs` guard, alongside
+the four §7.1 lists. It wasn't built — a version with an acceptable
+false-positive rate is its own design problem — and it isn't numbered
+alongside A and B because it guards the documentation tree itself rather
+than unblocking a stub; it's tracked in
+[`docs/README.md`'s known-gaps list](../README.md#a-guard-that-was-deliberately-not-built)
+instead.
 
 ### 11.1 Phase 2 scope
 
@@ -412,20 +428,23 @@ converted to a link (or deleted) in Phase 2:
   `.claude/skills/wire-emitter/SKILL.md` — all three, as part of the retarget
   already listed above.
 
-**Probe the three `SKILL.md` files with the ledger method.** The truth audit
-never probed the skills. Its only skill coverage is an `ls -d` of the
-directory (ledger `:284-297`) — a check that they exist, not that anything in
-them is true. Phase 1 review found a concrete consequence:
+**The three `SKILL.md` files were probed with the ledger method — ahead of
+schedule.** The truth audit never probed the skills. Its only skill coverage
+was an `ls -d` of the directory (ledger `:284-297`) — a check that they
+exist, not that anything in them is true. Phase 1 review had already found
+one concrete consequence by reading, not by a systematic pass:
 `add-vendor-adapter/SKILL.md` sent contributors to wire adapter registration
 "into `internal/app`", when registration has always lived in
-`cmd/collector/main.go`'s `RegisterAdapters`. That was corrected in place, but
-it was found by reading, not by a systematic pass, and `docs/README.md`
-routes the single highest-traffic contributor task straight into that file.
+`cmd/collector/main.go`'s `RegisterAdapters`.
 
-Phase 2 must probe all three skills claim-by-claim in the audit's ledger
-format — every path, symbol, command, and rule statement — before or as part
-of retargeting them, and record the verdicts in a probe ledger like every
-other probed surface (§11.2 on where such ledgers live now).
+The systematic pass this section called for ran before Phase 2's own
+sequencing reached it: 58 claims checked — every path, symbol, command, and
+rule statement across the three original skills — with four defects found
+and fixed in commit `28456bd`, including the `add-vendor-adapter` skill
+attributing the absence-of-evidence rule to ADR 0008 instead of ADR 0013,
+and `wire-emitter` describing openits-models as consumed via tagged semver
+releases when ADR 0010 pins it at a main-HEAD pseudo-version instead.
+Recorded here as done, not as an open item.
 
 **Citations with no durable home.** Phase 2 deletes the six harvested specs
 (§9). These live `.go` comments cite "spec §N" and will dangle. Phase 1
@@ -445,15 +464,15 @@ harvest specs and has no home outside them — fold one sentence into
 `pluggability.md` during harvest or accept losing the rationale (ledger
 `:2448-2466`).
 
-### 11.2 Harvest dependency: the audit ledger
+### 11.2 Harvest dependency: the audit ledger (historical)
 
-Phase 2's harvest (§11.1, §9) uses the truth audit's per-document verdicts as
-its whitelist: which claims in the six specs being harvested are probed
+Phase 2's harvest (§11.1, §9) used the truth audit's per-document verdicts as
+its whitelist: which claims in the six specs being harvested were probed
 **True** and safe to promote into the explanation tier as written, and which
-are **Doc wrong** and need fixing during harvest rather than copying
-verbatim (§8.2). Harvesting without it means re-verifying every claim from
-scratch, or worse, laundering an unverified one into the document a
-newcomer trusts most (§8, first paragraph).
+were **Doc wrong** and needed fixing during harvest rather than copying
+verbatim (§8.2). Harvesting without it would have meant re-verifying every
+claim from scratch, or worse, laundering an unverified one into the document
+a newcomer trusts most (§8, first paragraph).
 
 That ledger — `docs/notes/2026-08-17-documentation-truth-audit.md`, one row
 per document with the probe that produced each verdict — no longer lives in
@@ -461,11 +480,15 @@ this repository: `docs/notes/` is a working-artifact tier kept outside the
 tree once its content has served its purpose (this repo's agent tooling
 writes such ledgers under the git-ignored `.superpowers/`; see
 `docs/README.md`'s taxonomy note). Every commit that touched it is still in
-history. Retrieve it when Phase 2 starts:
+history. It was retrieved for the harvest with:
 
 ```
 git show e6e2b1f:docs/notes/2026-08-17-documentation-truth-audit.md
 ```
+
+Left here for whoever next needs it — auditing the harvest, or re-deriving a
+verdict — since the same command still resolves; nothing about it depended
+on Phase 2 being in flight.
 
 ## 12. Risks
 

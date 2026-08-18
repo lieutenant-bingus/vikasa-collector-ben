@@ -117,11 +117,13 @@ for skill in .claude/skills/*/SKILL.md; do
   [ -e "$skill" ] || continue
   skills=$((skills + 1))
 
-  # Skills opt in by declaring the contract version. Retargeting the
-  # pre-contract skills is Phase 2; until then they are listed as
-  # non-conforming rather than silently skipped.
+  # Skills opt in by declaring the contract version. All five skills in this
+  # repo were retargeted to it during the documentation Phase 2 effort, so
+  # this branch is inert today — but it stays rather than being deleted, as
+  # a safety net for whatever skill shows up next without the declaration:
+  # such a skill is listed as non-conforming here, not silently skipped.
   if ! grep -qF 'contract: v1' "$skill"; then
-    echo "lint-docs: $skill predates the skill contract (Phase 2 retargets it)"
+    echo "lint-docs: $skill predates the skill contract"
     continue
   fi
 

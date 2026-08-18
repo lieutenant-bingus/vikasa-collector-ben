@@ -1,8 +1,9 @@
 # Contributing to vikasa-collector
 
 Thanks for your interest in the OpenITS edge collector. Before writing code,
-skim the architecture docs — the layering rules below are CI-enforced, and
-PRs that fight them will be asked to restructure rather than merged:
+skim the architecture docs — several of the rules below are CI-enforced
+(exact wording and enforcement per rule: [`invariants.md`](docs/reference/invariants.md)),
+and PRs that fight them will be asked to restructure rather than merged:
 
 - `README.md` — the one-diagram architecture and current status.
 - [`docs/README.md`](docs/README.md) — the documentation hub. It routes by

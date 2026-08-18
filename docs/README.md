@@ -23,21 +23,27 @@ empties out as that work ships.
 |---|---|
 | See the repo for the first time | [`../README.md`](../README.md) — the one-diagram architecture and current Status |
 | Learn the codebase by building something | [`tutorial/build-your-first-adapter.md`](tutorial/build-your-first-adapter.md) — clone to a real event on the bus, in one sitting |
-| Add a vendor adapter | [`reference/starter-tasks.md`](reference/starter-tasks.md) for the highest-leverage first PR, then [`.claude/skills/add-vendor-adapter/`](../.claude/skills/add-vendor-adapter/SKILL.md) for the step-by-step workflow |
+| Add a vendor adapter | [`reference/starter-tasks.md`](reference/starter-tasks.md) for the highest-leverage first PR, [`how-to/add-a-vendor-adapter.md`](how-to/add-a-vendor-adapter.md) for the full guide, then [`add-vendor-adapter`](../.claude/skills/add-vendor-adapter/SKILL.md) for the step-by-step checklist |
+| Add a device-state concept nothing in `sdk/model` represents yet (a new facet) | [`how-to/add-a-domain-facet.md`](how-to/add-a-domain-facet.md), then [`add-domain-facet`](../.claude/skills/add-domain-facet/SKILL.md) |
+| Add support for a device that doesn't speak SNMP | [`add-transport`](../.claude/skills/add-transport/SKILL.md) — builds the `sdk/transport/<name>` plumbing, not the adapter itself |
+| Map a domain event to a wire ce-type, or adopt a new openits-models release | [`how-to/map-an-event-to-the-wire.md`](how-to/map-an-event-to-the-wire.md) and [`how-to/adopt-an-openits-models-release.md`](how-to/adopt-an-openits-models-release.md), then [`wire-emitter`](../.claude/skills/wire-emitter/SKILL.md) |
+| Record fixtures from a real device | [`how-to/record-fixtures-from-a-device.md`](how-to/record-fixtures-from-a-device.md) — honest stub; the tool doesn't exist yet (successor A) |
+| Review an incoming adapter contribution | [`review-adapter-contribution`](../.claude/skills/review-adapter-contribution/SKILL.md) — the machine checks plus the things no check can see |
 | Know what will fail my PR | [`reference/invariants.md`](reference/invariants.md) for the rules and what enforces them, [`reference/test-requirements.md`](reference/test-requirements.md) for the testing bar per contribution type |
 | Understand why it's built this way | [`adr/README.md`](adr/README.md) — the accepted decision records, in order |
+| Understand how the pieces fit together, end to end | [`explanation/architecture.md`](explanation/architecture.md) — the document a newcomer reads first in this tier; it links onward to the other four |
 | Configure a deployment | [`reference/configuration.md`](reference/configuration.md) — every `collector.yaml` field: type, default, validation |
+| Deploy a collector to a fleet | [`how-to/deploy-a-collector.md`](how-to/deploy-a-collector.md) — honest stub; the deploy path isn't built yet (successor B) |
 | Know what is already known-broken | [Known gaps and successor work](#known-gaps-and-successor-work) — every open finding the truth pass left behind, and what closing each one involves |
 
 ## Other task guides in `.claude/skills/`
 
 - [`add-vendor-adapter`](../.claude/skills/add-vendor-adapter/SKILL.md) — new vendor × device-kind integrations
 - [`add-domain-facet`](../.claude/skills/add-domain-facet/SKILL.md) — new facets, differs, and domain events
+- [`add-transport`](../.claude/skills/add-transport/SKILL.md) — a new `sdk/transport/<name>` package for a protocol nothing speaks yet
 - [`wire-emitter`](../.claude/skills/wire-emitter/SKILL.md) — openits-models mappings and release pin bumps
+- [`review-adapter-contribution`](../.claude/skills/review-adapter-contribution/SKILL.md) — the maintainer-side checklist for an incoming adapter PR
 - [`.claude/skills/README.md`](../.claude/skills/README.md) — the contract new skills are written against
-
-Four how-to guides are tracked as follow-on work and will be linked here as
-they land — this hub only points at documents that exist today.
 
 ## Known gaps and successor work
 
@@ -178,22 +184,6 @@ both bodies stand as written under the immutability convention. Nothing
 further is required unless the convention changes. Evidence: ledger
 `:1041-1044`, `:1220-1224`.
 
-**Two `.go` package comments cite a spec that Phase 2 deletes and have no
-durable replacement home.** `internal/runner/runner.go` cites the 2026-07-12
-greenfield architecture spec §7 for the poll loop's jitter, per-poll timeout
-and panic isolation; `sdk/model/model.go` cites §4 for the "facets are
-per-device-kind, never per-vendor" governance rail. Both now name the spec in
-full rather than saying "spec §7", so git history remains findable, but
-neither rule has a living home. *Closing it:* the explanation tier —
-`architecture.md` for the poll loop, `adapter-to-model.md` for the governance
-rail — then repoint both comments. Three sibling citations were repointed in
-this pass: `internal/config/config.go` now cites ADR 0014,
-`internal/app/app.go` and `internal/app/app_test.go` cite `README.md`'s
-loud-drop statement, and `internal/cloudevents/envelope.go` was citing ADR 0006
-for the CE-source URN — the wrong ADR entirely, since 0006 documents the old
-`//<agency>/<site>/<device-id>` format — and now cites ADR 0015. Evidence:
-ledger `:2470-2528`.
-
 **The "rule of three" deferral has no home outside the specs being deleted.**
 The greenfield spec defers any per-vendor overlay mechanism until roughly
 three NTCIP-variant adapters exist, and two other specs scheduled for deletion
@@ -202,28 +192,27 @@ cite it by name as the reason no such mechanism exists. No ADR records it.
 accept losing the rationale — the absence of a mechanism is self-evident from
 the code either way. Evidence: ledger `:2448-2466`.
 
-**The three `SKILL.md` files were never probed.** The truth audit covered every
-surviving and harvested document except the skills; its only skill coverage was
-confirming the directories exist. This is not theoretical:
-`add-vendor-adapter/SKILL.md` told contributors to wire adapter registration
-"into `internal/app`", when registration has always lived in
-`RegisterAdapters` in `cmd/collector/main.go` and nothing in `internal/app`
-calls `RegisterTo`. That one was corrected by reading, not by a systematic
-pass, and this hub routes the highest-traffic contributor task straight into
-that file. *Closing it:* probe all three skills claim-by-claim — every path,
-symbol, command and rule statement — as part of retargeting them. Evidence:
-ledger `:284-297` is the entire skill coverage.
+### A guard that was deliberately not built
 
-**Enforced rules are still paraphrased outside
-[`reference/invariants.md`](reference/invariants.md).** `AGENTS.md` restates
-six (the two layering rules, absence-of-evidence, subjects-versus-envelope,
-the testing bar, and config-as-trust-boundary) with no link into
-`docs/reference/` at all. `CONTRIBUTING.md` restates the openits-models import
-rule and "no fixtures, no merge"; `README.md`'s contributing section and
-`.github/pull_request_template.md`'s layering checkbox each restate one; all
-three `SKILL.md` files restate at least one. A paraphrase is a copy nobody
-remembers to update, which is how the 28-restatements-across-14-files problem
-started. *Closing it:* convert each to a link to its canonical row.
+**No duplicate-prose lint exists.** Across Phase 2, a document reproducing
+prose that already exists elsewhere was caught seven separate times in
+review — the "link, don't restate" discipline
+([design spec §4](specs/2026-08-17-documentation-architecture-design.md#4-single-source-of-truth-for-rules))
+held only because a reviewer caught each one by hand. A shingling check
+across the docs tree would catch this class mechanically, and is the
+natural fifth guard alongside the four `lint-docs` already runs (invariants
+enforcement, config coverage, the asyncapi subject test, and the link/skill-
+structure lint). It was deliberately not built during Phase 2: a version
+with an acceptable false-positive rate is real design work in its own
+right — fenced code blocks legitimately repeat identifiers verbatim, some
+honesty items (the `ntcip-asc` fixture-provenance gap, for instance) are
+*meant* to appear in the tutorial, the how-to, and this known-gaps list
+because each is read by someone who won't have seen the other two, and
+short common phrases (rule names, file paths) trip any naive n-gram
+threshold that doesn't also weight by rarity. *Closing it:* design the
+false-positive filter first — shingle length tuned above common-phrase
+length, an allowlist for fenced code and the known-intentional repeats —
+then wire it into `lint-docs.sh` as a fifth check in `make check`.
 
 ### Unresolved because it could not be verified here
 
