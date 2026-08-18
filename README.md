@@ -57,8 +57,10 @@ go run ./cmd/collector -config collector.yaml
 
 Implement `sdk/adapter.StateReader` (or `EventReader`) returning
 `sdk/model` types, register a `Descriptor{Vendor, DeviceKind}`, and ship
-recorded fixtures with golden tests — **no fixtures, no merge** (ADR 0008).
-Adapters must not import openits-models (CI-enforced, ADR 0002).
+recorded fixtures with golden tests — see [the fixture
+rule](docs/reference/invariants.md#no-fixtures-no-merge). Adapters don't
+reach for openits-models types — see [the boundary
+rule](docs/reference/invariants.md#adapters-and-sdk-never-import-openits-models).
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution guide.
 

@@ -29,12 +29,13 @@ Adapters are the most common contribution. The contract:
   `sdk/model` types, and register a `Descriptor{Vendor, DeviceKind}`.
 - Adapters own their transport entirely (SNMP, HTTP, serial, …) behind an
   opaque `connection` config block.
-- Adapters must **not** import openits-models — only `internal/wire`
-  may (ADR 0002, CI-enforced).
-- Ship recorded fixtures with golden tests: **no fixtures, no merge**
-  (ADR 0008). Record from a real device where possible; scrub anything
-  deployment-identifying (addresses, community strings, site names) from
-  recordings before committing.
+- Adapters don't reach for openits-models types — see [the boundary
+  rule](docs/reference/invariants.md#adapters-and-sdk-never-import-openits-models).
+- Ship recorded fixtures with golden tests — see [the fixture
+  rule](docs/reference/invariants.md#no-fixtures-no-merge). Record from a
+  real device where possible; scrub anything deployment-identifying
+  (addresses, community strings, site names) from recordings before
+  committing.
 
 ## Commit conventions
 
