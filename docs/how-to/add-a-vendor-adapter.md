@@ -60,17 +60,14 @@ that pair you're actually adding:
 
 Eight facet kinds are modeled, diffed, and wired end to end today, and only
 three of them (`signal-status`, `fault-set`, `detector-samples`) have any
-adapter producing them —
+adapter producing them.
 [`docs/reference/starter-tasks.md`](../reference/starter-tasks.md) lists
 the other five (`dms-status`, `cctv-status`, `traffic-intervals`,
-`zone-incidents`, `zone-intervals`) with what each requires from a device.
-Landing an adapter for one of those five touches
-`internal/vendors/<vendor>/` alone — no `sdk/model` change, no
-`internal/synth` change, no `internal/wire` change — which makes it the
-cheapest way to get a real contribution through review. Check that table
-before assuming you need a new facet; a device that looks unfamiliar at
-first glance (a dynamic message sign, a camera, a roadside sensor) may
-already have a facet sitting there unused.
+`zone-incidents`, `zone-intervals`) with what each requires from a device,
+and why landing one of them is the cheapest way into this codebase. Check
+that table before assuming you need a new facet; a device that looks
+unfamiliar at first glance (a dynamic message sign, a camera, a roadside
+sensor) may already have a facet sitting there unused.
 
 ## Pick the transport, and parse the connection block
 
@@ -82,13 +79,9 @@ transport — nothing in `internal/` or `sdk/adapter` needs to change to
 accommodate a new one.
 
 The decision that matters more than which transport you pick is **where
-connection details are parsed**: the core does not parse them. A device's
-`connection:` block in `collector.yaml` arrives at your `Factory` as
-`conn map[string]any`, completely opaque to `internal/config` — it checks
-only that `vendor`/`device_kind` resolve to a registered adapter and stops
-there.
+connection details are parsed**: the core does not parse them. See
 [`pluggability.md`'s "The opaque `connection` block" section](../explanation/pluggability.md#the-opaque-connection-block)
-covers why, with `parseSNMPBlock` as the worked example. Follow its shape:
+for why, with `parseSNMPBlock` as the worked example. Follow its shape:
 look for your own top-level key (`snmp`, or whatever your transport calls
 for), reject a missing required field at `Factory` construction time rather
 than dialing a broken configuration and failing on first poll, and give
@@ -129,20 +122,14 @@ can be in (present-with-data, present-and-empty, absent), read
 `readFaultSet`'s zero-bits-vs-unanswered-OID contrast there is the case
 every new adapter gets wrong on a first draft if it skips this reading.
 
-Two more things worth reading directly out of `ntcip-asc` before you write
-your own multi-facet `Read`:
-
-- **Facets fail independently, in the same poll.** One OID or sub-request
-  not answering must never suppress a facet that *was* readable — that's
-  the whole point of calling each `read*` method unconditionally rather
-  than short-circuiting on the first error.
-- **Batch a table read rather than walking it one row at a time**, if your
-  device exposes an indexed table the way NTCIP's detector table does.
-  `readDetectors`'s doc comment in `internal/vendors/ntcip/asc.go` explains
-  the ~510-round-trips-to-~32 trade it makes by building the full list of
-  synthesized indexed OIDs up front and issuing one batched `Get`. The
-  specific mechanism is SNMP-specific; the principle — don't pay a
-  round-trip per row when the transport can batch — generally isn't.
+Two more things worth reading directly out of `ntcip-asc`'s source rather
+than a paraphrase here: how `readSignalStatus`, `readFaultSet`, and
+`readDetectors` fail independently within one `Read` call, and why
+`readDetectors` batches the whole detector table into a single `Get`
+instead of walking it row by row — its doc comment in
+`internal/vendors/ntcip/asc.go` has the round-trip math. Both are easy to
+get wrong on a first draft in ways that don't become obvious until you've
+watched the code actually do it.
 
 ## Set capability bits to match what you implemented
 
@@ -158,11 +145,8 @@ requires the interface), but claiming a capability your adapter doesn't
 copy-pasted from another one — is a review-time mistake, not a
 compile-time one, so check it explicitly before opening the PR. See
 [`pluggability.md`'s "Capability: what an adapter can do" section](../explanation/pluggability.md#capability-what-an-adapter-can-do)
-for the full contract, including one gap worth knowing before it surprises
-you: only `StateReader` is currently wired into the poll path
-(`internal/runner.New` takes a `StateReader` specifically), so an
-`EventReader` adapter compiles and registers today but has nothing calling
-its `Fetch`.
+for the full contract, including a gap worth knowing about before you
+claim `CapEvents`.
 
 ## Register the adapter
 
@@ -171,18 +155,14 @@ Two pieces, both covered in depth by
 a `RegisterTo(r *adapter.Registry)` function in your new
 `internal/vendors/<vendor>/register.go` that calls `r.Register` with your
 `Descriptor` and a factory closure, and one added line in
-`RegisterAdapters` (`cmd/collector/main.go`) — the single place in the
-binary that decides which vendors it ships with. `internal/app` never
-registers adapters itself; it receives an already-populated
-`*adapter.Registry`.
+`RegisterAdapters` (`cmd/collector/main.go`). `internal/app` takes no part
+in this — it only ever receives an already-populated `*adapter.Registry`.
 
-Lay the package out the way `ntcip` actually is:
-`internal/vendors/<vendor>/<kind>.go` plus `<kind>_test.go` and a shared
-`register.go`, sitting directly in `internal/vendors/<vendor>/` — not a
-`<kind>/` subdirectory. Some older material describes a subdirectory
-layout; `find internal/vendors -type f` shows it isn't what the one
-adapter in the tree does, and your new package should match the tree, not
-the older description.
+Lay the package out the way `ntcip` actually is: `internal/vendors/<vendor>/<kind>.go`
+plus `<kind>_test.go` and a shared `register.go`, not a `<kind>/`
+subdirectory — [`starter-tasks.md`'s "The reference implementation" section](../reference/starter-tasks.md#the-reference-implementation)
+has the fuller note if you've seen the subdirectory shape described
+elsewhere.
 
 ## When the device exposes something no facet models
 
@@ -209,10 +189,9 @@ that produces it.
 ## Meet the test bar
 
 [`docs/reference/test-requirements.md`'s "A new adapter" section](../reference/test-requirements.md#a-new-adapter)
-is the checklist a reviewer will hold your PR to — a golden read test per
-facet, a facet-failure test proving `model.FacetError` rather than a zero
-value, facets-fail-independently coverage, connection-parse rejection
-tests, and correct capability bits. `internal/vendors/ntcip/asc_test.go`'s
+is the checklist a reviewer will hold your PR to — read it before opening a
+PR, not after review flags something it already covers.
+`internal/vendors/ntcip/asc_test.go`'s
 `TestASCReadGolden`, `TestASCDetectorGoldenAndOccupancyConversion`,
 `TestASCUnansweredAlarmIsFaultSetFacetError`,
 `TestASCDetectorTableGetFailureIsFacetError`, and
@@ -250,7 +229,7 @@ gofmt -l .
 an openits-models type directly (see
 [the "Adapters and `sdk/` never import openits-models" row](../reference/invariants.md#adapters-and-sdk-never-import-openits-models)
 in `invariants.md`). `go test ./... -race` is required separately because
-poll loops and the publisher are genuinely concurrent —
+the collector's poll loop and publisher run as concurrent goroutines — see
 [`testing-strategy.md`'s `-race` section](../explanation/testing-strategy.md#-race-because-polling-and-publishing-are-concurrent)
-covers what it does and doesn't prove. `gofmt -l .` should print nothing;
+for what a green run does and doesn't prove. `gofmt -l .` should print nothing;
 fix anything it lists with `gofmt -w` before opening the PR.
