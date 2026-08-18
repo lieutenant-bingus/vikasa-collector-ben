@@ -19,10 +19,12 @@ Two emitter families exist by design:
 - `internal/wire/openits` — the openits-models emitter: protobuf bodies,
   catalog ce-types. It splits into `internal/wire/<version>` packages once
   more than one models release has to compile at the same time (ADR 0002's
-  S2). The design is
-  `docs/specs/2026-07-21-openits-models-emitter-design.md` — read it **and
-  its Revisions section**, which records where the body has been overtaken
-  by later models releases.
+  S2). For why the boundary is drawn here, what rides in the envelope
+  (`ce-type`, `ce-source`, `ce-id`, `ce-dataschema`), and the drop-vs-degrade
+  rule for unmappable events, see
+  [`docs/explanation/wire-boundary.md`](../../../docs/explanation/wire-boundary.md)
+  and [ADR 0015](../../../docs/adr/0015-ce-source-urn-scheme.md) for the
+  `ce-source` URN scheme specifically.
 
 ## Ground truth: probe, don't read
 

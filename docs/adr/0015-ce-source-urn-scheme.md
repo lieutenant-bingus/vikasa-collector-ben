@@ -16,9 +16,9 @@ urn:openits:<entity-kind>:<region>:<agency>:<agency_unit>:<device-id>
 ```
 
 Until now the only accurate description of this format lived in
-`docs/specs/2026-07-21-openits-models-emitter-design.md`, one of the specs the
-documentation-architecture pass deletes after harvest. That would have left
-the actual scheme with no durable home while two ADRs permanently assert a
+`docs/specs/2026-07-21-openits-models-emitter-design.md`, one of the specs
+the documentation-architecture pass deleted after harvest. That would have
+left the actual scheme with no durable home while two ADRs permanently assert a
 format the code has never produced. This matters beyond tidiness: `EventID`
 (`internal/cloudevents/eventid.go`) hashes the literal bytes of `source` as
 the first field of the `ce-id` digest, so every downstream consumer computing

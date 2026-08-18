@@ -12,8 +12,9 @@ allowed to produce (ADR 0002). A new concept lands in three parts: a
 (how consecutive facets become events), and **events** (discrete domain
 occurrences). The DMS domain is the cleanest worked example: facet in
 `sdk/model/dms.go`, differ in `internal/synth/dms.go`, events in
-`sdk/model/events.go`; its design rationale is
-`docs/specs/2026-07-16-dms-domain-design.md`.
+`sdk/model/events.go`. For the conceptual shape a facet, a differ, and the
+present/absent/empty distinction have to respect, see
+[`docs/explanation/adapter-to-model.md`](../../../docs/explanation/adapter-to-model.md).
 
 ## Facet (`sdk/model/<domain>.go`)
 

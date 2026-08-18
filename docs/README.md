@@ -146,8 +146,8 @@ drift reporting, all prerequisites for health-gated rollback. Evidence: ledger
 `:1376-1392`.
 
 **Unclaimed wire-emitter events drop without a metric.** The bar —
-"drop loudly (metric + log)," stated in the `wire-emitter` skill and
-originally from `docs/specs/2026-07-12-greenfield-collector-architecture-design.md`
+"drop loudly (metric + log)," stated in the `wire-emitter` skill and in
+[`explanation/wire-boundary.md`'s drop rule](explanation/wire-boundary.md#the-drop-rule-decline-rather-than-approximate)
 — is only half met. `internal/app/app.go`'s `encodeAndPublish` calls
 `slog.Warn` on the no-emitter-claimed path but emits no metric, and there is
 no metrics or observability library anywhere in the tree (`internal/` and
