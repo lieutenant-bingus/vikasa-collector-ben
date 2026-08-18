@@ -31,7 +31,7 @@ task guides, configuration, what will fail a PR: [`docs/README.md`](docs/README.
 ## Status
 
 Gen-2 rebuild in progress. The domain model, the synth engine and the full
-publish path are complete: eight facet kinds, eight differs, and 26 catalog
+publish path are complete: eight facet kinds, eight differs, and 25 catalog
 ce-types plus two collector-health ce-types, each pinned by a byte-exact
 golden. Events reach JetStream as CloudEvents in the NATS reference
 profile's Tier 2 shape (binary mode, deterministic ULID `ce-id`,

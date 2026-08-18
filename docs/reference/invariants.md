@@ -119,7 +119,8 @@ startup as transient rather than a config error — but that exception is
 (`internal/publish/publish.go`) still dials NATS and provisions streams
 during boot today, so a broker that is slow to come up currently makes the
 collector exit, same as any other boot-time failure. Nothing in the code
-carves out the exception yet.
+carves out the exception yet — it is tracked in the
+[gap list](../README.md#known-gaps-and-successor-work).
 
 ## Subjects are operator-configurable; the CloudEvents envelope stays canonical
 

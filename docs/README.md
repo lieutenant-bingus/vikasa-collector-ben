@@ -4,9 +4,15 @@ Routed by what you're trying to do, not by which tier a document happens to
 live in. If your task isn't listed, the rest of this directory is small
 enough to skim:
 
+- `tutorial/` (learning) — living; one guided build for someone who has
+  never seen the repo. Links rules, never restates them.
+- `how-to/` (doing) — living; the canonical steps for each contribution
+  shape. The `.claude/skills/` guides are terse pointers at these.
+- `explanation/` (understanding) — living; how the pieces fit and why the
+  seams fall where they do.
+- `reference/` (what) — living; the enforced rules and the config surface.
 - `adr/` (why) — decisions, immutable once accepted; only an inaccurate
   status line is ever corrected.
-- `reference/` (what) — living; the enforced rules and the config surface.
 - `specs/` (not built yet) — a staging area for designs whose work has not
   shipped, **not** an archive. A spec is deleted once its design ships and
   its durable content has been promoted into the living tiers.
@@ -150,6 +156,23 @@ Phase 1 — the readiness signal, broker-absent tolerance, and expected-version
 drift reporting, all prerequisites for health-gated rollback. Evidence: ledger
 `:1376-1392`.
 
+**ADR 0014's one sanctioned exception — tolerating an absent broker at
+startup — is not implemented.** ADR 0014 carves out exactly one narrow
+exception to "config is the trust boundary": a broker that is not yet
+reachable at boot is a transient, not a config error, so it should retry
+rather than fail hard. `publish.Connect` (`internal/publish/publish.go`)
+still dials NATS and provisions every stream during boot, and
+`internal/app/app.go` returns its error straight out of `Run`, so a broker
+that is slow to come up makes the collector exit like any other boot-time
+failure. In a cabinet where the collector and the broker start together
+that is a race the collector can lose, and under ADR 0012's health-gated
+rollback a lost race reads as a failed update. Both the ADR and
+[`invariants.md`'s config row](reference/invariants.md#config-is-the-trust-boundary-boot-fails-on-the-unrecognized)
+say so rather than implying the exception exists. *Closing it:* fleet-plan
+Phase 1's broker-absent tolerance — connect in the background and let the
+collector reach a running state without a broker, instead of treating the
+dial as part of boot validation.
+
 **Unclaimed wire-emitter events drop without a metric.** The bar —
 "drop loudly (metric + log)," stated in the `wire-emitter` skill and in
 [`explanation/wire-boundary.md`'s drop rule](explanation/wire-boundary.md#the-drop-rule-decline-rather-than-approximate)
@@ -192,11 +215,15 @@ review — the "link, don't restate" discipline
 ([design spec §4](specs/2026-08-17-documentation-architecture-design.md#4-single-source-of-truth-for-rules))
 held only because a reviewer caught each one by hand. A shingling check
 across the docs tree would catch this class mechanically, and is the
-natural fifth guard alongside the four `lint-docs` already runs (invariants
-enforcement, config coverage, the asyncapi subject test, and the link/skill-
-structure lint). It was deliberately not built during Phase 2: a version
-with an acceptable false-positive rate is real design work in its own
-right — fenced code blocks legitimately repeat identifiers verbatim, some
+natural fifth guard alongside the four `make check` already runs
+([design spec §7.1](specs/2026-08-17-documentation-architecture-design.md#71-checks-all-in-make-check)):
+the invariants-enforcement, config-coverage and asyncapi-subject tests —
+all three Go tests in `internal/docs`, run by `go test` — plus
+`scripts/lint-docs.sh`, which is one guard running two structural checks
+(link/anchor resolution and skill structure). It was deliberately not built
+during Phase 2: a version with an acceptable false-positive rate is real
+design work in its own right — fenced code blocks legitimately repeat
+identifiers verbatim, some
 honesty items (the `ntcip-asc` fixture-provenance gap, for instance) are
 *meant* to appear in the tutorial, the how-to, and this known-gaps list
 because each is read by someone who won't have seen the other two, and
@@ -204,7 +231,8 @@ short common phrases (rule names, file paths) trip any naive n-gram
 threshold that doesn't also weight by rarity. *Closing it:* design the
 false-positive filter first — shingle length tuned above common-phrase
 length, an allowlist for fenced code and the known-intentional repeats —
-then wire it into `lint-docs.sh` as a fifth check in `make check`.
+then add it as the fifth `make check` guard — `lint-docs.sh` is the natural
+home for it, as a third structural check alongside the two it already runs.
 
 ### Unresolved because it could not be verified here
 
