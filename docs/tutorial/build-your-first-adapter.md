@@ -299,11 +299,21 @@ func parseSNMPBlock(conn map[string]any) (snmp.DialConfig, error) {
 }
 ```
 
-Now edit `cmd/collector/main.go`. Add the import and one line in
-`RegisterAdapters` — the one place in the whole binary that decides which
-vendors it ships with:
+Now edit `cmd/collector/main.go`. Only two lines change from the file
+you cloned: one new import (`.../internal/vendors/acme`) and one new call
+in `RegisterAdapters` (`acme.RegisterTo(r)`) — the one place in the whole
+binary that decides which vendors it ships with. Everything else in the
+file, including `func main()` below, is unchanged. To make that
+unmistakable rather than something you have to work out, here is the
+complete file with those two lines in place — replace
+`cmd/collector/main.go` with this:
 
 ```go
+// Command collector is the OpenITS cabinet edge collector: polls local
+// devices via registered vendor adapters and publishes CloudEvents to the
+// cabinet-local NATS JetStream.
+package main
+
 import (
 	"context"
 	"flag"
@@ -327,6 +337,38 @@ var version = "dev" // set via -ldflags "-X main.version=..."
 func RegisterAdapters(r *adapter.Registry) {
 	ntcip.RegisterTo(r)
 	acme.RegisterTo(r)
+}
+
+func main() {
+	cfgPath := flag.String("config", "", "path to collector.yaml (required)")
+	natsURL := flag.String("nats", "nats://127.0.0.1:4222", "local NATS URL")
+	showVersion := flag.Bool("version", false, "print version and exit")
+	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(version)
+		return
+	}
+	if *cfgPath == "" {
+		fmt.Fprintln(os.Stderr, "-config is required")
+		os.Exit(2)
+	}
+
+	reg := adapter.NewRegistry()
+	RegisterAdapters(reg)
+
+	cfg, err := config.Load(*cfgPath, reg)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	if err := app.Run(ctx, cfg, reg, *natsURL, version); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }
 ```
 
