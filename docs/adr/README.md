@@ -21,5 +21,7 @@ immutable once accepted; reversals get a new ADR that supersedes the old.
 | [0013](0013-absence-of-evidence.md) | Absence of evidence is never a state change |
 | [0014](0014-config-is-the-trust-boundary.md) | Config is the trust boundary; boot fails on the unrecognized |
 | [0015](0015-ce-source-urn-scheme.md) | The CE-source URN scheme (supersedes 0006's and 0009's CE-source clauses) |
+| [0016](0016-collector-as-transitional-shim.md) | The collector is a transitional shim; synthesis stays here |
+| [0017](0017-durable-synth-state.md) | Synth's previous state is durable, in the cabinet's own JetStream KV |
 
 Start at the [documentation hub](../README.md) for everything that is not a decision record.

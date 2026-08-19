@@ -42,6 +42,14 @@ failed is a load-bearing rule with its own canonical statement, not
 restated here; see
 [`docs/reference/invariants.md`](../reference/invariants.md#absence-of-evidence-is-never-a-state-change).
 
+Why the collector diffs at all, rather than publishing polled state and
+letting consumers diff, is
+[ADR 0016](../adr/0016-collector-as-transitional-shim.md). The engine's
+memory of previous state is in-process today and does not survive a
+restart; [ADR 0017](../adr/0017-durable-synth-state.md) decides the fix and
+[the known-gaps tracker](../README.md#known-gaps-and-successor-work)
+records what today's behaviour actually is.
+
 ### 3. Wire emitters — map a domain event to a ce-type and a payload
 
 Package: `internal/wire/openits/` (one package per pinned openits-models

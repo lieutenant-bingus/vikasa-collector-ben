@@ -104,6 +104,20 @@ Live coverage is tracked in
 [`reference/invariants.md`](reference/invariants.md#absence-of-evidence-is-never-a-state-change).
 Evidence: ledger `:1442-1460`.
 
+**Synth's previous state does not survive a restart.** `synth.Engine` keeps
+`prev[deviceID][kind]` in an in-memory map (`internal/synth/synth.go`), so a
+restarted collector diffs against nothing. `internal/synth/fault.go` re-emits
+`FaultRaised` for every standing fault — a storm on every rollout restart —
+and every other differ silently drops whatever transitioned while the process
+was down. Consumers cannot dedupe the re-raise: the ce-id derives from the
+snapshot's `SampledAt` (`internal/cloudevents/envelope.go`), so it is a
+different id for a genuinely different observation.
+[ADR 0017](adr/0017-durable-synth-state.md) decides the fix and nothing
+implements it yet. *Closing it:* write `prev` through to a JetStream KV bucket
+in the cabinet's own NATS under a JetStream domain, seed it at boot before the
+first poll, and document the consumer-side idempotency requirement per
+`(device, fault-id)` that covers the reflash case the bucket cannot.
+
 **`ntcip-asc`'s fixtures are hand-written, not recordings.** ADR 0008 requires
 recorded raw transport responses; `internal/vendors/ntcip/asc_test.go`'s
 `healthyFixture` is a hand-typed `map[string]int64`, and the adapter's own doc
