@@ -10,7 +10,8 @@ enough to skim:
   shape. The `.claude/skills/` guides are terse pointers at these.
 - `explanation/` (understanding) — living; how the pieces fit and why the
   seams fall where they do.
-- `reference/` (what) — living; the enforced rules and the config surface.
+- `reference/` (what) — living; the enforced rules, the config surface, and
+  the guarantees a consumer of the bus can rely on.
 - `adr/` (why) — decisions, immutable once accepted; only an inaccurate
   status line is ever corrected.
 - `specs/` (not built yet) — a staging area for designs whose work has not
@@ -38,6 +39,7 @@ empties out as that work ships.
 | Know what will fail my PR | [`reference/invariants.md`](reference/invariants.md) for the rules and what enforces them, [`reference/test-requirements.md`](reference/test-requirements.md) for the testing bar per contribution type |
 | Understand why it's built this way | [`adr/README.md`](adr/README.md) — the accepted decision records, in order |
 | Understand how the pieces fit together, end to end | [`explanation/architecture.md`](explanation/architecture.md) — the document a newcomer reads first in this tier; it links onward to the other four |
+| Consume events the collector publishes | [`reference/consumer-contract.md`](reference/consumer-contract.md) — delivery, duplicates, ordering, and what restart does to the stream |
 | Configure a deployment | [`reference/configuration.md`](reference/configuration.md) — every `collector.yaml` field and every command-line flag: type, default, validation |
 | Deploy a collector to a fleet | [`how-to/deploy-a-collector.md`](how-to/deploy-a-collector.md) — honest stub; the deploy path isn't built yet (successor B) |
 | Know what is already known-broken | [Known gaps and successor work](#known-gaps-and-successor-work) — every open finding the truth pass left behind, and what closing each one involves |
@@ -147,10 +149,14 @@ was down. Consumers cannot dedupe the re-raise: the ce-id derives from the
 snapshot's `SampledAt` (`internal/cloudevents/envelope.go`), so it is a
 different id for a genuinely different observation.
 [ADR 0017](adr/0017-durable-synth-state.md) decides the fix and nothing
-implements it yet. *Closing it:* write `prev` through to a JetStream KV bucket
-in the cabinet's own NATS under a JetStream domain, seed it at boot before the
-first poll, and document the consumer-side idempotency requirement per
-`(device, fault-id)` that covers the reflash case the bucket cannot.
+implements it yet. The consumer-side half of ADR 0017 is done: the
+idempotency requirement per `(device, fault-id)`, and today's restart
+behaviour, are stated in
+[`reference/consumer-contract.md`](reference/consumer-contract.md). *Closing
+the rest:* write `prev` through to a JetStream KV bucket in the cabinet's own
+NATS under a JetStream domain, and seed it at boot before the first poll. The
+contractual requirement stays either way — no local store survives a reflash,
+and after one the collector will correctly re-raise.
 
 **`ntcip-asc`'s fixtures are hand-written, not recordings.** ADR 0008 requires
 recorded raw transport responses; `internal/vendors/ntcip/asc_test.go`'s

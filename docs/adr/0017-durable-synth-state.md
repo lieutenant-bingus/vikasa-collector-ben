@@ -75,7 +75,8 @@ any of those the collector will re-raise — correctly, because it genuinely
 does not know. Durable state removes the routine case; the contract covers the
 residue. The two are complements, not alternatives, and the idempotency
 requirement belongs in the consumer-facing documentation regardless of what
-the collector stores.
+the collector stores — it is stated in
+[`reference/consumer-contract.md`](../reference/consumer-contract.md).
 
 ## Consequences
 Restarts stop generating fault storms, and transitions that occur across a

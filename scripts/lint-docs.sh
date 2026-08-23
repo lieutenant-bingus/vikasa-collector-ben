@@ -32,6 +32,19 @@ strip_fences() {
 # heading_slugs prints one GitHub-style slug per ATX heading ("# ".."######")
 # in the given file, fenced code blocks excluded (reuses strip_fences so a
 # "#" inside an example code block is never mistaken for a real heading).
+#
+# GitHub's rule, in order: lowercase, drop everything outside [a-z0-9 _-],
+# then turn EACH remaining space into a hyphen. Runs of whitespace are
+# deliberately NOT collapsed, and that detail is the whole reason this comment
+# exists. A heading like "`region` / `agency`" loses the slash and keeps the
+# two spaces that surrounded it, so GitHub renders "region--agency" with two
+# hyphens.
+#
+# An earlier version collapsed whitespace first and so produced
+# "region-agency". That was wrong in both directions at once: it rejected
+# links that actually resolve on GitHub, and -- the dangerous half -- it
+# accepted single-hyphen links that 404 there, which is a link check handing
+# out false confidence.
 heading_slugs() {
   strip_fences "$1" \
     | grep -E '^#{1,6}[[:space:]]' \
@@ -39,7 +52,7 @@ heading_slugs() {
     | while IFS= read -r heading; do
         printf '%s\n' "$heading" \
           | tr '[:upper:]' '[:lower:]' \
-          | sed -E 's/[^a-z0-9 _-]//g; s/[[:space:]]+/ /g; s/^ //; s/ $//; s/ /-/g'
+          | sed -E 's/[^a-z0-9 _-]//g; s/^ +//; s/ +$//; s/ /-/g'
       done
 }
 
