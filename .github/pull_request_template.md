@@ -15,6 +15,11 @@
 - [ ] Config or subject-grammar changes fail at boot, not at publish time —
       see [the trust-boundary
       rule](../docs/reference/invariants.md#config-is-the-trust-boundary-boot-fails-on-the-unrecognized)
+- [ ] For an adapter PR: the diff touches only
+      `internal/vendors/<vendor>/<kind>.go` + its test, one line in
+      `RegisterAdapters`, and optionally `collector.yaml` — see the
+      [review checklist](../.claude/skills/review-adapter-contribution/SKILL.md)
+      for what a reviewer weighs beyond the machine checks
 - [ ] Commits follow [Conventional Commits](https://www.conventionalcommits.org/)
       (`feat:` / `fix:` / `feat!:`) — the changelog is generated from them,
       don't hand-edit `CHANGELOG.md`

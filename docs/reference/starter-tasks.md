@@ -1,6 +1,19 @@
 # Starter tasks
 
-## The safest first PR in this repo
+Two tracks, and which one you are on is decided by a single question: **do
+you have the device?**
+
+An adapter encodes what one specific controller actually returns — OID
+quirks, vendor deviations from the standard, firmware differences — and none
+of that is knowable from a specification. So adapter work needs hardware
+access, not as a formality at the end but as a precondition at the start.
+That is the first track below.
+
+If you do not have a device, [the second track](#starter-tasks-that-need-no-hardware)
+is real work with real value, not a consolation prize: every item in it is
+an open gap this repo already tracks against itself.
+
+## The safest first PR — if you have the device
 
 Eight facet kinds are modeled in `sdk/model`, diffed by a registered differ
 in `internal/synth`, golden-tested, and mapped to real ce-types in
@@ -12,7 +25,10 @@ other five — `dms-status`, `cctv-status`, `traffic-intervals`,
 nothing anywhere producing them.
 
 That makes a first adapter for one of those five the safest possible way
-into this codebase. It touches `internal/vendors/<vendor>/` alone: no
+into this codebase **for someone with access to the hardware** — the
+facet, differ and wire mapping are already built and tested, so the only
+new code is the part that talks to your device. It touches
+`internal/vendors/<vendor>/` alone: no
 `sdk/model` change (the facet already exists), no `internal/synth` change
 (the differ already exists and is tested), no `internal/wire` change (the
 ce-type mapping already exists and is golden-tested). You get to learn one
@@ -46,6 +62,14 @@ your adapter to also emit the pre-existing `fault-set` facet
 — genuinely optional, and a good second PR rather than a requirement of the
 first.
 
+**Say what you're taking on before you build it.** Open an
+[adapter proposal](https://github.com/Vikasa2M/vikasa-collector/issues/new?template=adapter_proposal.yml)
+first — it stops two people writing the same adapter, and it lets a
+maintainer flag a domain-model gap while that is still a conversation rather
+than a rewrite. It also asks up front what hardware you'll develop against,
+which is a real prerequisite: an adapter encodes what a specific controller
+actually returns, and the fixture bar cannot be met without the device.
+
 Before writing an adapter, read
 [`docs/reference/test-requirements.md`](test-requirements.md)'s "A new
 adapter" checklist. The step-by-step workflow — reader contract,
@@ -55,6 +79,27 @@ the canonical guide; `.claude/skills/add-vendor-adapter/` is the same
 workflow in terse checklist form for an agent. If you have never seen this
 repo before, [`docs/tutorial/build-your-first-adapter.md`](../tutorial/build-your-first-adapter.md)
 walks a throwaway adapter end to end first.
+
+## Starter tasks that need no hardware
+
+Each of these is an open gap recorded in
+[`docs/README.md`'s known-gaps list](../README.md#known-gaps-and-successor-work),
+with a named existing test to copy the shape from. None of them needs a
+device, a cabinet, or a broker — `make check` is the whole feedback loop.
+
+| Task | What it is | Shape to copy |
+|---|---|---|
+| **Four missing failed-read differ tests** | The absence-of-evidence rule (ADR 0013) is proven for the signal, fault, detector and DMS differs and for no others. CCTV, traffic-interval, zone-incident and zone-interval have no test driving a failed read through. `Engine.Apply` gates all eight in shared code, so the blast radius is likely small — but an untested invariant is untested. | `TestDMSFailedReadEmitsNothing` (`internal/synth/dms_test.go`) |
+| **The signal differ's axis-independence test** | `TestTransitionsEmitChangeEvents` (`internal/synth/signal_test.go`) moves mode, plan and preemption in one poll and only asserts the expected event is *present*, never that the others are *absent*. This is the differ behind the collector's only shipped adapter. | `TestDMSAxesChangeIndependently` (`internal/synth/dms_test.go`) — move one axis, assert an exact event count, repeat per axis |
+| **A catalog-conformance check for the `openits` emitter** | `TestGoldensCoverEveryCEType` reads like a conformance test and is not one — it checks the emitter's mapping table against itself. Nothing compares it to the pinned openits-models catalog, so a ce-type upstream declares and the emitter never mapped is invisible to every check here. This is the highest-value item on the list. | `internal/wire/health/conformance_test.go` — compares `CETypes()` against an external document in both directions |
+
+The first two are the gentler entry: small, well-bounded, and they teach the
+single most important correctness rule in the collector by making you prove
+it. The third is a genuine piece of engineering and would close a gap that
+has already caused wrong conclusions more than once.
+
+Reading [`test-requirements.md`](test-requirements.md#a-new-differ) first is
+worth the ten minutes for any of them.
 
 ## The reference implementation
 

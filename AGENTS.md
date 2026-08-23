@@ -17,7 +17,8 @@ table is what to trust for exact wording, not this file.
 ```bash
 make check              # vet + tests + boundary lint — the CI gate
 go test ./... -race     # CI runs this too; poll loops are concurrent
-go run ./cmd/collector -config collector.yaml
+make dev                # whole pipeline locally: embedded NATS + synthetic device
+go run ./cmd/collector -config collector.yaml   # needs a real broker AND real devices
 ```
 
 ## Layering rules

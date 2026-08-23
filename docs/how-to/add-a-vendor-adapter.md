@@ -17,6 +17,30 @@ cover. Have them open.
 
 ## Before you start
 
+**What your PR should touch, and nothing else:**
+
+- `internal/vendors/<vendor>/<kind>.go` and its test — new files
+- one line in `RegisterAdapters` (`cmd/collector/main.go`)
+- optionally an example entry in `collector.yaml`
+
+Knowing this up front saves the most review time of anything on this page.
+A diff that also changes `sdk/model`, `internal/synth` or `internal/wire`
+means you hit a real gap in the domain model — which may well be legitimate,
+but it is a *second* contribution with its own bar and reviews far better as
+its own PR. Changes to `internal/config`, `internal/subject` or
+`internal/publish` in an adapter PR are almost always a sign something went
+wrong. See
+["When the device exposes something no facet models"](#when-the-device-exposes-something-no-facet-models)
+if that is where you are.
+
+**You will need the device.** An adapter encodes what a specific controller
+actually returns — OID quirks, vendor deviations from the standard, firmware
+differences — and none of that is knowable from a specification. The fixture
+bar exists for the same reason and is discussed under
+["Meet the test bar"](#meet-the-test-bar); the short version is that it
+cannot be met without access to real hardware, and that is a prerequisite of
+the work rather than a hurdle at the end of it.
+
 Read `internal/vendors/ntcip/asc.go` and `internal/vendors/ntcip/register.go`
 end to end. `ntcip-asc` is the one adapter this repo ships and the model to
 build from — its per-facet read methods, its `RegisterTo`/factory shape, and
@@ -235,3 +259,13 @@ the collector's poll loop and publisher run as concurrent goroutines — see
 [`testing-strategy.md`'s `-race` section](../explanation/testing-strategy.md#-race-because-polling-and-publishing-are-concurrent)
 for what a green run does and doesn't prove. `gofmt -l .` should print nothing;
 fix anything it lists with `gofmt -w` before opening the PR.
+
+**Then read the review checklist your PR will be held to.**
+[`.claude/skills/review-adapter-contribution/SKILL.md`](../../.claude/skills/review-adapter-contribution/SKILL.md)
+is the maintainer-side guide, and it is plain markdown written to be read by
+anyone. It is worth reading *before* you open the PR rather than discovering
+it in review, because the properties it weighs hardest are the ones no
+command above can see: whether your fixtures are genuinely recorded, whether
+a failed read is handled as absence rather than as a value, whether the
+facets you populate decompose the way the domain model expects, and whether
+the diff stays inside the three places listed at the top of this page.

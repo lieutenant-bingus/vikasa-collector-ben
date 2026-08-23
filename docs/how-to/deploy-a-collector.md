@@ -34,6 +34,12 @@ A single-instance run, for development or a single cabinet by hand:
 go run ./cmd/collector -config collector.yaml
 ```
 
+That needs a NATS server already listening (`-nats`, default
+`nats://127.0.0.1:4222`) and every device in the config actually reachable —
+it is a deployment command, not a way to try the collector out. For that,
+`make dev` runs the same pipeline against an embedded broker and a synthetic
+device with nothing to install.
+
 Every `collector.yaml` field — type, default, validation — is documented
 in [`docs/reference/configuration.md`](../reference/configuration.md).
 There is no supervisor integration, update mechanism, or fleet-facing

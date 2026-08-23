@@ -51,8 +51,21 @@ near-neighbour. A visible drop beats a wrong value on the bus.
 ## Run
 
 ```bash
-make check                             # vet + tests + boundary lint
-go run ./cmd/collector -config collector.yaml
+make check    # vet + tests + boundary lint — the CI gate
+make dev      # run the whole pipeline locally: embedded NATS, synthetic device
+```
+
+`make dev` is the one to start with. It runs the real pipeline against an
+embedded JetStream and a synthetic device and prints every CloudEvent that
+reaches the bus, so you can see the collector work before you have a cabinet.
+Its synthetic device is deliberately **not** a device simulator and its
+output is not a fixture source — see `cmd/dev`'s package comment.
+
+Against a real cabinet, with a broker already running and devices reachable
+at the addresses in your config:
+
+```bash
+go run ./cmd/collector -config collector.yaml   # -nats defaults to nats://127.0.0.1:4222
 ```
 
 ## Contributing an adapter

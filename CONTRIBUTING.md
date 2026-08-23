@@ -12,10 +12,13 @@ and PRs that fight them will be asked to restructure rather than merged:
   — never seen this repo? This takes a fresh clone through to a real event
   on the bus in one sitting. It is the fastest way to learn the shape of a
   contribution before making one.
-- [`docs/reference/starter-tasks.md`](docs/reference/starter-tasks.md) — five
-  device domains are modeled, diffed and wired to real ce-types with no
-  adapter producing them. Landing one of those is the highest-leverage first
-  PR, and touches `internal/vendors/<vendor>/` alone.
+- [`docs/reference/starter-tasks.md`](docs/reference/starter-tasks.md) — two
+  tracks. Five device domains are modeled, diffed and wired to real ce-types
+  with no adapter producing them; landing one is the highest-leverage first
+  PR and touches `internal/vendors/<vendor>/` alone — but it needs access to
+  the hardware, which is a precondition of adapter work rather than a hurdle
+  at the end of it. If you don't have a device, the same page lists open gaps
+  that need none.
 - `docs/adr/` — the accepted decision records. ADR 0002 (wire emitter
   boundary), ADR 0003 (in-tree adapters), and ADR 0008 (fixture bar) shape
   most contributions.
@@ -43,6 +46,15 @@ is the canonical step-by-step guide; the contract it implements:
   real device where possible; scrub anything deployment-identifying
   (addresses, community strings, site names) from recordings before
   committing.
+
+## What a reviewer will check
+
+[`.claude/skills/review-adapter-contribution/SKILL.md`](.claude/skills/review-adapter-contribution/SKILL.md)
+is the maintainer-side checklist for an adapter PR. It is plain markdown and
+it is not a secret — read it before opening the PR. The machine checks are
+`make check` and `go test ./... -race`; that document covers everything those
+cannot see, including fixture provenance, absence-of-evidence handling, and
+which files an adapter contribution should and should not touch.
 
 ## Commit conventions
 

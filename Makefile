@@ -1,4 +1,4 @@
-.PHONY: build test vet lint-boundary lint-boundary-selftest lint-boundary-replace-selftest lint-boundary-tag-selftest lint-docs check
+.PHONY: build test vet dev lint-boundary lint-boundary-selftest lint-boundary-replace-selftest lint-boundary-tag-selftest lint-docs check
 
 build:
 	go build ./...
@@ -93,6 +93,17 @@ lint-boundary-tag-selftest:
 		exit 1; \
 	fi; \
 	echo "lint-boundary tag-rule selftest: Rule D fires correctly"
+
+# Run the whole pipeline locally: embedded NATS with JetStream, a synthetic
+# device, and the real app.Run. No hardware, no broker to install.
+#
+# `go run ./cmd/collector -config collector.yaml` cannot work on a fresh
+# clone -- it needs a broker on localhost and a device at the address in
+# collector.yaml -- so this is the command that actually shows a newcomer the
+# collector running. See cmd/dev's package comment for why its synthetic
+# device is NOT a fixture source.
+dev:
+	go run ./cmd/dev
 
 lint-docs:
 	./scripts/lint-docs.sh

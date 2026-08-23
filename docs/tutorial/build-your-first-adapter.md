@@ -53,9 +53,10 @@ ok  	github.com/Vikasa2M/vikasa-collector/cmd/collector	...
 ok  	github.com/Vikasa2M/vikasa-collector/internal/app	...
 ...
 ./scripts/lint-boundary.sh
-lint-boundary: clean (2 roots transitively, 14 packages for direct imports) against openits-models
+lint-boundary: clean (2 roots transitively, ... packages for direct imports, pin vX.Y.Z) against openits-models
 lint-boundary selftest: Rule A fires correctly
 lint-boundary replace-rule selftest: Rule C fires correctly
+lint-boundary tag-rule selftest: Rule D fires correctly
 ./scripts/lint-docs.sh
 lint-docs: clean (... docs, ... skills)
 ```

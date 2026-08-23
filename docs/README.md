@@ -29,8 +29,9 @@ empties out as that work ships.
 | I want to... | Start here |
 |---|---|
 | See the repo for the first time | [`../README.md`](../README.md) — the one-diagram architecture and current Status |
+| Contribute without access to any hardware | [`reference/starter-tasks.md`](reference/starter-tasks.md#starter-tasks-that-need-no-hardware) — open gaps with a named test to copy; `make check` is the whole feedback loop |
 | Learn the codebase by building something | [`tutorial/build-your-first-adapter.md`](tutorial/build-your-first-adapter.md) — clone to a real event on the bus, in one sitting |
-| Add a vendor adapter | [`reference/starter-tasks.md`](reference/starter-tasks.md) for the highest-leverage first PR, [`how-to/add-a-vendor-adapter.md`](how-to/add-a-vendor-adapter.md) for the full guide, then [`add-vendor-adapter`](../.claude/skills/add-vendor-adapter/SKILL.md) for the step-by-step checklist |
+| Add a vendor adapter (needs access to the device) | [`reference/starter-tasks.md`](reference/starter-tasks.md) for the highest-leverage first PR, [`how-to/add-a-vendor-adapter.md`](how-to/add-a-vendor-adapter.md) for the full guide, then [`add-vendor-adapter`](../.claude/skills/add-vendor-adapter/SKILL.md) for the step-by-step checklist |
 | Add a device-state concept nothing in `sdk/model` represents yet (a new facet) | [`how-to/add-a-domain-facet.md`](how-to/add-a-domain-facet.md), then [`add-domain-facet`](../.claude/skills/add-domain-facet/SKILL.md) |
 | Add support for a device that doesn't speak SNMP | [`add-transport`](../.claude/skills/add-transport/SKILL.md) — builds the `sdk/transport/<name>` plumbing, not the adapter itself |
 | Map a domain event to a wire ce-type, or adopt a new openits-models release | [`how-to/map-an-event-to-the-wire.md`](how-to/map-an-event-to-the-wire.md) and [`how-to/adopt-an-openits-models-release.md`](how-to/adopt-an-openits-models-release.md), then [`wire-emitter`](../.claude/skills/wire-emitter/SKILL.md) |

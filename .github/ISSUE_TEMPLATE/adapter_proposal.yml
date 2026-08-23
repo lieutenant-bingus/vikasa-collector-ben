@@ -1,0 +1,97 @@
+name: Adapter proposal
+description: Propose (or claim) a vendor adapter — a new vendor × device-kind integration.
+labels: ["adapter"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this to say what you intend to build **before** you build it, so
+        two people don't write the same adapter and so a maintainer can flag a
+        domain-model gap while it's still cheap.
+
+        Worth skimming first:
+        [starter tasks](../blob/main/docs/reference/starter-tasks.md) for the
+        device kinds already modelled, diffed and wired with no adapter
+        producing them, and
+        [the how-to](../blob/main/docs/how-to/add-a-vendor-adapter.md) for what
+        the work involves.
+  - type: input
+    id: vendor-kind
+    attributes:
+      label: Vendor and device kind
+      description: >
+        The registry key is `<vendor>-<device_kind>` — e.g. `econolite-asc`,
+        `daktronics-dms`. Use the device *kind*, not a model number.
+      placeholder: acme-dms
+    validations:
+      required: true
+  - type: dropdown
+    id: facet-status
+    attributes:
+      label: Does the domain model already cover this device kind?
+      description: >
+        Five facet kinds are modelled, diffed and wired with nothing producing
+        them — `dms-status`, `cctv-status`, `traffic-intervals`,
+        `zone-incidents`, `zone-intervals`. If yours is one of those, your PR
+        touches `internal/vendors/` alone.
+      options:
+        - "Yes — an existing facet covers it (adapter only)"
+        - "No — the device reports something no facet models (needs a domain change first)"
+        - "Not sure"
+    validations:
+      required: true
+  - type: textarea
+    id: hardware
+    attributes:
+      label: What hardware will you develop and record fixtures against?
+      description: >
+        Vendor, model, and firmware version, plus how you'll reach it (bench
+        unit, lab cabinet, an agency's live equipment with permission).
+
+        This is asked first rather than last because it is a genuine
+        prerequisite, not paperwork. An adapter encodes what a specific
+        controller actually returns — OID quirks, deviations from the
+        standard, firmware differences — and none of that is knowable from a
+        specification. ADR 0008 requires fixtures recorded from the real
+        device for the same reason: a fixture written from a spec or a
+        simulator captures what its author believed, which is the defect the
+        rule exists to prevent. `internal/vendors/ntcip`'s alarm bitmap,
+        carried from an earlier implementation and still unvalidated against
+        physical hardware, is the standing example of that cost.
+
+        If you don't have device access, say so — that's useful to know and
+        there is hardware-free work worth doing, but it isn't this.
+    validations:
+      required: true
+  - type: input
+    id: transport
+    attributes:
+      label: Transport
+      description: >
+        SNMP, vendor HTTP API, serial, something else? `sdk/transport/snmp`
+        exists; anything else may need a new transport package first.
+      placeholder: SNMP (NTCIP 1203)
+    validations:
+      required: true
+  - type: textarea
+    id: facets
+    attributes:
+      label: Which facets will the adapter populate?
+      description: >
+        e.g. "dms-status and fault-set". Listing them is a quick way for a
+        maintainer to spot a decomposition problem early.
+    validations:
+      required: false
+  - type: textarea
+    id: outside-vendors
+    attributes:
+      label: Anything you expect to change outside `internal/vendors/`?
+      description: >
+        An adapter PR should touch `internal/vendors/<vendor>/<kind>.go` and
+        its test, one line in `RegisterAdapters`, and optionally
+        `collector.yaml`. If you expect to need more — a new facet, a differ,
+        a wire mapping — describe it here. That is a legitimate and valuable
+        contribution; it is just a separate one with its own bar, and it is
+        much cheaper to agree on before the code exists.
+    validations:
+      required: false
