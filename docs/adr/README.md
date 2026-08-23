@@ -24,5 +24,6 @@ immutable once accepted; reversals get a new ADR that supersedes the old.
 | [0016](0016-collector-as-transitional-shim.md) | The collector is a transitional shim; synthesis stays here |
 | [0017](0017-durable-synth-state.md) | Synth's previous state is durable, in the cabinet's own JetStream KV |
 | [0018](0018-tagged-model-pins.md) | The openits-models pin names a release tag (supersedes 0010's pinning clause) |
+| [0019](0019-collector-self-health.md) | **Proposed** — collector self-health: a periodic heartbeat on a per-instance subject |
 
 Start at the [documentation hub](../README.md) for everything that is not a decision record.
