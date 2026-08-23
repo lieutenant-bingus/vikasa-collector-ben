@@ -144,11 +144,14 @@ protecting.
 heartbeat is ~750 bytes on the wire (~330 B body, ~270 B CloudEvents
 headers, plus subject and framing):
 
-| Interval | Per cabinet/month | Fleet aggregate | Detection (3 missed beats) |
+| Interval | Per cabinet/month | Fleet aggregate | Detection, link up (3 beats) |
 |---|---|---|---|
 | 60 s | 32 MB | 250 msg/s | ~3 min |
 | **300 s** | **6.5 MB** | **50 msg/s** | **~15 min** |
 | 900 s | 2.2 MB | 17 msg/s | ~45 min |
+
+The detection column holds only while the uplink is up. It is not a
+dead-man timer — see the next clause.
 
 60 s buys detection latency nobody acts on at 5× the cost on a metered link.
 300 s is the default because ~15 minutes is well inside any real response
@@ -158,11 +161,35 @@ want the same number, and because the right value depends on a carrier plan
 this project does not choose.
 
 **4. Counters are cumulative since boot, never deltas, and every heartbeat
-carries a `boot_id`.** Across 15,000 lossy cellular links, beats will be
-missed. A since-last-beat delta is lost permanently when that happens; a
-cumulative counter lets a consumer diff across the gap and lose nothing but
-resolution. The `boot_id` is what tells a consumer the counters reset rather
-than went backwards.
+carries a `boot_id`.**
+
+The reason is *not* that beats get lost in transit — they largely do not.
+`Publisher.Publish` uses `js.PublishMsg`, a JetStream publish with ack, so a
+successful publish means the beat is persisted to the cabinet-local stream.
+From there the cellular link runs between two JetStream servers (the cabinet
+is a leaf node with its own domain, [ADR 0017](0017-durable-synth-state.md)),
+and replication catches up after an outage rather than dropping. Beats arrive
+**late**, sometimes very late. They are not silently discarded.
+
+Cumulative wins for a different and stronger reason: **deltas are
+incompatible with last-value retention.** The property that makes 15,000
+cabinets tractable is a hub-side stream keyed per collector holding only the
+newest beat — a fleet-health table bounded by fleet size rather than by
+fleet size × time. Under that retention a delta is destroyed: all that
+survives is the most recent interval's increment, which says nothing about
+totals. A cumulative counter under last-value retention is exactly right, and
+a late-joining consumer gets full totals from the single message it reads.
+
+The narrow loss paths that do remain argue the same way. A beat is genuinely
+lost if the local broker is unavailable across all three publish attempts —
+which is narrow, but correlates with NATS restarts during host-executed
+updates (ADR 0012), precisely when someone is watching — or if cabinet-stream
+retention rolls over during a long outage before the hub catches up. Either
+silently corrupts a delta sum; with cumulative counters they cost resolution
+and nothing else.
+
+The `boot_id` is what tells a consumer the counters reset rather than went
+backwards.
 
 This also repairs the boot-event problem: because every heartbeat carries
 version and boot identity, a consumer that joined late — or whose retention
@@ -176,11 +203,37 @@ independently re-randomizing ones make the arrival interval unpredictable for
 the dead-man timers a consumer has to run. A stable per-instance offset gives
 both a spread fleet and a regular beat.
 
-**6. The heartbeat states the collector's identity, both ways.** It carries
+**6. Liveness is read from the heartbeat *and* the leaf connection state,
+never from beat arrival alone.** A gap in arrivals is ambiguous by itself,
+because a cellular outage delays beats without the collector being dead. The
+leaf-node topology resolves it, and a consumer should be told to use both
+axes:
+
+| Leaf connection | Beats arriving | Conclusion |
+|---|---|---|
+| up | yes | healthy |
+| up | stopped | **the collector process is dead or wedged** — NATS and the link are demonstrably fine |
+| down | — | cabinet or uplink is down; collector status unknown, and beats are queuing |
+| reconnects | backlog floods in | the collector was alive throughout, provable from each beat's `occurred_at` |
+
+Two things follow. `occurred_at` must be the collector's own observation
+time and a consumer must never infer liveness from arrival time — a beat
+that arrives six hours late still proves the collector was alive six hours
+ago, which is exactly the fact wanted. And detection of collector death is
+correctly *deferred* while the uplink is down, rather than being reported as
+a false positive.
+
+This is also the clearest answer to "why not just watch the leaf
+connection." That tells you the cabinet's **NATS server** is up. The
+collector is a separate process on the same host and can be dead, wedged, or
+crash-looping while NATS holds the leaf connection open perfectly. The
+heartbeat is the only thing that distinguishes those.
+
+**7. The heartbeat states the collector's identity, both ways.** It carries
 `collector_id` in the body while `ce-source` carries `site`, so the binding
 nothing currently states is stated once per interval.
 
-**7. `stopping` is emitted on clean shutdown**, best-effort, so a rollout
+**8. `stopping` is emitted on clean shutdown**, best-effort, so a rollout
 restart (ADR 0012) is distinguishable from a crash. Best-effort is the honest
 bar: a process that is killed cannot send it, and that asymmetry is the
 point — a missing `stopping` is evidence, not an error.
@@ -232,6 +285,15 @@ fleet what happened.
 failure mode: a collector that dies stops sending its "something is wrong"
 signal too, which is precisely the case that must be detectable. Only a
 positive periodic signal makes absence meaningful.
+
+**Watch the leaf-node connection state instead of publishing anything**
+(rejected as a substitute; adopted as the second axis). The hub already knows
+whether each cabinet's NATS server is connected, and that is genuinely useful
+— it is what distinguishes "collector dead" from "uplink down" in the table
+above. It cannot replace the heartbeat, because the collector is a separate
+process from the NATS server it publishes to: it can be dead, wedged, or
+crash-looping while NATS holds the leaf connection open perfectly. Leaf state
+reports on the broker; the heartbeat reports on the collector.
 
 **Piggyback liveness on existing telemetry** (rejected). A cabinet whose
 devices are genuinely quiet emits nothing for hours, and that is correct
