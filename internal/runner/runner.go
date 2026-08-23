@@ -1,6 +1,10 @@
 // Package runner drives one device: jittered poll loop, per-poll timeout,
 // panic isolation, reachability health transitions. One sick device can
-// never stall the cabinet (spec §7).
+// never stall the cabinet.
+//
+// See docs/explanation/architecture.md's "The poll loop: jitter, per-poll
+// timeout, and panic isolation" section for the mechanics and why each one
+// exists.
 package runner
 
 import (

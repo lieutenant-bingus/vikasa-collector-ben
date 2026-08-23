@@ -2,6 +2,16 @@
 
 **Status:** Accepted (2026-07-16)
 **Supersedes:** the subject-grammar half of [ADR 0006](0006-tenant-scoped-subjects.md)
+Amended by [ADR 0011](0011-namespace-rooted-subject-spaces.md) (2026-08-08) — its
+default-grammar and single-binding consequences.
+Its CE-source clause is superseded by [ADR 0015](0015-ce-source-urn-scheme.md)
+(2026-08-17) — the actual URN scheme only.
+**The default grammar this ADR decided is no longer the default.** ADR 0011
+replaced it, so the Decision's "omitting the config reproduces ADR 0006's
+scheme byte-for-byte" is stale: omitting the config today yields ADR 0011's
+namespace-rooted grammar (`internal/subject`'s `DefaultTemplate`). The
+decision that grammar is the *operator's* stands; only the default it shipped
+with was replaced. Body left as written per the immutability convention.
 
 ## Context
 ADR 0006 fixed the subject grammar at

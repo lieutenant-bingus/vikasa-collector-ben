@@ -3,9 +3,11 @@ module github.com/Vikasa2M/vikasa-collector
 go 1.26
 
 require (
+	github.com/Vikasa2M/openits-models v0.3.0
 	github.com/gosnmp/gosnmp v1.44.0
 	github.com/nats-io/nats-server/v2 v2.14.3
 	github.com/nats-io/nats.go v1.52.0
+	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
 )
 

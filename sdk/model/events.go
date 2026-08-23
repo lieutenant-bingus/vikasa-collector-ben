@@ -152,3 +152,110 @@ type DMSMessageActivationFailed struct {
 }
 
 func (DMSMessageActivationFailed) EventKind() string { return "message-activation-failed" }
+
+// TrafficIntervalReport is one completed measurement interval from a traffic
+// sensor, emitted when the device presents a NEW interval — not once per poll.
+//
+// It carries the device's own interval bounds rather than poll timing, and so
+// differs from DetectorReport in where the interval comes from: an NTCIP
+// controller exposes cumulative counters the collector must difference, while
+// these sensors bin internally and hand over a finished interval.
+type TrafficIntervalReport struct {
+	Base
+	IntervalStart    time.Time
+	IntervalDuration time.Duration
+	Lanes            []LaneMeasurement // sorted by LaneID
+}
+
+func (TrafficIntervalReport) EventKind() string { return "traffic-interval-report" }
+
+// ZoneIncidentDetected fires when an incident appears that was not active on
+// the previous poll. Like FaultRaised, its OccurredAt IS the first
+// observation: the facet carries no timing of its own.
+type ZoneIncidentDetected struct {
+	Base
+	ZoneIncident
+}
+
+func (ZoneIncidentDetected) EventKind() string { return "zone-incident-detected" }
+
+// ZoneIncidentUpdated fires when an ACTIVE incident's assessment changes —
+// severity, speed, or confidence. It deliberately does not fire for changes to
+// identity or classification: an incident whose zone or object class changed is
+// a different incident, and reporting it as an update would hide that.
+type ZoneIncidentUpdated struct {
+	Base
+	IncidentID         string
+	ZoneID             string
+	Severity           IncidentSeverity
+	SpeedHundredthsKPH uint32
+	SpeedReported      bool
+	ConfidencePercent  uint8
+}
+
+func (ZoneIncidentUpdated) EventKind() string { return "zone-incident-updated" }
+
+// ZoneIncidentCleared fires when a previously active incident is absent from a
+// SUCCESSFUL poll. A failed read never produces this — synth suspends a facet
+// it could not read, so absence of evidence is never a clear.
+type ZoneIncidentCleared struct {
+	Base
+	IncidentID string
+	ZoneID     string
+}
+
+func (ZoneIncidentCleared) EventKind() string { return "zone-incident-cleared" }
+
+// ZoneIntervalReport is one completed aggregate interval from a perception
+// sensor, emitted when the device presents a NEW interval. Same contract as
+// TrafficIntervalReport: the device does the binning, the collector does not
+// invent a window.
+type ZoneIntervalReport struct {
+	Base
+	IntervalStart    time.Time
+	IntervalDuration time.Duration
+	Zones            []ZoneMeasurement // sorted by ZoneID
+}
+
+func (ZoneIntervalReport) EventKind() string { return "zone-interval-report" }
+
+// ZoneOccupancyIntervalReport is the presence half of the same completed
+// interval ZoneIntervalReport covers: how many distinct objects were in the
+// zone and what fraction of the interval it was occupied, as opposed to how
+// many traversed it.
+//
+// Two events rather than one because they are two different measurements of
+// one interval, and ZoneMeasurement's own doc comment is the reason: a stopped
+// vehicle is observed repeatedly and crosses once, which is precisely the
+// condition these sensors exist to notice. Conflating throughput with presence
+// erases it. The catalog draws the same line — crossing stays on
+// openits.perception, presence is its own zone-occupancy service — so one
+// facet fanning out to two events is the collector adapting to the catalog's
+// shape rather than the reverse (ADR 0016).
+type ZoneOccupancyIntervalReport struct {
+	Base
+	IntervalStart    time.Time
+	IntervalDuration time.Duration
+	Zones            []ZoneMeasurement // sorted by ZoneID
+}
+
+func (ZoneOccupancyIntervalReport) EventKind() string { return "zone-occupancy-interval-report" }
+
+// CCTVControlModeChanged fires when control of a camera moves between central,
+// local and override.
+type CCTVControlModeChanged struct {
+	Base
+	From, To CCTVControlMode
+}
+
+func (CCTVControlModeChanged) EventKind() string { return "cctv-control-mode-changed" }
+
+// CCTVTourStateChanged fires when one preset tour starts, stops or pauses.
+// Tours are independent: two tours changing in one poll produce two events.
+type CCTVTourStateChanged struct {
+	Base
+	TourID   uint32
+	From, To TourRunState
+}
+
+func (CCTVTourStateChanged) EventKind() string { return "cctv-tour-state-changed" }

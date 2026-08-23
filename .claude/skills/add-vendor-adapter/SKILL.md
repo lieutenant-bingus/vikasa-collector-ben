@@ -1,85 +1,84 @@
 ---
 name: add-vendor-adapter
-description: Implement a new vendor adapter (vendor × device-kind) for the collector — the reader contract, registration, connection parsing, and the fixture/golden test bar. Use this whenever adding support for a new device vendor or device kind (e.g. "add an Econolite ASC adapter", "support Daktronics DMS", "integrate this RSU"), extending an existing adapter with new readings, or reviewing an adapter PR.
+description: Implement a new vendor adapter (vendor × device-kind) for the collector — the reader contract, registration, connection parsing, and the fixture/golden test bar. Use this whenever adding support for a new device vendor or device kind (e.g. "add an Econolite ASC adapter", "support Daktronics DMS", "integrate this RSU"), or extending an existing adapter with new readings.
+contract: v1
 ---
 
 # Adding a vendor adapter
 
-Adapters are the collector's contribution surface. Each one owns a
-vendor × device-kind pair (registry key `<vendor>-<device_kind>`), owns its
-transport entirely, and returns only `sdk/model` types. Read
-`docs/adr/0002-domain-model-and-wire-emitter-boundary.md` and
-`docs/adr/0008-fixture-golden-testing-bar.md` before starting; the rules
-below exist because 10+ contributed adapters are planned and every
-undisciplined adapter multiplies maintenance across all of them.
+## When this applies
 
-The reference implementation is `internal/vendors/ntcip/` (the generic,
-standards-only NTCIP ASC adapter, ADR 0003). Mirror its structure; deviate
-only where the vendor genuinely differs.
+Adding a new vendor × device-kind adapter under `internal/vendors/`
+(registry key `<vendor>-<device_kind>`), or extending an existing adapter
+with a new facet read. Applies even to a vague request ("integrate this
+RSU") that turns out to be adapter work.
 
-## Hard rules (CI-enforced or review-blocking)
+It does not apply to:
 
-- **Only `sdk/model` types cross the boundary.** Adapters must not import
-  openits-models or anything under `internal/wire` — `scripts/lint-boundary.sh`
-  fails CI if they do. If the domain model lacks a concept you need, that's
-  a `sdk/model` facet proposal (see the `add-domain-facet` skill), not a
-  reason to smuggle wire types in.
-- **No fixtures, no merge** (ADR 0008). Every read path ships recorded
-  fixtures with golden tests. Record from a real device where possible, and
-  scrub deployment-identifying data (addresses, community strings, site
-  names) from recordings before committing.
-- **Pull only** (ADR 0004). `StateReader.Read` and `EventReader.Fetch` are
-  polled by the core; adapters never push, never own goroutines that
-  outlive a call, and never buffer between polls. `Commander` is a dormant
-  seam — implement it only if explicitly asked.
+- Adding a device concept no facet models yet — that's the
+  `add-domain-facet` skill. This skill assumes the facet already exists.
+- Mapping a domain event onto the wire — the `wire-emitter` skill.
+- Reviewing an adapter PR someone else wrote — the
+  `review-adapter-contribution` skill.
 
-## Workflow
+## Invariants
 
-1. **Pick the surface.** `StateReader` (device state polled into a
-   `model.Snapshot` the core diffs — most devices) or `EventReader`
-   (sources that already yield discrete events, e.g. hi-res logs). See
-   `sdk/adapter/adapter.go` for the exact contracts.
+- [Adapters and `sdk/` never import openits-models](../../../docs/reference/invariants.md#adapters-and-sdk-never-import-openits-models) — an adapter reaching for a wire type, even transitively through a helper package, fails `scripts/lint-boundary.sh`.
+- [Absence of evidence is never a state change](../../../docs/reference/invariants.md#absence-of-evidence-is-never-a-state-change) — a failed or absent facet read must produce a `model.FacetError`, never a zero-valued facet.
+- [No fixtures, no merge](../../../docs/reference/invariants.md#no-fixtures-no-merge) — every read path ships a recorded fixture with a golden test.
+- [Config is the trust boundary; boot fails on the unrecognized](../../../docs/reference/invariants.md#config-is-the-trust-boundary-boot-fails-on-the-unrecognized) — connection-block parsing rejects malformed config in your `Factory`, not on first poll.
 
-2. **Create `internal/vendors/<vendor>/`** with a `RegisterTo(r *adapter.Registry)`
-   that registers a `Descriptor{Vendor, DeviceKind, Caps}` and a factory.
-   The factory receives the device's `connection` config block as
-   `map[string]any` — it is opaque to the core; parse and validate it here,
-   returning errors prefixed `"<vendor>-<kind> <deviceID>: ..."` so boot
-   failures identify the device. Wire the registration into
-   `internal/app` alongside the existing `ntcip.RegisterTo`.
+## Procedure
 
-3. **Implement the read.** Populate one facet per subsystem read
-   (`sdk/model` facets: operational status, fault set, detector samples,
-   DMS status, ...). Failure semantics matter more than the happy path:
-   - A subsystem the device doesn't have → **empty facet, not an error**
-     (a controller with no detectors is a normal deployment).
-   - A subsystem the adapter tried and failed to read → record a
-     `model.FacetError` in `Snapshot.Errors` and keep the other facets.
-     Facets fail independently; one bad table must not poison the poll.
-   - Transport failure (device unreachable) → return a hard error from
-     `Read`; the core's health tracking owns unreachability. Never
-     synthesize a fault event for it (see the ADR 0008 discussion — the
-     differ's rule is "absence of evidence is never a state change").
-   - Out-of-spec values from the device → clamp or skip *with a test
-     proving it*; never let a misbehaving device panic the collector.
+1. Read `internal/vendors/ntcip/asc.go` and `register.go` as the
+   structural reference — but not for fixture provenance or the
+   alarm-bitmap table; both are known, tracked gaps in that adapter (see
+   the canonical doc's "Before you start" section).
+2. Confirm the facet you need already exists — `docs/reference/starter-tasks.md`
+   lists five facets that are modeled and diffed with no adapter producing
+   them yet. If your device needs a concept no facet models, stop: that's
+   a separate `add-domain-facet` contribution, its own PR.
+3. Pick `StateReader` or `EventReader` (`sdk/adapter/adapter.go`) by
+   semantics, not transport — every adapter is pull-driven regardless
+   (ADR 0004: the runner calls `Read`/`Fetch`, nothing an adapter does
+   calls back into the core). Only `StateReader` is wired into the poll
+   runner today. `Commander` is a dormant seam — implement it only if
+   explicitly asked.
+4. Parse the `connection` block inside your `Factory`: your own top-level
+   key, lowercase snake_case fields, sensible defaults over required
+   knobs, and a rejected build on anything malformed rather than a dial
+   that fails later.
+5. Implement the read with one unconditional call per facet method. Per
+   facet: real data or genuine absence (device has no such subsystem) →
+   append to `Snapshot.Facets`; that facet's read failed → append a
+   `model.FacetError` to `Snapshot.Errors`, nothing to `Snapshot.Facets`;
+   the device itself is unreachable → hard error from `Read`, never a
+   synthesized fault event. Out-of-spec values from the device (bad
+   bitmaps, values outside the documented range): clamp or skip, with a
+   test proving it — the runner recovers a panicking adapter
+   (`internal/runner`'s `readGuarded`), but that's a last-resort net, not
+   a substitute for handling a malformed reading yourself.
+6. Set `Descriptor.Caps` to exactly the interfaces your type implements —
+   nothing claimed that isn't real, even if it would compile.
+7. Register: a `RegisterTo(r *adapter.Registry)` in your new package, plus
+   one added line in `RegisterAdapters` (`cmd/collector/main.go`).
+   `internal/app` takes no part in this.
+8. Write fixtures and golden tests to the bar in
+   `docs/reference/test-requirements.md`'s "A new adapter" section, with a
+   provenance comment on every fixture — what you ran it against, and
+   when.
 
-4. **Tests, following `internal/vendors/ntcip/asc_test.go`:**
-   - Golden reads over recorded fixtures (for SNMP, OID→value maps served
-     via `sdk/transport/snmp/snmptest`).
-   - One test per failure mode above (partial failure → FacetError,
-     transport error → hard error, missing subsystem → empty facet).
-   - Decode edge cases: bitmaps, clamping, sparse tables, fallbacks for
-     unanswered OIDs.
+## Verify
 
-5. **Gate:** `make check` (vet + tests + boundary lint) and
-   `go test ./... -race` — exactly what CI runs. Document the vendor's
-   `connection` block shape in a comment on `RegisterTo` (the
-   `collector.yaml` example shows the ntcip shape).
+```bash
+make check
+go test ./... -race
+gofmt -l .
+```
 
-## Conventions
+Expected: `make check` and `go test ./... -race` both pass; `gofmt -l .`
+prints nothing.
 
-- Config keys are lowercase snake_case inside the vendor's `connection`
-  block; sensible defaults over required knobs (ntcip defaults
-  `community: public`, 2s timeout).
-- Commit style: Conventional Commits (`feat(vendor): add econolite-asc
-  adapter`), no co-author attribution.
+## Canonical doc
+
+[`docs/how-to/add-a-vendor-adapter.md`](../../../docs/how-to/add-a-vendor-adapter.md) — the full narrative.

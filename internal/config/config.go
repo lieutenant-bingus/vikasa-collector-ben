@@ -1,12 +1,12 @@
 // Package config loads the collector YAML and enforces the boot trust
 // boundary: bad tenant tokens, unknown adapters, or malformed devices
-// refuse to start (spec §6).
+// refuse to start (ADR 0014).
 package config
 
 import (
 	"fmt"
 	"os"
-	"strings"
+	"regexp"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -29,22 +29,41 @@ type Device struct {
 // zero value reproduces the pre-template scheme exactly (ADR 0009).
 type Subject struct {
 	Template string            `yaml:"template"`
-	Stream   string            `yaml:"stream"`
 	Vars     map[string]string `yaml:"vars"`
 }
 
 // Config is the collector instance configuration.
 type Config struct {
-	Agency       string   `yaml:"agency"`
-	Site         string   `yaml:"site"`
+	// Region, Agency and AgencyUnit are the profile's identity triple and
+	// appear in every ce-source URN. Site is not in the URN; it stays because
+	// the collector still uses it for stream naming and health context.
+	Region     string `yaml:"region"`
+	Agency     string `yaml:"agency"`
+	AgencyUnit string `yaml:"agency_unit"`
+	Site       string `yaml:"site"`
+	// CollectorID identifies THIS collector as the observer of the events it
+	// synthesizes. It is stamped into every openits payload's observed-by,
+	// which exists precisely to distinguish "the device reported this" from
+	// "a poller inferred it by diffing". Required, with no default: deriving
+	// it from agency/site would be silently wrong the moment a cabinet runs
+	// two collectors, and the error would surface as mislabelled provenance
+	// in the data lake rather than as a failure to start.
+	CollectorID  string   `yaml:"collector_id"`
 	ModelVersion string   `yaml:"model_version"`
 	Subject      Subject  `yaml:"subject"`
 	Devices      []Device `yaml:"devices"`
 }
 
+// deviceIDRe is the wire's device-id pattern. CollectorID rides in observed-by,
+// which is typed device-id upstream, so a value that violates it produces a
+// payload the consumer rejects long after we could have acted on it.
+var deviceIDRe = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+
 // Tenant returns the validated-shape tenant identity.
 func (c *Config) Tenant() cloudevents.Tenant {
-	return cloudevents.Tenant{Agency: c.Agency, Site: c.Site}
+	return cloudevents.Tenant{
+		Region: c.Region, Agency: c.Agency, AgencyUnit: c.AgencyUnit, Site: c.Site,
+	}
 }
 
 // SubjectConfig is the subject-package view of this config.
@@ -52,13 +71,20 @@ func (c *Config) SubjectConfig() subject.Config {
 	return subject.Config{Template: c.Subject.Template, Vars: c.Subject.Vars}
 }
 
-// StreamName is the JetStream stream to provision. Defaults to the
-// pre-template name so existing deployments keep their stream.
-func (c *Config) StreamName() string {
-	if c.Subject.Stream != "" {
-		return c.Subject.Stream
+// SubjectIdentity is the subject-package view of the tenant identity.
+func (c *Config) SubjectIdentity() subject.Identity {
+	return subject.Identity{
+		Region: c.Region, Agency: c.Agency, AgencyUnit: c.AgencyUnit, Site: c.Site,
 	}
-	return "OPENITS-" + strings.ToUpper(c.Agency) + "-" + strings.ToUpper(c.Site)
+}
+
+// DeviceIDs lists every configured device, for exhaustive subject validation.
+func (c *Config) DeviceIDs() []string {
+	ids := make([]string, 0, len(c.Devices))
+	for _, d := range c.Devices {
+		ids = append(ids, d.ID)
+	}
+	return ids
 }
 
 // Load parses and validates. Any validation failure is fatal at boot.
@@ -84,10 +110,23 @@ func (c *Config) validate(reg *adapter.Registry) error {
 	if c.ModelVersion == "" {
 		return fmt.Errorf("model_version is required")
 	}
+	if !deviceIDRe.MatchString(c.CollectorID) {
+		return fmt.Errorf("collector_id %q is required and must match %s "+
+			"(it is published as observed-by on every event)", c.CollectorID, deviceIDRe)
+	}
 	// Build the template now so a bad grammar is a boot failure rather than a
 	// 3am unroutable event. The result is rebuilt in app.Run (which also has
 	// the emitter ce-types to validate against); this is the early, cheap half.
-	if _, err := subject.New(c.SubjectConfig(), c.Agency, c.Site); err != nil {
+	tmpl, err := subject.New(c.SubjectConfig(), c.SubjectIdentity())
+	if err != nil {
+		return err
+	}
+	// Structural check only: whether the grammar can ever yield a static
+	// stream binding. The exhaustive per-ce-type validation happens in
+	// app.Run, which knows what the emitters produce; this is the early,
+	// cheap half that keeps a hopeless template from passing the trust
+	// boundary.
+	if err := tmpl.ValidateBindable(); err != nil {
 		return err
 	}
 	if len(c.Devices) == 0 {

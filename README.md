@@ -11,41 +11,77 @@ local NATS JetStream using versioned openits-models payloads.
 [device] ─transport─▶ ADAPTER ─sdk/model─▶ CORE ─wire emitter─▶ CloudEvent ─▶ local JetStream
 ```
 
-- **Adapters** (`internal/vendors/<vendor>/<kind>/`) own transport
+- **Adapters** (`internal/vendors/<vendor>/`) own transport
   entirely and return only `sdk/model` types.
 - **The core** diffs snapshots into domain events, tracks device health,
   and publishes on operator-configurable subjects (ADR 0009) — by default
-  `openits.<agency>.<site>.<service>.<event>.v1`.
+  the profile's seven-token grammar rooted on the ce-type's namespace:
+  `openits.<region>.<agency>.<agency-unit>.<service>.<device-id>.<event>` for
+  catalog events, `openits-collector.…` for collector health. Separate roots,
+  separate streams — collector-internal traffic and ITS telemetry differ in
+  retention and in who should be able to read them (ADR 0011).
 - **Wire emitters** (`internal/wire/`) are the only code that knows
-  openits-models. One package per pinned models release.
+  openits-models — see [the boundary
+  rule](docs/reference/invariants.md#adapters-and-sdk-never-import-openits-models).
+  One package per pinned models release.
 
-Why it's built this way: see `docs/adr/`. Full design:
-`docs/specs/2026-07-12-greenfield-collector-architecture-design.md`.
+Why it's built this way: see `docs/adr/`. Start here for everything else —
+task guides, configuration, what will fail a PR: [`docs/README.md`](docs/README.md).
 
 ## Status
 
-Gen-2 rebuild in progress. Working today: `ntcip-asc` adapter (fixtures +
-live SNMP), signal-status synth, collector-owned health events end-to-end
-to JetStream. Not yet wired: openits-models emitter (Plan 2), additional
-facets and vendors (Plan 3+).
+Gen-2 rebuild in progress. The domain model, the synth engine and the full
+publish path are complete: eight facet kinds, eight differs, and 25 catalog
+ce-types plus two collector-health ce-types, each pinned by a byte-exact
+golden. Events reach JetStream as CloudEvents in the NATS reference
+profile's Tier 2 shape (binary mode, deterministic ULID `ce-id`,
+seven-token namespace-rooted subjects).
 
-Because only the health emitter is wired, domain events (status reports,
-plan changes, …) reach the emitter chain, find no claimant, and are dropped
-with a warning. That is expected until Plan 2 lands.
+What is missing is **adapters**. One exists — `ntcip-asc` — producing three
+of the eight facet kinds. The other five are modeled, diffed and wired with
+no device on the other end, which makes them the best first contribution in
+the repo: see [starter tasks](docs/reference/starter-tasks.md).
+
+Events can still be dropped with a warning, and that is the designed
+behaviour rather than a gap: the emitter declines anything it cannot
+encode faithfully — a controller mode with no upstream identity, a shared
+event on a device kind it does not serve — instead of substituting a
+near-neighbour. A visible drop beats a wrong value on the bus.
 
 ## Run
 
 ```bash
-make check                             # vet + tests + boundary lint
-go run ./cmd/collector -config collector.yaml
+make check    # vet + tests + boundary lint — the CI gate
+make dev      # run the whole pipeline locally: embedded NATS, synthetic device
+```
+
+`make dev` is the one to start with. It runs the real pipeline against an
+embedded JetStream and a synthetic device and prints every CloudEvent that
+reaches the bus, so you can see the collector work before you have a cabinet.
+Its synthetic device is deliberately **not** a device simulator and its
+output is not a fixture source — see `cmd/dev`'s package comment.
+
+Against a real cabinet, with a broker already running and devices reachable
+at the addresses in your config:
+
+```bash
+go run ./cmd/collector -config collector.yaml   # -nats defaults to nats://127.0.0.1:4222
 ```
 
 ## Contributing an adapter
 
+Never seen this repo before? [Build your first
+adapter](docs/tutorial/build-your-first-adapter.md) takes a fresh clone
+through to a real event on the bus in one sitting. When you're writing the
+real thing, [`docs/how-to/add-a-vendor-adapter.md`](docs/how-to/add-a-vendor-adapter.md)
+is the canonical guide.
+
 Implement `sdk/adapter.StateReader` (or `EventReader`) returning
 `sdk/model` types, register a `Descriptor{Vendor, DeviceKind}`, and ship
-recorded fixtures with golden tests — **no fixtures, no merge** (ADR 0008).
-Adapters must not import openits-models (CI-enforced, ADR 0002).
+recorded fixtures with golden tests — see [the fixture
+rule](docs/reference/invariants.md#no-fixtures-no-merge). Adapters don't
+reach for openits-models types — see [the boundary
+rule](docs/reference/invariants.md#adapters-and-sdk-never-import-openits-models).
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution guide.
 

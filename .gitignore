@@ -22,3 +22,6 @@ go.work.sum
 # Claude Code project dir — only committed contributor skills are tracked
 .claude/*
 !.claude/skills/
+
+# Subagent-driven-development scratch (ledger, briefs, review packages)
+.superpowers/

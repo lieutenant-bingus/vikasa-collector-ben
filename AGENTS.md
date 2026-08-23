@@ -3,31 +3,57 @@
 Open-source edge collector for ITS cabinets: vendor adapters poll field
 devices, the core diffs snapshots into domain events, wire emitters encode
 them, and the publisher ships CloudEvents to the cabinet's local NATS
-JetStream. Architecture rationale lives in `docs/adr/` (accepted decision
-records) and `docs/specs/` (design specs) — consult them before
-restructuring anything; CI enforces several of them.
+JetStream. Architecture rationale for the built system lives in
+`docs/adr/` (accepted decision records) and `docs/explanation/` (how the
+pieces fit together) — consult them before restructuring anything.
+[`docs/README.md`](docs/README.md) is the documentation hub and routes to
+all of it by task. The rules CI actually enforces are catalogued
+canonically in
+[`docs/reference/invariants.md`](docs/reference/invariants.md) — that
+table is what to trust for exact wording, not this file.
 
 ## Commands
 
 ```bash
 make check              # vet + tests + boundary lint — the CI gate
 go test ./... -race     # CI runs this too; poll loops are concurrent
-go run ./cmd/collector -config collector.yaml
+make dev                # whole pipeline locally: embedded NATS + synthetic device
+go run ./cmd/collector -config collector.yaml   # needs a real broker AND real devices
 ```
 
-## Layering rules (CI-enforced)
+## Layering rules
 
-- Adapters (`internal/vendors/`) and `sdk/` produce **only `sdk/model`
-  types**. They must not import openits-models — only `internal/wire`
-  may (ADR 0002; `scripts/lint-boundary.sh` fails the build otherwise).
-- openits-models is consumed as **tagged releases only**, never a
-  `replace` directive (ADR 0002, 0005).
-- The synth engine's iron rule: **absence of evidence is never a state
-  change.** Failed or absent facet reads emit nothing and keep previous
-  state. Don't write differs or adapters that violate this.
-- Subjects are operator-configurable routing (ADR 0009); the CloudEvents
-  envelope (`ce-type`, `ce-source`, content-addressed `ce-id`) is
-  identity and stays canonical. Never derive one from the other.
+The openits-models boundary is three rules, not all machine-checked — see
+[the boundary
+rule](docs/reference/invariants.md#adapters-and-sdk-never-import-openits-models)
+for exact wording:
+
+- Adapters (`internal/vendors/`) and `sdk/` stay on `sdk/model` types and
+  don't reach for openits-models. CI-enforced.
+- The dependency pin carries no `replace` directive — see [that
+  rule](docs/reference/invariants.md#the-openits-models-pin-carries-no-replace-directive).
+  CI-enforced.
+- The pin names a release tag, never a `main`-HEAD pseudo-version — see
+  [that
+  rule](docs/reference/invariants.md#the-openits-models-pin-names-a-release-tag).
+  CI-enforced (ADR 0018; the earlier branch-tracking policy went two
+  releases stale without anything noticing). Whether the tag is a *current*
+  one is [a separate
+  row](docs/reference/invariants.md#the-pinned-release-is-a-current-one-not-an-old-tag)
+  and is **not** CI-enforced — a lint can check the version string's shape,
+  not its recency.
+- Versioned emitter packages (`internal/wire/openits_v1`, …) have not
+  started and are no longer tied to tagged pins: they begin when a fleet
+  genuinely needs two model releases compiled into one binary.
+
+The synth engine's iron rule concerns what a differ or adapter may do with
+a failed or absent facet read — see [absence of
+evidence](docs/reference/invariants.md#absence-of-evidence-is-never-a-state-change)
+before writing either.
+
+Subject routing and the CloudEvents envelope are deliberately kept
+independent of each other — see [the subjects-vs-envelope
+rule](docs/reference/invariants.md#subjects-are-operator-configurable-the-cloudevents-envelope-stays-canonical).
 
 ## Task guides
 
@@ -36,15 +62,20 @@ by any agent or human):
 
 - `add-vendor-adapter` — new vendor × device-kind integrations
 - `add-domain-facet` — new facets, differs, and domain events
+- `add-transport` — a new `sdk/transport/<name>` package for a protocol nothing speaks yet
 - `wire-emitter` — openits-models mappings and release pin bumps
+- `review-adapter-contribution` — the maintainer-side checklist for an incoming adapter PR
 
 ## Testing bar
 
-Recorded fixtures with golden tests for every adapter read path — **no
-fixtures, no merge** (ADR 0008). Scrub deployment-identifying data
-(addresses, community strings, site names) from recordings before
-committing. Differ tests cover: first poll, no change, each axis
-independently, failed read, DeviceKind stamping.
+Every adapter read path ships recorded fixtures with golden tests — see
+[the fixture
+rule](docs/reference/invariants.md#no-fixtures-no-merge). Scrub
+deployment-identifying data (addresses, community strings, site names)
+from recordings before committing. Differ tests have their own matrix —
+see [`test-requirements.md`'s "A new differ"
+section](docs/reference/test-requirements.md#a-new-differ) for what a
+differ PR must cover.
 
 ## Conventions
 
@@ -53,6 +84,5 @@ independently, failed read, DeviceKind stamping.
 - **No co-author or AI attribution lines in commits.**
 - Work through pull requests; `main` is protected and requires the
   `check` status.
-- Config is the trust boundary: everything is validated at boot, and the
-  collector refuses to start on anything it doesn't understand. Prefer
-  boot-time failure over publish-time surprise.
+- Config is the trust boundary — see [the config
+  rule](docs/reference/invariants.md#config-is-the-trust-boundary-boot-fails-on-the-unrecognized).

@@ -17,6 +17,7 @@ import (
 	"github.com/Vikasa2M/vikasa-collector/internal/synth"
 	"github.com/Vikasa2M/vikasa-collector/internal/wire"
 	"github.com/Vikasa2M/vikasa-collector/internal/wire/health"
+	"github.com/Vikasa2M/vikasa-collector/internal/wire/openits"
 	"github.com/Vikasa2M/vikasa-collector/sdk/adapter"
 	"github.com/Vikasa2M/vikasa-collector/sdk/model"
 )
@@ -30,27 +31,37 @@ const drainTimeout = 5 * time.Second
 func Run(ctx context.Context, cfg *config.Config, reg *adapter.Registry, natsURL, version string) error {
 	tenant := cfg.Tenant()
 
-	// Emitter chain: first claim wins. Plan 2 prepends the openits-models
-	// emitter selected by cfg.ModelVersion; today only health is wired, so
-	// domain events fall through to the loud-drop path below.
-	emitters := []wire.Emitter{health.NewHealthEmitter()}
+	// Emitter chain: first claim wins. openits goes first so catalog events
+	// are claimed there; health keeps the collector-owned schema (ADR 0007)
+	// and is never claimed by openits.
+	//
+	// Events still reach the loud-drop path below — deliberately. The openits
+	// emitter declines anything it cannot encode faithfully (a controller mode
+	// with no upstream identity, a shared event on an unserved device kind),
+	// so the drop is the visible outcome of a mapping gap rather than evidence
+	// the chain is unwired.
+	emitters := []wire.Emitter{openits.New(cfg.CollectorID), health.NewHealthEmitter()}
 
-	tmpl, err := subject.New(cfg.SubjectConfig(), cfg.Agency, cfg.Site)
+	tmpl, err := subject.New(cfg.SubjectConfig(), cfg.SubjectIdentity())
 	if err != nil {
 		return err
 	}
 	// Exhaustive, not sampled: every ce-type any emitter can produce must
-	// render to a legal subject inside the binding. A grammar mistake fails
-	// here, at boot, rather than the first time a rare event fires.
+	// render to a legal subject inside its namespace's binding. A grammar
+	// mistake fails here, at boot, rather than the first time a rare event
+	// fires. The same list drives stream provisioning below, so the streams
+	// and the validated ce-types cannot drift: a namespace with no stream
+	// would publish into a subject space nothing captures, and the events
+	// would vanish with no error at any layer.
 	var ceTypes []string
 	for _, em := range emitters {
 		ceTypes = append(ceTypes, em.CETypes()...)
 	}
-	if err := tmpl.ValidateCETypes(ceTypes); err != nil {
+	if err := tmpl.ValidateCETypes(ceTypes, cfg.DeviceIDs()); err != nil {
 		return err
 	}
 
-	pub, err := publish.Connect(ctx, natsURL, tmpl, cfg.StreamName())
+	pub, err := publish.Connect(ctx, natsURL, tmpl, ceTypes)
 	if err != nil {
 		return err
 	}
@@ -80,6 +91,10 @@ func Run(ctx context.Context, cfg *config.Config, reg *adapter.Registry, natsURL
 		synth.NewFaultDiffer(),
 		synth.NewDetectorDiffer(),
 		synth.NewDMSDiffer(),
+		synth.NewTrafficIntervalDiffer(),
+		synth.NewZoneIncidentDiffer(),
+		synth.NewZoneIntervalDiffer(),
+		synth.NewCCTVDiffer(),
 	)
 	var wg sync.WaitGroup
 	var adapters []adapter.Adapter
@@ -131,15 +146,36 @@ func encodeAndPublish(ctx context.Context, pub *publish.Publisher, tenant cloude
 		if !ok {
 			continue
 		}
-		env := cloudevents.New(enc.CEType, cloudevents.SourceFor(tenant, ev.EventDeviceID()),
-			ev.EventOccurredAt(), enc.ContentType, enc.Data)
-		if err := pub.Publish(ctx, env, enc.CEType); err != nil {
+		source := cloudevents.SourceFor(tenant, ev.EventDeviceKind(), ev.EventDeviceID())
+		if source == "" {
+			// No entity-kind mapping for this device kind. Publishing would
+			// mean inventing a URN shape upstream does not define, and ce-id
+			// hashes that string, so the invention would be baked into every
+			// id. Drop it as loudly as an unclaimed event.
+			slog.Warn("event dropped: no ce-source entity kind for device kind",
+				"event", ev.EventKind(), "device_kind", ev.EventDeviceKind(), "device", ev.EventDeviceID())
+			return
+		}
+		env := cloudevents.New(cloudevents.Event{
+			CEType:      enc.CEType,
+			Source:      source,
+			ContentType: enc.ContentType,
+			DataSchema:  enc.DataSchema,
+			OccurredAt:  ev.EventOccurredAt(),
+			Data:        enc.Data,
+			Identity:    enc.Identity,
+		})
+		if err := pub.Publish(ctx, env, enc.CEType, ev.EventDeviceID()); err != nil {
 			slog.Error("publish failed", "type", enc.CEType, "err", err)
 		}
 		return
 	}
-	// Loud drop: no emitter claims this event (spec §7). With only the
-	// health emitter wired (Plan 1), every domain event lands here.
+	// Loud drop: no emitter claims this event. README.md's "Events can still
+	// be dropped with a warning, and that is the designed behaviour" is the
+	// living statement of this rule. Reaching here now
+	// means a real mapping gap — an event kind with no ce-type, or one the
+	// openits emitter declined because it could not encode it faithfully —
+	// rather than the chain simply being unwired.
 	slog.Warn("event dropped: no emitter for domain event",
 		"event", ev.EventKind(), "device", ev.EventDeviceID())
 }

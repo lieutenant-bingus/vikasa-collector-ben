@@ -21,7 +21,7 @@ var version = "dev" // set via -ldflags "-X main.version=..."
 
 // RegisterAdapters wires every compiled-in adapter into the registry. This is
 // the one place the binary decides which vendors it ships with; contributing an
-// adapter means adding a line here plus internal/vendors/<vendor>/<kind>/.
+// adapter means adding a line here plus internal/vendors/<vendor>/<kind>.go.
 func RegisterAdapters(r *adapter.Registry) {
 	ntcip.RegisterTo(r)
 }

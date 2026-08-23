@@ -15,5 +15,15 @@ immutable once accepted; reversals get a new ADR that supersedes the old.
 | [0007](0007-collector-owned-health-schema.md) | Collector-owned health event schema |
 | [0008](0008-fixture-golden-testing-bar.md) | Fixture-golden testing bar for adapters |
 | [0009](0009-configurable-subject-templates.md) | Operator-configurable subject templates (supersedes 0006's grammar) |
+| [0010](0010-openits-models-lockstep-pre-v1.md) | Track openits-models HEAD in lockstep until v1 (amends 0002's pinning clause) |
+| [0011](0011-namespace-rooted-subject-spaces.md) | Namespace-rooted subject spaces, one stream per namespace (amends 0009) |
+| [0012](0012-host-executed-updates.md) | Host-executed updates; the collector participates but never self-updates |
+| [0013](0013-absence-of-evidence.md) | Absence of evidence is never a state change |
+| [0014](0014-config-is-the-trust-boundary.md) | Config is the trust boundary; boot fails on the unrecognized |
+| [0015](0015-ce-source-urn-scheme.md) | The CE-source URN scheme (supersedes 0006's and 0009's CE-source clauses) |
+| [0016](0016-collector-as-transitional-shim.md) | The collector is a transitional shim; synthesis stays here |
+| [0017](0017-durable-synth-state.md) | Synth's previous state is durable, in the cabinet's own JetStream KV |
+| [0018](0018-tagged-model-pins.md) | The openits-models pin names a release tag (supersedes 0010's pinning clause) |
+| [0019](0019-collector-self-health.md) | **Proposed** — collector self-health: a periodic heartbeat on a per-instance subject |
 
-Companion spec: `../specs/2026-07-12-greenfield-collector-architecture-design.md`
+Start at the [documentation hub](../README.md) for everything that is not a decision record.

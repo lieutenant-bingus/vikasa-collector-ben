@@ -2,7 +2,6 @@ package publish
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 	"time"
 
@@ -33,11 +32,11 @@ func TestPublishRoundTripAndDedup(t *testing.T) {
 	ns := startNATS(t)
 	ctx := context.Background()
 
-	tmpl, err := subject.New(subject.Config{}, "metro", "cab-1")
+	tmpl, err := subject.New(subject.Config{}, subject.Identity{Region: "us-ga", Agency: "metro", AgencyUnit: "d01", Site: "cab-1"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := Connect(ctx, ns.ClientURL(), tmpl, "OPENITS-METRO-CAB-1")
+	p, err := Connect(ctx, ns.ClientURL(), tmpl, []string{"openits-collector.health.collector-started.v1"})
 	if err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
@@ -45,13 +44,19 @@ func TestPublishRoundTripAndDedup(t *testing.T) {
 
 	at := time.Date(2026, 7, 12, 10, 0, 0, 0, time.UTC)
 	ceType := "openits-collector.health.collector-started.v1"
-	env := cloudevents.New(ceType, "//metro/cab-1", at, "application/json", []byte(`{"version":"dev"}`))
+	env := cloudevents.New(cloudevents.Event{
+		CEType:      ceType,
+		Source:      "urn:openits:collector:us-ga:metro:d01:cab-1",
+		ContentType: "application/json",
+		OccurredAt:  at,
+		Data:        []byte(`{"version":"dev"}`),
+	})
 
 	// Publish the identical envelope twice: dedup must keep exactly one.
-	if err := p.Publish(ctx, env, ceType); err != nil {
+	if err := p.Publish(ctx, env, ceType, "cab-1"); err != nil {
 		t.Fatalf("Publish 1: %v", err)
 	}
-	if err := p.Publish(ctx, env, ceType); err != nil {
+	if err := p.Publish(ctx, env, ceType, "cab-1"); err != nil {
 		t.Fatalf("Publish 2: %v", err)
 	}
 
@@ -61,7 +66,7 @@ func TestPublishRoundTripAndDedup(t *testing.T) {
 	}
 	defer nc.Close()
 	js, _ := jetstream.New(nc)
-	stream, err := js.Stream(ctx, "OPENITS-METRO-CAB-1")
+	stream, err := js.Stream(ctx, StreamNameForBinding("openits-collector.us-ga.metro.d01.>"))
 	if err != nil {
 		t.Fatalf("stream: %v", err)
 	}
@@ -82,16 +87,26 @@ func TestPublishRoundTripAndDedup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Next: %v", err)
 	}
-	wantSubject := "openits.metro.cab-1.health.collector-started.v1"
+	wantSubject := "openits-collector.us-ga.metro.d01.health.cab-1.collector-started"
 	if msg.Subject() != wantSubject {
 		t.Fatalf("subject = %q, want %q", msg.Subject(), wantSubject)
 	}
-	var got cloudevents.Envelope
-	if err := json.Unmarshal(msg.Data(), &got); err != nil {
-		t.Fatalf("unmarshal envelope: %v", err)
+	// Binary mode: attributes are ce-* headers, the body is the raw payload
+	// verbatim — not a JSON envelope wrapping it.
+	h := msg.Headers()
+	if h.Get("ce-id") != env.ID || h.Get("ce-type") != ceType {
+		t.Fatalf("ce headers = %+v, want ce-id=%q ce-type=%q", h, env.ID, ceType)
 	}
-	if got.ID != env.ID || got.Type != ceType {
-		t.Fatalf("envelope round-trip mismatch: %+v", got)
+	if h.Get("ce-source") != env.Source || h.Get("ce-specversion") != "1.0" {
+		t.Fatalf("ce headers = %+v", h)
+	}
+	if string(msg.Data()) != string(env.Data) {
+		t.Fatalf("body = %q, want the raw payload %q", msg.Data(), env.Data)
+	}
+	// Health has no registry entry, so ce-dataschema must be ABSENT rather
+	// than present-and-empty.
+	if _, ok := h["Ce-Dataschema"]; ok {
+		t.Errorf("ce-dataschema present on a collector-owned schema: %+v", h)
 	}
 }
 
@@ -100,13 +115,13 @@ func TestPublishUsesCustomTemplate(t *testing.T) {
 	ctx := context.Background()
 
 	tmpl, err := subject.New(subject.Config{
-		Template: "{prefix}.{region}.{agency}.{service}.{event}.{version}",
-		Vars:     map[string]string{"prefix": "traffic", "region": "southeast"},
-	}, "metro", "cab-1")
+		Template: "{prefix}.{geo}.{agency}.{service}.{event}.{version}",
+		Vars:     map[string]string{"prefix": "traffic", "geo": "southeast"},
+	}, subject.Identity{Region: "us-ga", Agency: "metro", AgencyUnit: "d01", Site: "cab-1"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := Connect(ctx, ns.ClientURL(), tmpl, "EDGE-METRO-CAB1")
+	p, err := Connect(ctx, ns.ClientURL(), tmpl, []string{"openits-collector.health.collector-started.v1"})
 	if err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
@@ -114,8 +129,14 @@ func TestPublishUsesCustomTemplate(t *testing.T) {
 
 	at := time.Date(2026, 7, 12, 10, 0, 0, 0, time.UTC)
 	ceType := "openits-collector.health.collector-started.v1"
-	env := cloudevents.New(ceType, "//metro/cab-1", at, "application/json", []byte(`{"version":"dev"}`))
-	if err := p.Publish(ctx, env, ceType); err != nil {
+	env := cloudevents.New(cloudevents.Event{
+		CEType:      ceType,
+		Source:      "urn:openits:collector:us-ga:metro:d01:cab-1",
+		ContentType: "application/json",
+		OccurredAt:  at,
+		Data:        []byte(`{"version":"dev"}`),
+	})
+	if err := p.Publish(ctx, env, ceType, "cab-1"); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
 
@@ -125,7 +146,7 @@ func TestPublishUsesCustomTemplate(t *testing.T) {
 	}
 	defer nc.Close()
 	js, _ := jetstream.New(nc)
-	stream, err := js.Stream(ctx, "EDGE-METRO-CAB1")
+	stream, err := js.Stream(ctx, StreamNameForBinding("traffic.southeast.metro.>"))
 	if err != nil {
 		t.Fatalf("stream: %v", err)
 	}
@@ -140,5 +161,61 @@ func TestPublishUsesCustomTemplate(t *testing.T) {
 	want := "traffic.southeast.metro.health.collector-started.v1"
 	if msg.Subject() != want {
 		t.Fatalf("subject = %q, want %q", msg.Subject(), want)
+	}
+}
+
+func TestStreamNameForBinding(t *testing.T) {
+	for binding, want := range map[string]string{
+		"openits.us-ga.metro.d01.>":           "OPENITS-US-GA-METRO-D01",
+		"openits-collector.us-ga.metro.d01.>": "OPENITS-COLLECTOR-US-GA-METRO-D01",
+		"traffic.southeast.metro.>":           "TRAFFIC-SOUTHEAST-METRO",
+	} {
+		if got := StreamNameForBinding(binding); got != want {
+			t.Errorf("StreamNameForBinding(%q) = %q, want %q", binding, got, want)
+		}
+	}
+}
+
+func TestConnectProvisionsAStreamPerNamespace(t *testing.T) {
+	ns := startNATS(t)
+	ctx := context.Background()
+	tmpl, err := subject.New(subject.Config{},
+		subject.Identity{Region: "us-ga", Agency: "metro", AgencyUnit: "d01", Site: "cab-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := Connect(ctx, ns.ClientURL(), tmpl, []string{
+		"openits.signal-control.fault-raised.v1",
+		"openits-collector.health.collector-started.v1",
+	})
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer p.Close()
+
+	nc, err := nats.Connect(ns.ClientURL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer nc.Close()
+	js, _ := jetstream.New(nc)
+
+	// Each family gets its OWN stream: that is what makes differing retention
+	// and differing subject permissions expressible at all.
+	for name, wantSubject := range map[string]string{
+		"OPENITS-US-GA-METRO-D01":           "openits.us-ga.metro.d01.>",
+		"OPENITS-COLLECTOR-US-GA-METRO-D01": "openits-collector.us-ga.metro.d01.>",
+	} {
+		st, err := js.Stream(ctx, name)
+		if err != nil {
+			t.Fatalf("stream %s not provisioned: %v", name, err)
+		}
+		info, err := st.Info(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(info.Config.Subjects) != 1 || info.Config.Subjects[0] != wantSubject {
+			t.Errorf("stream %s subjects = %q, want [%q]", name, info.Config.Subjects, wantSubject)
+		}
 	}
 }

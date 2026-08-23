@@ -1,43 +1,66 @@
 // Package cloudevents builds the CE envelopes the collector publishes.
-// CE type = catalog ce-type verbatim; subject = tenant-spliced (ADR 0006);
-// id = content-addressed so JetStream dedup survives restarts.
+// CE type = catalog ce-type verbatim; source = the profile URN (ADR 0015);
+// id = deterministic, so JetStream dedup survives restarts and redundant
+// publishers agree without coordinating.
 package cloudevents
 
-import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
-	"time"
-)
+import "time"
 
-// Envelope is a structured-mode CloudEvent (JSON).
+// Envelope is one CloudEvent in binary mode: attributes ride as ce-* transport
+// headers and Data is the raw encoded body. There is no structured-JSON form —
+// the profile specifies binary mode for every event, so a single publish path
+// serves both the openits and health emitters.
 type Envelope struct {
-	SpecVersion     string          `json:"specversion"`
-	ID              string          `json:"id"`
-	Source          string          `json:"source"`
-	Type            string          `json:"type"`
-	Time            time.Time       `json:"time"`
-	DataContentType string          `json:"datacontenttype"`
-	Data            json.RawMessage `json:"data"`
+	SpecVersion     string
+	ID              string
+	Source          string
+	Type            string
+	Time            time.Time
+	DataContentType string
+	// DataSchema is empty for collector-owned schemas (ADR 0007), which omit
+	// the attribute rather than point at a registry they are not in.
+	DataSchema string
+	Data       []byte
 }
 
-// New builds an envelope with a deterministic content-addressed ID.
-func New(ceType, source string, occurredAt time.Time, contentType string, data []byte) Envelope {
-	at := occurredAt.UTC()
-	h := sha256.New()
-	for _, part := range [][]byte{
-		[]byte(ceType), []byte(source), []byte(at.Format(time.RFC3339Nano)), data,
-	} {
-		h.Write(part)
-		h.Write([]byte{0})
+// Event is the input to New: everything needed to build an envelope.
+type Event struct {
+	CEType      string
+	Source      string
+	ContentType string
+	DataSchema  string
+
+	// OccurredAt is the event's own time — the device's clock, or the
+	// observer's for events the collector infers. It becomes ce-time AND the
+	// stable-time the id is derived from.
+	OccurredAt time.Time
+
+	// Data is what goes on the wire. Identity is what the id is derived from:
+	// the same payload with producer-assigned leaves (sequence, observed-by)
+	// cleared, so the id describes the occurrence rather than the observation.
+	//
+	// They differ only for emitters whose payloads carry such leaves. When
+	// Identity is nil, Data is used — correct for the health schema, which has
+	// no producer-assigned fields to clear.
+	Data     []byte
+	Identity []byte
+}
+
+// New builds an envelope with a deterministic id.
+func New(ev Event) Envelope {
+	identity := ev.Identity
+	if identity == nil {
+		identity = ev.Data
 	}
+	at := ev.OccurredAt.UTC()
 	return Envelope{
 		SpecVersion:     "1.0",
-		ID:              hex.EncodeToString(h.Sum(nil)),
-		Source:          source,
-		Type:            ceType,
+		ID:              EventID(ev.Source, ev.CEType, at, identity),
+		Source:          ev.Source,
+		Type:            ev.CEType,
 		Time:            at,
-		DataContentType: contentType,
-		Data:            data,
+		DataContentType: ev.ContentType,
+		DataSchema:      ev.DataSchema,
+		Data:            ev.Data,
 	}
 }

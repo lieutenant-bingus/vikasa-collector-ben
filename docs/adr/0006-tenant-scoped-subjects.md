@@ -1,6 +1,16 @@
 # ADR 0006: Tenant-scoped NATS subjects; CE type = catalog ce-type
 
 **Status:** Partially superseded by [ADR 0009](0009-configurable-subject-templates.md) (2026-07-16)
+and further amended by [ADR 0011](0011-namespace-rooted-subject-spaces.md) (2026-08-08).
+Its CE-source clause is superseded by [ADR 0015](0015-ce-source-urn-scheme.md)
+(2026-08-17) — the actual URN scheme only; the subject-grammar and CE-type
+decisions below stand as written.
+**The default subject grammar described below is no longer the default.**
+[ADR 0011](0011-namespace-rooted-subject-spaces.md) replaced it outright with
+a seven-token, namespace-rooted grammar, so the body's statement that ADR
+0009's default reproduces this ADR's scheme exactly was true in 2026-07-16
+and is false today. The body is left as written per the immutability
+convention; `internal/subject`'s `DefaultTemplate` is the live answer.
 
 The subject *grammar* below is now the operator's, configured per deployment;
 ADR 0009's default reproduces it exactly. The identity decisions — CE `type` =

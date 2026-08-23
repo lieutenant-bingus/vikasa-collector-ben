@@ -3,7 +3,6 @@ package app
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"os"
@@ -67,7 +66,10 @@ func TestEndToEndHealthEventsReachJetStream(t *testing.T) {
 
 	// Config file.
 	cfgYAML := `
+collector_id: metro-cab-1-collector
+region: us-ga
 agency: metro
+agency_unit: d01
 site: cab-1
 model_version: openits/v1
 devices:
@@ -89,10 +91,11 @@ devices:
 	}
 	defer nc.Close()
 	seen := make(chan string, 64)
-	sub, err := nc.Subscribe("openits.metro.cab-1.>", func(m *nats.Msg) {
-		var env cloudevents.Envelope
-		if json.Unmarshal(m.Data, &env) == nil {
-			seen <- m.Subject + "|" + env.Type
+	sub, err := nc.Subscribe(">", func(m *nats.Msg) {
+		// Binary mode: the body is the raw payload and the CloudEvents
+		// attributes ride as ce-* headers.
+		if ceType := m.Header.Get("ce-type"); ceType != "" {
+			seen <- m.Subject + "|" + ceType
 		}
 	})
 	if err != nil {
@@ -120,7 +123,10 @@ devices:
 		select {
 		case s := <-seen:
 			parts := strings.SplitN(s, "|", 2)
-			if !strings.HasPrefix(parts[0], "openits.metro.cab-1.") {
+			// Both roots are legitimate now; health lives on its own
+			// (ADR 0011). What matters is that everything stays under the
+			// tenant path.
+			if !strings.Contains(parts[0], ".us-ga.metro.d01.") {
 				t.Fatalf("event on unexpected subject %q", parts[0])
 			}
 			if _, tracked := want[parts[1]]; tracked {
@@ -171,8 +177,9 @@ func TestRunRejectsUnparseableSubjectTemplate(t *testing.T) {
 	}
 }
 
-// TestUnclaimedDomainEventIsDroppedLoudly covers spec §7: an event no
-// emitter claims must be dropped loudly (metric + log), never silently.
+// TestUnclaimedDomainEventIsDroppedLoudly covers the loud-drop rule stated
+// in README.md: an event no emitter claims must be dropped loudly (metric +
+// log), never silently.
 //
 // This matters right now, not hypothetically: only the collector-owned
 // health emitter is wired today (see Run's emitter chain comment); every

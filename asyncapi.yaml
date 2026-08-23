@@ -8,19 +8,26 @@
 # namespace `openits-collector.health.*`.
 #
 # Unlike the catalog's bare addresses, addresses here are tenant-parameterized:
-# the CE `type` is the schema identity, while the NATS subject splices
-# agency/site in after the first token so cabinets can be routed and
-# aggregated without parsing payloads (ADR 0006).
+# the CE `type` is the schema identity, while the NATS subject roots the
+# collector's own event namespace and splices region/agency/agency_unit in
+# after it, so cabinets can be routed and aggregated without parsing payloads
+# (ADR 0009's operator-owned grammar, ADR 0011's namespace-rooted split).
 #
-# The addresses below show the DEFAULT subject rendering. Subject grammar is
-# operator-configurable (ADR 0009), so a deployment with a custom template
-# publishes these same ce-types on subjects of its own shape. The ce-type —
-# the channel key, and the CloudEvent `type` — is what stays constant, and is
-# the schema identity consumers should match on.
+# The addresses below show the DEFAULT subject rendering
+# ("{namespace}.{region}.{agency}.{agency_unit}.{service}.{device_id}.{event}",
+# internal/subject.DefaultTemplate) — no {site} token (dropped from the
+# default grammar) and no {version} token (the ce-type already carries it).
+# Subject grammar is operator-configurable (ADR 0009), so a deployment with a
+# custom template publishes these same ce-types on subjects of its own shape.
+# The ce-type — the channel key, and the CloudEvent `type` — is what stays
+# constant, and is the schema identity consumers should match on.
 #
-# Kept honest by TestAsyncAPICoversEveryEmittedType: every ce-type the health
-# emitter can produce must appear here, with payload properties matching the
-# bytes it actually emits.
+# Kept honest by TestAsyncAPIAddressesMatchRenderedSubjects
+# (internal/docs/asyncapi_test.go), which renders each address below through
+# the real internal/subject.Template and fails if they drift, and by
+# TestAsyncAPICoversEveryEmittedType: every ce-type the health emitter can
+# produce must appear here, with payload properties matching the bytes it
+# actually emits.
 
 asyncapi: 3.0.0
 
@@ -45,25 +52,31 @@ servers:
 
 channels:
   openits-collector.health.device-status-changed.v1:
-    address: openits.{agency}.{site}.health.device-status-changed.v1
+    address: openits-collector.{region}.{agency}.{agency_unit}.health.{device_id}.device-status-changed
     title: health — device-status-changed
     parameters:
+      region:
+        description: Tenant region token; must match ^[a-z0-9][a-z0-9-]*$.
       agency:
         description: Tenant agency token; must match ^[a-z0-9][a-z0-9-]*$.
-      site:
-        description: Cabinet/site token; must match ^[a-z0-9][a-z0-9-]*$.
+      agency_unit:
+        description: Tenant agency-unit token; must match ^[a-z0-9][a-z0-9-]*$.
+      device_id:
+        description: Device this status refers to, matching its configured id.
     messages:
       openits-collector.health.device-status-changed.v1:
         $ref: '#/components/messages/openits-collector.health.device-status-changed.v1'
 
   openits-collector.health.collector-started.v1:
-    address: openits.{agency}.{site}.health.collector-started.v1
+    address: openits-collector.{region}.{agency}.{agency_unit}.health.collector.collector-started
     title: health — collector-started
     parameters:
+      region:
+        description: Tenant region token; must match ^[a-z0-9][a-z0-9-]*$.
       agency:
         description: Tenant agency token; must match ^[a-z0-9][a-z0-9-]*$.
-      site:
-        description: Cabinet/site token; must match ^[a-z0-9][a-z0-9-]*$.
+      agency_unit:
+        description: Tenant agency-unit token; must match ^[a-z0-9][a-z0-9-]*$.
     messages:
       openits-collector.health.collector-started.v1:
         $ref: '#/components/messages/openits-collector.health.collector-started.v1'
@@ -116,8 +129,9 @@ components:
       summary: The collector booted.
       description: |
         Emitted once at startup, before any device is polled. The CE source is
-        the cabinet itself (//<agency>/<site>) with no device segment, since
-        the subject of the event is the collector rather than a device.
+        urn:openits:collector:<region>:<agency>:<agency_unit>:<site> — the
+        collector is the subject of its own event, so SourceFor substitutes
+        the tenant's site for the id it has no device to supply.
       headers:
         $ref: '#/components/schemas/cloudEventHeaders'
       payload:
@@ -142,21 +156,29 @@ components:
         ce-type:
           type: string
           description: |
-            Schema identity, verbatim. Note this is NOT the NATS subject: the
-            subject splices agency/site in after the first token.
+            Schema identity, verbatim. Note this is NOT the NATS subject: see
+            this file's header for the subject grammar, which the addresses
+            below are asserted against.
         ce-id:
           type: string
           description: |
-            Content-addressed SHA-256 over (type, source, occurred-at, data).
-            Identical inputs yield an identical id, so JetStream dedup holds
-            across collector restarts.
+            Deterministic id per openits-models' ce-id-spec.md, NOT a bare
+            content hash: digest = SHA-256(source ‖ ce-type ‖ stable-time ‖
+            payload-bytes), then id = ULID(timestamp = stable-time-ms,
+            randomness = digest[0:10]), rendered as 26-character Crockford
+            base32 (internal/cloudevents.EventID). stable-time is the event's
+            occurred-at. Identical inputs yield an identical id, so JetStream
+            dedup holds across collector restarts.
         ce-source:
           type: string
           description: |
-            //<agency>/<site>/<device-id>, or //<agency>/<site> for events
-            about the collector itself. Device identity lives here rather than
-            in the subject, which would explode subject cardinality for no
-            routing benefit.
+            The profile URN (ADR 0015):
+            urn:openits:<entity-kind>:<region>:<agency>:<agency_unit>:<id>,
+            built by internal/cloudevents.SourceFor. entity-kind is the
+            profile's vocabulary, not the collector's device kind (asc becomes
+            controller, dms becomes sign). Device-less events — collector
+            self-events — substitute the tenant's site as the id, so the id
+            slot is always present.
         ce-time:
           type: string
           format: date-time
