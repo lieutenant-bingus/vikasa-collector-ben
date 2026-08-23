@@ -22,7 +22,8 @@ none of this during a pin bump.
 
 - [Adapters and `sdk/` never import openits-models](../../../docs/reference/invariants.md#adapters-and-sdk-never-import-openits-models) — inverted here: `internal/wire` is the one place allowed to; that's this skill's whole reason to exist.
 - [The openits-models pin carries no `replace` directive](../../../docs/reference/invariants.md#the-openits-models-pin-carries-no-replace-directive)
-- [The openits-models pin is main HEAD, not a stale tag](../../../docs/reference/invariants.md#the-openits-models-pin-is-main-head-not-a-stale-tag)
+- [The openits-models pin names a release tag](../../../docs/reference/invariants.md#the-openits-models-pin-names-a-release-tag) — CI-enforced by Rule D; `go get @vX.Y.Z`, never `@main`.
+- [The pinned release is a current one, not an old tag](../../../docs/reference/invariants.md#the-pinned-release-is-a-current-one-not-an-old-tag) — not CI-enforced; check the release list before assuming the current pin is the newest.
 - [Every mapped ce-type has a byte-exact golden](../../../docs/reference/invariants.md#every-mapped-ce-type-has-a-byte-exact-golden)
 - [Subjects are operator-configurable; the CloudEvents envelope stays canonical](../../../docs/reference/invariants.md#subjects-are-operator-configurable-the-cloudevents-envelope-stays-canonical) — `ce-type`, `ce-source`, and `ce-id` never derive from the operator's subject template, or vice versa.
 
@@ -55,15 +56,18 @@ none of this during a pin bump.
 
 ### Adopting a new openits-models release
 
-1. `grep openits-models go.mod` for the current pin — a main-HEAD
-   pseudo-version, never a tag, never a `replace`.
+1. `grep openits-models go.mod` for the current pin — a semver release
+   tag, never a pseudo-version, never a `replace`. Then list the releases
+   upstream and read the changelog for every one between the current pin
+   and the one you are adopting; a `feat!` there is the whole reason this
+   step exists.
 2. Probe the new module (step 1 above) and diff its release's
    `bindings/nats/asyncapi.yaml` ce-type set against the emitter's current
    `CETypes()`.
-3. `go get -u github.com/Vikasa2M/openits-models@main`. While only one
-   release compiles at a time, edit `internal/wire/openits` in place; copy
-   to `internal/wire/<version>` only once the fleet genuinely needs two
-   releases compiled together.
+3. `go get github.com/Vikasa2M/openits-models@vX.Y.Z` — the chosen tag,
+   never `@main` and never `-u`. While only one release compiles at a time,
+   edit `internal/wire/openits` in place; copy to `internal/wire/<version>`
+   only once the fleet genuinely needs two releases compiled together.
 4. Add or adjust mappings for anything the probe turned up, and claim any
    newly-available ce-types that were previously dropping (the drop
    warnings name the candidates) — follow "Adding a ce-type mapping"

@@ -42,18 +42,23 @@ below) instead of a collection blocker upstream.
 
 **What "versioned emitter" means.** `internal/wire/openits` is the one
 package implementing `wire.Emitter` today, and it is deliberately
-unsuffixed rather than named for a release. [ADR 0010](../adr/0010-openits-models-lockstep-pre-v1.md)
-pins openits-models at `main` HEAD as a pseudo-version — never a `replace`
-directive — while both repos move in lockstep pre-v1, so exactly one
-models version is ever compiled into the collector at a time and one
-unsuffixed package is correct. The one-package-per-pinned-release split
-(`internal/wire/openits_v1`, `internal/wire/openits_v2`, and so on, with
-config picking one at boot) starts at the first tagged semver pin, which is
-what lets a fleet run mixed model versions across deployments without a
-single binary needing to compile in only one. Until that point, a models
-change is still exactly the one-package edit ADR 0002 exists to guarantee
-— it just doesn't yet need to coexist with a second version in the same
-binary.
+unsuffixed rather than named for a release. Exactly one models version is
+ever compiled into the collector at a time — the pin names a single semver
+release tag ([ADR 0018](../adr/0018-tagged-model-pins.md)), never a
+`replace` directive, and every deployment runs one catalog version
+([ADR 0005](../adr/0005-one-catalog-version-per-instance.md)) — so one
+unsuffixed package is correct.
+
+The one-package-per-release split (`internal/wire/openits_v1`,
+`internal/wire/openits_v2`, and so on, with config picking one at boot) is
+what would let a fleet run mixed model versions across deployments without a
+single binary compiling in only one. It has not started, and **it is not
+gated on the pin being tagged.** [ADR 0010](../adr/0010-openits-models-lockstep-pre-v1.md)
+originally coupled the two; ADR 0018 decoupled them, because they answer
+different questions — how the collector *adopts* a release, versus how many
+releases it *compiles at once*. The split begins when something genuinely
+needs two releases in one binary. Until then a models change is exactly the
+one-package edit ADR 0002 exists to guarantee.
 
 ## What the envelope carries
 

@@ -1,4 +1,4 @@
-.PHONY: build test vet lint-boundary lint-boundary-selftest lint-boundary-replace-selftest lint-docs check
+.PHONY: build test vet lint-boundary lint-boundary-selftest lint-boundary-replace-selftest lint-boundary-tag-selftest lint-docs check
 
 build:
 	go build ./...
@@ -63,7 +63,38 @@ lint-boundary-replace-selftest:
 	fi; \
 	echo "lint-boundary replace-rule selftest: Rule C fires correctly"
 
+# Prove Rule D can actually fail. Points the rule at a fixture go.mod pinning
+# the model module at the exact main-HEAD pseudo-version this repo carried
+# before ADR 0018; if that does not trip, the rule is inert and its green
+# result on the real go.mod means nothing.
+#
+# This target has already paid for itself once: the first version of Rule D
+# matched only "-<timestamp>" and so ignored the "-0.<timestamp>" form that
+# `go get @main` actually produced here. The lint passed, the pin was still
+# untagged, and only this selftest said so.
+#
+# Same reasoning as the targets above for grepping rather than trusting the
+# exit status: lint-boundary.sh exits 2 on an unreadable LINT_GOMOD, which a
+# bare exit-status check cannot tell apart from Rule D firing.
+lint-boundary-tag-selftest:
+	@tmp=$$(mktemp -d); \
+	printf 'module example.com/x\n\ngo 1.26\n\nrequire (\n\tgithub.com/Vikasa2M/openits-models v0.2.3-0.20260807005833-235e8780f44c\n)\n' > $$tmp/go.mod; \
+	out=$$(LINT_GOMOD=$$tmp/go.mod ./scripts/lint-boundary.sh 2>&1); \
+	status=$$?; \
+	rm -rf $$tmp; \
+	if [ $$status -eq 0 ]; then \
+		echo "SELFTEST FAILED: lint-boundary did not flag an untagged pseudo-version pin" >&2; \
+		printf '%s\n' "$$out" >&2; \
+		exit 1; \
+	fi; \
+	if ! printf '%s\n' "$$out" | grep -q 'BOUNDARY VIOLATION (untagged pin)'; then \
+		echo "SELFTEST FAILED: lint-boundary failed, but not with Rule D's untagged-pin violation -- the failure proves nothing about the rule" >&2; \
+		printf '%s\n' "$$out" >&2; \
+		exit 1; \
+	fi; \
+	echo "lint-boundary tag-rule selftest: Rule D fires correctly"
+
 lint-docs:
 	./scripts/lint-docs.sh
 
-check: vet test lint-boundary lint-boundary-selftest lint-boundary-replace-selftest lint-docs
+check: vet test lint-boundary lint-boundary-selftest lint-boundary-replace-selftest lint-boundary-tag-selftest lint-docs

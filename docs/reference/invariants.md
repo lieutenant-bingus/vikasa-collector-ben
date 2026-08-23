@@ -33,13 +33,14 @@ left blank, so the gap is visible instead of implied.
 |---|---|---|
 | Adapters and `sdk/` never import openits-models | ADR 0002 | `scripts/lint-boundary.sh` |
 | The openits-models pin carries no `replace` directive | ADR 0010 | `scripts/lint-boundary.sh` |
-| The openits-models pin is main HEAD, not a stale tag | ADR 0010 | Review (manual) |
+| The openits-models pin names a release tag | ADR 0018 | `scripts/lint-boundary.sh` |
+| The pinned release is a current one, not an old tag | ADR 0018 | Review (manual) |
 | Absence of evidence is never a state change | ADR 0013 | `internal/synth/synth.go`, `TestFailedFacetSuspendsDiffing`, `TestFailedFaultReadNeverClears`, `TestFailedDetectorReadEmitsNothing`, `TestDMSFailedReadEmitsNothing` |
 | Config is the trust boundary; boot fails on the unrecognized | ADR 0014 | `internal/config` |
 | Subjects are operator-configurable; the CloudEvents envelope stays canonical | ADR 0009, ADR 0011, ADR 0015 | `internal/subject`, `internal/cloudevents`, `internal/config` |
 | Every mapped ce-type has a byte-exact golden | ADR 0008 | `internal/wire/openits/golden_test.go` |
 | No fixtures, no merge | ADR 0008 | Review (manual) — automated by the conformance kit in successor A |
-| Every guard must be shown to fail | Practice (no ADR; promoted here) | `make lint-boundary-selftest`, `make lint-boundary-replace-selftest` |
+| Every guard must be shown to fail | Practice (no ADR; promoted here) | `make lint-boundary-selftest`, `make lint-boundary-replace-selftest`, `make lint-boundary-tag-selftest` |
 
 ## Adapters and `sdk/` never import openits-models
 
@@ -65,21 +66,51 @@ tempts you toward when the two repos are moving in lockstep pre-v1.
 `scripts/lint-boundary.sh`'s Rule C checks `go.mod` for exactly that and
 fails the build if it finds one.
 
-## The openits-models pin is main HEAD, not a stale tag
+## The openits-models pin names a release tag
 
-Decided by [ADR 0010](../adr/0010-openits-models-lockstep-pre-v1.md).
+Decided by [ADR 0018](../adr/0018-tagged-model-pins.md), which supersedes
+[ADR 0010](../adr/0010-openits-models-lockstep-pre-v1.md)'s pinning clause.
+
+Violating this looks like `go.mod` carrying a pseudo-version — the
+`v0.2.3-0.20260807005833-235e8780f44c` shape that `go get @main` produces —
+instead of a release tag. `scripts/lint-boundary.sh`'s Rule D matches that
+shape and fails the build, and `make check` runs it on every CI build.
 
 This is a separate rule from "no `replace` directive," not a restatement of
-it, because the two halves have genuinely different enforcement status. A
-pin to an old tagged release with no `replace` directive at all would pass
-Rule C cleanly — the lint checks the *shape* of the dependency line, not
-its freshness. Violating this looks like `go.mod` quietly falling behind
-openits-models' `main` for weeks after a `go get` was skipped, so the
-catalog the collector encodes against drifts from the catalog the rest of
-the fleet assumes. Nothing in CI catches that today; it is caught, if at
-all, by a maintainer noticing the pseudo-version's commit hash or date is
-stale during review. Marked `Review (manual)` rather than left implied by
-the row above.
+it: Rule C checks that the dependency is not redirected at a local checkout,
+Rule D checks that it names a release rather than a branch commit. A pin can
+violate either without violating the other.
+
+The rule this replaces was "the pin is main HEAD, not a stale tag," and it
+was marked `Review (manual)`. It did not hold — the pin sat two releases
+behind, past a breaking change, at a commit that was a CI dependency bump in
+the models repo rather than a models change at all. ADR 0018's Context has
+the account. The relevant part here is *why* review could not catch it: a
+stale branch pin has no observable moment of violation, so there was nothing
+for a reviewer to see on any PR that did not touch `go.mod`. Rule D exists
+because the shape of a version string is something a machine can check and a
+reviewer reliably will not.
+
+## The pinned release is a current one, not an old tag
+
+Decided by [ADR 0018](../adr/0018-tagged-model-pins.md).
+
+This is the residue Rule D cannot cover, kept as its own row rather than
+folded into the one above, because the enforcement status genuinely differs.
+Violating this looks like `go.mod` naming a real, valid tag that is several
+releases old, while the catalog the rest of the fleet assumes has moved on.
+Rule D passes cleanly on exactly that — it checks the version string's
+*shape*, never its recency.
+
+Nothing in CI catches it, and deliberately so: answering "is this the newest
+release" requires the network, which would make the build irreproducible and
+would hand the decision of when to adopt a release to whoever merged it
+upstream. Marked `Review (manual)` rather than left implied by the row above.
+What makes it tractable now, where the branch-tracking version was not, is
+that a release is a dated artefact with a changelog — and
+`.github/dependabot.yml` already treats openits-models as an ordinary gomod
+dependency, so a new release surfaces as a pull request after its cooldown
+rather than depending on someone remembering to look.
 
 ## Absence of evidence is never a state change
 

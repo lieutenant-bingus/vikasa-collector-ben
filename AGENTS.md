@@ -32,13 +32,18 @@ for exact wording:
 - The dependency pin carries no `replace` directive — see [that
   rule](docs/reference/invariants.md#the-openits-models-pin-carries-no-replace-directive).
   CI-enforced.
-- The pin also has to actually track openits-models' `main` HEAD, not
-  quietly go stale, while the two repos move in lockstep pre-v1 — see
+- The pin names a release tag, never a `main`-HEAD pseudo-version — see
   [that
-  rule](docs/reference/invariants.md#the-openits-models-pin-is-main-head-not-a-stale-tag).
-  **Not CI-enforced** — caught by review, if at all. Tagged pins and
-  versioned emitter packages return at openits-models v1.0.0, or sooner if
-  an outside consumer pins it.
+  rule](docs/reference/invariants.md#the-openits-models-pin-names-a-release-tag).
+  CI-enforced (ADR 0018; the earlier branch-tracking policy went two
+  releases stale without anything noticing). Whether the tag is a *current*
+  one is [a separate
+  row](docs/reference/invariants.md#the-pinned-release-is-a-current-one-not-an-old-tag)
+  and is **not** CI-enforced — a lint can check the version string's shape,
+  not its recency.
+- Versioned emitter packages (`internal/wire/openits_v1`, …) have not
+  started and are no longer tied to tagged pins: they begin when a fleet
+  genuinely needs two model releases compiled into one binary.
 
 The synth engine's iron rule concerns what a differ or adapter may do with
 a failed or absent facet read — see [absence of

@@ -1,6 +1,13 @@
 # ADR 0010: Track openits-models HEAD in lockstep until v1
 
-**Status:** Accepted (2026-08-08)
+**Status:** Accepted (2026-08-08). **Its pinning clause is superseded by
+[ADR 0018](0018-tagged-model-pins.md)** (2026-08-23): the pin names a release
+tag, not a `main`-HEAD pseudo-version, and the "pin is main HEAD, not a stale
+tag" rule this record created is gone with it — it went two releases stale
+without anything noticing, which is ADR 0018's Context. Two clauses here
+survive unchanged: no `replace` directive, and the versioned-emitter-package
+split starting when a fleet needs two model releases in one binary. The body
+below stands as written under the immutability convention.
 **Amends:** 0002 (its dependency-pinning clause only; the boundary rule is
 untouched). 0005 stands as written.
 

@@ -10,39 +10,51 @@ the mechanics of adding a `ceTypeFor` entry and an `Encode` case.
 
 ## The pin mechanism
 
-The collector pins openits-models at a **main-HEAD pseudo-version**, not a
-tagged release — confirm it yourself:
+The collector pins openits-models at a **semver release tag** — confirm it
+yourself:
 
 ```
 $ grep openits-models go.mod
-github.com/Vikasa2M/openits-models v0.2.3-0.20260807005833-235e8780f44c
+	github.com/Vikasa2M/openits-models v0.3.0
 ```
 
-That string is what `go get github.com/Vikasa2M/openits-models@main`
-resolved to on the day of the last bump: a real, reproducible module
-version (a pseudo-version names an immutable commit) that happens to look
-nothing like a semver tag. [ADR 0010](../adr/0010-openits-models-lockstep-pre-v1.md)
-is why: both repos are owned by the same team, pre-v1, moving in lockstep,
-and requiring a tag per pin would turn every models fix found while
-writing an emitter into a release round trip. The rule holds until
-openits-models reaches v1.0.0, or sooner if any of ADR 0010's three expiry
-triggers fires first (an outside consumer pins openits-models, the
-collector needs two model versions compiled side by side, or
-openits-models adopts a compatibility promise between releases) — at that
-point the collector returns to tagged pins and a versioned
-`internal/wire/<version>` package layout with no further ADR needed.
+[ADR 0018](../adr/0018-tagged-model-pins.md) is why, and the short version is
+that the previous policy failed. Until 2026-08-23 the pin was a `main`-HEAD
+pseudo-version ([ADR 0010](../adr/0010-openits-models-lockstep-pre-v1.md)),
+paired with a review-only rule that it stay current. It didn't: the pin sat
+two releases behind, past a breaking change, at a commit that was a CI
+dependency bump in the models repo rather than a models change at all. A
+stale branch pin has no observable moment of violation, so there was nothing
+for review to catch.
+
+Tagged pins make the shape checkable, and `scripts/lint-boundary.sh`'s Rule D
+now fails the build on a pseudo-version. Adopting a release becomes a
+deliberate, dated act with a changelog to read — which is the point, because
+that changelog is where a `feat!` announces itself.
 
 **What did not change:** a bump is still never a `replace` directive.
-`scripts/lint-boundary.sh`'s Rule C fails the build on one in `go.mod`,
-lockstep or not — see
-[the "no `replace` directive" row in `invariants.md`](../reference/invariants.md#the-openits-models-pin-carries-no-replace-directive),
-whose neighboring row covers the other, still-manual half of this rule
-(staying on `main`, not a stale pin).
+`scripts/lint-boundary.sh`'s Rule C fails the build on one in `go.mod` — see
+[the "no `replace` directive" row in `invariants.md`](../reference/invariants.md#the-openits-models-pin-carries-no-replace-directive).
+
+**What CI still will not tell you:** whether the tag you are on is the
+*newest* tag. Rule D checks the version string's shape, never its recency —
+that stays [a review item](../reference/invariants.md#the-pinned-release-is-a-current-one-not-an-old-tag).
+Dependabot proposes gomod bumps after a 14-day cooldown, so a new release
+usually arrives as a pull request, but the decision to adopt is yours.
+
+**Versioned emitter packages are a separate question.** ADR 0010 tied
+`internal/wire/openits_v1`-style packages to tagged pins; ADR 0018 untied
+them. Tagged pins are here now, versioned packages are not, and they start
+only when a fleet genuinely needs two models releases in one binary. Edit
+`internal/wire/openits` in place.
 
 ## Procedure
 
-1. **Check the current pin.** `grep openits-models go.mod` — the version
-   you're moving away from.
+1. **Check the current pin, then read what happened since.**
+   `grep openits-models go.mod` gives the tag you're moving away from; the
+   release notes between it and your target are the cheapest warning you
+   will get about a breaking change. A `feat!` there means step 2 is not
+   optional.
 2. **Probe the new module before writing any code.** openits-models'
    prose and its generated code have disagreed before, so treat the
    pinned module as ground truth, not its docs. Follow
@@ -58,13 +70,14 @@ whose neighboring row covers the other, still-manual half of this rule
 3. **Move the pin.**
 
    ```bash
-   go get -u github.com/Vikasa2M/openits-models@main
+   go get github.com/Vikasa2M/openits-models@vX.Y.Z
    ```
 
-   While lockstep holds, only one models release is ever compiled in, so
-   edit the existing `internal/wire/openits` package in place — do not
-   create a version-suffixed package for this. That layout starts at the
-   first *tagged* pin, per ADR 0010.
+   The chosen tag, explicitly — never `@main`, and never `-u`, which would
+   move every other dependency at the same time and bury the models change
+   in the diff. Only one models release is ever compiled in, so edit the
+   existing `internal/wire/openits` package in place; the version-suffixed
+   layout is not what tagged pinning turns on (see above).
 4. **Adjust mappings and `ce-dataschema` constants** for anything the
    probe in step 2 turned up, and claim any newly-available ce-types that
    were previously dropping — the emitter's drop warnings name the
@@ -108,7 +121,8 @@ section](map-an-event-to-the-wire.md#verify) for what each command checks
 and why. Worth calling out for a pin bump specifically: `make check`'s
 `scripts/lint-boundary.sh` run is also what catches a `replace` directive
 left behind from local debugging during the bump — the exact shortcut ADR
-0010 still forbids.
+0010 still forbids — and Rule D, which fails if the pin came out as a
+pseudo-version because `@main` slipped into the `go get`.
 
 ## What this does not check for you
 
@@ -121,3 +135,12 @@ tracked, not silent — see
 [`docs/README.md`'s known-gaps entry for it](../README.md#the-code-does-not-meet-a-bar-the-docs-correctly-state).
 Step 2's probe is the only thing standing in for that check today, which
 is why it isn't optional.
+
+The v0.3.0 adoption is the worked example of why. It moved two things no
+compiler could see: the `object-class` identity hierarchy was hoisted from
+`openits-perception-types` into `openits-types`, so nine identityref strings
+the emitter builds by concatenation were silently pointing at identities that
+no longer existed; and `openits-perception-events` revved, so four ce-types'
+`ce-dataschema` constants were pointing at a superseded registry revision.
+Both build cleanly. Both were found by probing the module and diffing the
+schema-registry revisions, exactly as steps 2 and 4 describe.

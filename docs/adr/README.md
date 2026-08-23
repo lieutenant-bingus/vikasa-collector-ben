@@ -23,5 +23,6 @@ immutable once accepted; reversals get a new ADR that supersedes the old.
 | [0015](0015-ce-source-urn-scheme.md) | The CE-source URN scheme (supersedes 0006's and 0009's CE-source clauses) |
 | [0016](0016-collector-as-transitional-shim.md) | The collector is a transitional shim; synthesis stays here |
 | [0017](0017-durable-synth-state.md) | Synth's previous state is durable, in the cabinet's own JetStream KV |
+| [0018](0018-tagged-model-pins.md) | The openits-models pin names a release tag (supersedes 0010's pinning clause) |
 
 Start at the [documentation hub](../README.md) for everything that is not a decision record.

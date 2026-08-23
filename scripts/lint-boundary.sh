@@ -96,8 +96,7 @@ for pkg in $pkgs; do
 done
 
 # ---- Rule C: no replace directive for the model module (ADR 0010) ----------
-# The pin is a main-HEAD pseudo-version while both repos move in lockstep. A
-# `replace` would make every developer's build depend on a local checkout, so
+# A `replace` would make every developer's build depend on a local checkout, so
 # CI would be testing a tree nobody else has. Rules A and B cannot see this:
 # a replaced module still imports cleanly.
 #
@@ -116,6 +115,45 @@ if grep -q -- "$forbidden" <<<"$replaces"; then
   fail=1
 fi
 
+# ---- Rule D: the model pin names a release tag (ADR 0018) ------------------
+# ADR 0010 pinned openits-models at main HEAD as a pseudo-version, and left
+# "is the pin still current" to review. Review did not catch it: the pin sat
+# two releases behind main, one of them breaking, until a documentation audit
+# noticed. ADR 0018 moved to tagged pins precisely so this rule could stop
+# being a matter of someone remembering.
+#
+# A pseudo-version is what `go get @main` produces and what `go get @vX.Y.Z`
+# does not, so the shape of the version string is the whole check. Go builds
+# them as <base><sep><14-digit UTC timestamp>-<12-hex commit>, where the
+# separator is "-" off a bare base version (v0.0.0-2026...-abc) but "." when
+# the base already carries a prerelease segment (v0.2.3-0.2026...-abc), which
+# is the form `go get @main` produced for this module. Matching only "-" made
+# the rule inert against the exact pin it exists to reject -- caught by
+# `make lint-boundary-tag-selftest`, which is why that target exists.
+#
+# Deliberately NOT a freshness check. Whether v0.3.0 is the newest release is
+# a question this script cannot answer offline, and one a lint that reached
+# the network could not answer reproducibly. Naming a tag is the part that is
+# checkable; choosing which tag stays a review decision, and ADR 0018 says so.
+pin=$(awk -v mod="$forbidden" '
+  /^require[[:space:]]*\(/          { inblock=1; next }
+  inblock && /^\)/                  { inblock=0; next }
+  inblock && $1 ~ mod               { print $2; exit }
+  $1 == "require" && $2 ~ mod       { print $3; exit }
+' "$gomod")
+
+pinstate="absent"
+if [ -n "$pin" ]; then
+  if [[ "$pin" =~ [-.][0-9]{14}-[0-9a-f]{12}$ ]]; then
+    echo "BOUNDARY VIOLATION (untagged pin): $gomod pins $forbidden at pseudo-version $pin, not a release tag (ADR 0018)" >&2
+    echo "  fix: go get $forbidden@vX.Y.Z" >&2
+    fail=1
+    pinstate="$pin (untagged)"
+  else
+    pinstate="$pin"
+  fi
+fi
+
 if [ "$checked" -eq 0 ] && [ "$direct" -eq 0 ]; then
   echo "lint-boundary: inspected 0 packages — the rule proved nothing" >&2
   exit 2
@@ -125,4 +163,4 @@ if [ "$fail" -ne 0 ]; then
   echo "lint-boundary: FAILED against $forbidden" >&2
   exit 1
 fi
-echo "lint-boundary: clean ($checked roots transitively, $direct packages for direct imports) against $forbidden"
+echo "lint-boundary: clean ($checked roots transitively, $direct packages for direct imports, pin $pinstate) against $forbidden"

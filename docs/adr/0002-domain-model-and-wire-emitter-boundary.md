@@ -2,7 +2,12 @@
 
 **Status:** Accepted (2026-07-12)
 Amended by [ADR 0010](0010-openits-models-lockstep-pre-v1.md) (2026-08-08) — its
-dependency-pinning clause only; the boundary rule is untouched.
+dependency-pinning clause only; the boundary rule is untouched. That amendment
+is itself superseded by [ADR 0018](0018-tagged-model-pins.md) (2026-08-23),
+which restores this record's original position: openits-models is consumed as
+a tagged semver release. The versioned-emitter-package clause below is
+unaffected and has not started — see ADR 0018's Decision for why tagged pins
+and versioned packages were decoupled.
 
 ## Context
 The collector must survive three model-change scenarios: (S1) codegen
