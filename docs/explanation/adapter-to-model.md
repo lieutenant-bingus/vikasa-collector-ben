@@ -208,14 +208,34 @@ vendor name, and there is no `Vendor` field anywhere in the package
 
 This is a governance rail, not just an implementation detail: a facet
 exists for a device **kind** — a signal controller, a DMS, a perception
-sensor — never for one vendor's product line. If a contributor's vendor
-adapter needs to represent something no existing facet captures, the
-options are a new facet type reviewed at the kind level, or the
-`Attributes map[string]string` escape hatch that wire emitters can map or
-drop explicitly — not a one-off field bent to fit that vendor's controller.
-A facet invented for one vendor's convenience means the domain model is
-being bent to fit a device, and the next vendor's adapter for the same
-device kind inherits the bend whether it wants to or not.
+sensor — never for one vendor's product line. A facet invented for one
+vendor's convenience means the domain model is being bent to fit a device,
+and the next vendor's adapter for the same device kind inherits the bend
+whether it wants to or not.
+
+So if your adapter reads something no existing facet captures, there is
+exactly one route: propose a new facet, or a new field on an existing one,
+argued at the device-kind level — "every ASC has this," not "our controller
+reports this." [`add-a-domain-facet.md`](../how-to/add-a-domain-facet.md) is
+that workflow.
+
+**There is deliberately no generic extension mechanism** — no attribute bag,
+no `map[string]string` passthrough, nothing an adapter can populate without
+a reviewed type. That is a real constraint and it is worth knowing why it
+holds rather than discovering it mid-PR. An untyped bag would arrive at
+`internal/wire` as keys the emitter has never seen, and the emitter's whole
+discipline is making an explicit map-or-drop decision per value (see
+[the drop rule](wire-boundary.md#the-drop-rule-decline-rather-than-approximate)).
+It cannot decide about a key nobody declared, so the bag would either be
+dropped wholesale — making it pointless — or forwarded unexamined, which is
+how vendor-shaped data ends up on a catalog-shaped bus.
+
+The corollary is that a reading with no home in the catalog may simply have
+nowhere to go yet, and that is an acceptable answer. The collector adapts to
+the catalog rather than the reverse
+([ADR 0016](../adr/0016-collector-as-transitional-shim.md)); a genuinely
+missing domain concept is argued upstream on its own merits, not routed
+around with a passthrough field here.
 
 ## Test coverage of the absence path
 

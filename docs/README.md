@@ -38,7 +38,7 @@ empties out as that work ships.
 | Know what will fail my PR | [`reference/invariants.md`](reference/invariants.md) for the rules and what enforces them, [`reference/test-requirements.md`](reference/test-requirements.md) for the testing bar per contribution type |
 | Understand why it's built this way | [`adr/README.md`](adr/README.md) — the accepted decision records, in order |
 | Understand how the pieces fit together, end to end | [`explanation/architecture.md`](explanation/architecture.md) — the document a newcomer reads first in this tier; it links onward to the other four |
-| Configure a deployment | [`reference/configuration.md`](reference/configuration.md) — every `collector.yaml` field: type, default, validation |
+| Configure a deployment | [`reference/configuration.md`](reference/configuration.md) — every `collector.yaml` field and every command-line flag: type, default, validation |
 | Deploy a collector to a fleet | [`how-to/deploy-a-collector.md`](how-to/deploy-a-collector.md) — honest stub; the deploy path isn't built yet (successor B) |
 | Know what is already known-broken | [Known gaps and successor work](#known-gaps-and-successor-work) — every open finding the truth pass left behind, and what closing each one involves |
 
@@ -87,6 +87,40 @@ a documented channel nothing can emit. *Closing it:* build the equivalent for
 `internal/wire/openits`, reading the pinned release's own
 `bindings/nats/asyncapi.yaml` from the module cache and asserting both
 directions. Evidence: ledger `:1165-1180`, `:3210`.
+
+**46 catalog ce-types are declared upstream and unmapped, 17 of them in
+services the collector already serves.** [ADR 0016](adr/0016-collector-as-transitional-shim.md)
+makes this a *collector* gap by definition: the collector adapts to the
+catalog, so a ce-type the pinned release declares and `internal/wire/openits`
+never mapped is work owed here, not evidence the catalog is wrong. Against
+the v0.3.0 pin the emitter maps 26 of the catalog's 72 ce-types. Most of the
+remainder belong to services the collector does not model at all — `ess`,
+`ramp-metering`, `reversible-lane`, `rsu` — and are blocked on a domain
+facet and an adapter, not on a mapping. The 17 that are not so blocked sit in
+services already wired end to end:
+
+- `openits.traffic-sensor.traffic-sensor-status-report.v1` and
+  `openits.traffic-sensor.queue-state-changed.v1`
+- three `openits.cctv.*` command/lockout events
+  (`ptz-move-commanded`, `ptz-preset-recalled`, `lockout-denied`)
+- twelve `openits.signal-control.*` events — phase, overlap, pedestrian,
+  coordination, detector-transition, comm-health, TSP and TSAM
+
+Those three groups are not one task. The CCTV ones describe *commands*, and
+nothing in the collector commands anything (`sdk/adapter.Commander` has no
+dispatch path, the same shape as the `EventReader` gap below). Most of the
+signal-control ones are high-rate per-cycle events an SNMP poller structurally
+cannot observe — they want a controller pushing, which is the end state
+[ADR 0016](adr/0016-collector-as-transitional-shim.md) expects to make the
+collector unnecessary. `traffic-sensor-status-report` is the one ADR 0016
+names explicitly and the most tractable: it is a periodic state report for a
+device kind already modelled, differed and published.
+
+*Closing it:* per ce-type, not in bulk — each needs the domain event, the
+`ceTypeFor` entry, the `Encode` case and a golden. Start with
+`traffic-sensor-status-report`. The reason the list has to be recomputed by
+hand rather than read off a check is the entry above: there is no
+catalog-conformance test, so nothing tells you when this list changes.
 
 **Four of the eight registered differs have no failed-read test.** The
 absence-of-evidence rule (ADR 0013) is proven for the signal, fault, detector
@@ -187,13 +221,16 @@ Phase 1's broker-absent tolerance — connect in the background and let the
 collector reach a running state without a broker, instead of treating the
 dial as part of boot validation.
 
-**Unclaimed wire-emitter events drop without a metric.** The bar —
-"drop loudly (metric + log)," stated in the `wire-emitter` skill and in
+**Unclaimed wire-emitter events drop without a metric.** The bar is stated
+on the `wire.Emitter` interface itself (`internal/wire/emitter.go`): an event
+no emitter claims "is dropped LOUDLY (metric + log), never silently." It is
+half met. `internal/app/app.go`'s `encodeAndPublish` calls `slog.Warn` on the
+no-emitter-claimed path but emits no metric, and there is no metrics or
+observability library anywhere in the tree (`internal/` and `sdk/` import
+neither `prometheus`, `expvar`, nor `otel`).
 [`explanation/wire-boundary.md`'s drop rule](explanation/wire-boundary.md#the-drop-rule-decline-rather-than-approximate)
-— is only half met. `internal/app/app.go`'s `encodeAndPublish` calls
-`slog.Warn` on the no-emitter-claimed path but emits no metric, and there is
-no metrics or observability library anywhere in the tree (`internal/` and
-`sdk/` import neither `prometheus`, `expvar`, nor `otel`). The skill's text
+describes the shortfall accurately rather than restating the bar — it says
+the drops are logged but not counted, and points here. The interface comment
 is correct and stays as written. *Closing it:* the repo has no metrics
 subsystem at all today, so this isn't a one-counter patch — it starts with a
 decision about whether the collector should have one, then wiring a counter
@@ -231,10 +268,10 @@ held only because a reviewer caught each one by hand. A shingling check
 across the docs tree would catch this class mechanically, and is the
 natural fifth guard alongside the four `make check` already runs
 ([design spec §7.1](specs/2026-08-17-documentation-architecture-design.md#71-checks-all-in-make-check)):
-the invariants-enforcement, config-coverage and asyncapi-subject tests —
-all three Go tests in `internal/docs`, run by `go test` — plus
-`scripts/lint-docs.sh`, which is one guard running two structural checks
-(link/anchor resolution and skill structure). It was deliberately not built
+the invariants-enforcement, config-coverage and asyncapi checks — three
+test files in `internal/docs` carrying five `Test` functions between them,
+run by `go test` — plus `scripts/lint-docs.sh`, which is one guard running
+two structural checks (link/anchor resolution and skill structure). It was deliberately not built
 during Phase 2: a version with an acceptable false-positive rate is real
 design work in its own right — fenced code blocks legitimately repeat
 identifiers verbatim, some

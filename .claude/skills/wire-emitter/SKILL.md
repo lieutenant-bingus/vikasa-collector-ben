@@ -24,6 +24,7 @@ none of this during a pin bump.
 - [The openits-models pin carries no `replace` directive](../../../docs/reference/invariants.md#the-openits-models-pin-carries-no-replace-directive)
 - [The openits-models pin names a release tag](../../../docs/reference/invariants.md#the-openits-models-pin-names-a-release-tag) — CI-enforced by Rule D; `go get @vX.Y.Z`, never `@main`.
 - [The pinned release is a current one, not an old tag](../../../docs/reference/invariants.md#the-pinned-release-is-a-current-one-not-an-old-tag) — not CI-enforced; check the release list before assuming the current pin is the newest.
+- [openits-models is not reshaped to suit the collector](../../../docs/reference/invariants.md#openits-models-is-not-reshaped-to-suit-the-collector) — when a domain value has no wire identity, the answer is decline or degrade, never "add one upstream so the poller fits." A catalog ce-type this emitter has not mapped is the reverse case: a collector gap, and yours to close.
 - [Every mapped ce-type has a byte-exact golden](../../../docs/reference/invariants.md#every-mapped-ce-type-has-a-byte-exact-golden)
 - [Subjects are operator-configurable; the CloudEvents envelope stays canonical](../../../docs/reference/invariants.md#subjects-are-operator-configurable-the-cloudevents-envelope-stays-canonical) — `ce-type`, `ce-source`, and `ce-id` never derive from the operator's subject template, or vice versa.
 

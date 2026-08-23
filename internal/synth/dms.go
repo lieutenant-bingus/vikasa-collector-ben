@@ -5,11 +5,21 @@ import "github.com/Vikasa2M/vikasa-collector/sdk/model"
 // NewDMSDiffer diffs the dms-status facet into transition events.
 //
 // DMS emits on transitions only — the catalog has no periodic DMS state
-// report, so there is no per-poll event to produce. A consequence worth
-// knowing: after a collector restart a sign's current state is not
-// re-announced until it next changes. That is a wire-mapping gap (5 of 8
-// services lack a status-report ce-type), not something the differ should
-// paper over by inventing a transition that did not happen.
+// report, so there is no per-poll event to produce. Periodic state reports
+// are the exception upstream, not the rule: 8 of the catalog's 10 services
+// have no status-report ce-type (signal-control and traffic-sensor are the
+// two that do).
+//
+// That absence is NOT a gap waiting to be filled on the collector's behalf.
+// ADR 0016 is explicit that a poller finding something inconvenient is never
+// a reason to grow the catalog; if a periodic DMS state report is a real
+// domain concept it gets argued upstream on its own merits, and if it is not,
+// transitions are the whole of what a sign has to say.
+//
+// The consequence worth knowing either way: after a collector restart a
+// sign's current state is not re-announced until it next changes. The fix for
+// that is remembering across restarts (ADR 0017), not inventing a transition
+// that did not happen.
 func NewDMSDiffer() Differ { return dmsDiffer{} }
 
 type dmsDiffer struct{}

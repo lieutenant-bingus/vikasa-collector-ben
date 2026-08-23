@@ -21,6 +21,7 @@ skill, and is the natural next step once this one is done.
 ## Invariants
 
 - [Absence of evidence is never a state change](../../../docs/reference/invariants.md#absence-of-evidence-is-never-a-state-change) — a differ is never invoked for a facet kind absent from `Snapshot.Facets` this poll; `prev == nil` means first observation, not "treat as a change."
+- [openits-models is not reshaped to suit the collector](../../../docs/reference/invariants.md#openits-models-is-not-reshaped-to-suit-the-collector) — a new facet with no home in the catalog is a domain question argued upstream on its own merits, never a reason to add a ce-type because a poller now produces one.
 
 ## Procedure
 

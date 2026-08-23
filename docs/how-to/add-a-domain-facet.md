@@ -64,11 +64,19 @@ add one:
   and fire only when the differ observes a change. A periodic report is a
   different, deliberate shape — `OperationalStatusReport` is emitted every
   poll by design, not produced by diffing anything — so don't reach for it
-  unless your domain genuinely has no transition to report, the way DMS
-  does: `internal/synth/dms.go`'s doc comment notes the catalog has no
-  periodic DMS state report, so a restarted collector doesn't re-announce
-  a sign's state until it next changes. That's a wire-mapping gap, not
-  something a facet or differ should paper over.
+  unless your domain genuinely has no transition to report. Periodic state
+  reports are the exception upstream: 8 of the catalog's 10 services have no
+  status-report ce-type at all, so for most domains there is nothing to map a
+  per-poll report onto even if you wrote one.
+
+  An absence there is not a gap the collector gets to fill on its own
+  behalf — see
+  [openits-models is not reshaped to suit the collector](../reference/invariants.md#openits-models-is-not-reshaped-to-suit-the-collector).
+  `internal/synth/dms.go`'s doc comment works the example through: no periodic
+  DMS report exists, so a restarted collector doesn't re-announce a sign's
+  state until it next changes, and the answer to that is
+  [ADR 0017](../adr/0017-durable-synth-state.md)'s durable previous-state —
+  not inventing a transition that did not happen.
 
 ## Differ (`internal/synth/<domain>.go`)
 

@@ -38,6 +38,7 @@ left blank, so the gap is visible instead of implied.
 | Absence of evidence is never a state change | ADR 0013 | `internal/synth/synth.go`, `TestFailedFacetSuspendsDiffing`, `TestFailedFaultReadNeverClears`, `TestFailedDetectorReadEmitsNothing`, `TestDMSFailedReadEmitsNothing` |
 | Config is the trust boundary; boot fails on the unrecognized | ADR 0014 | `internal/config` |
 | Subjects are operator-configurable; the CloudEvents envelope stays canonical | ADR 0009, ADR 0011, ADR 0015 | `internal/subject`, `internal/cloudevents`, `internal/config` |
+| openits-models is not reshaped to suit the collector | ADR 0016 | Review (manual) |
 | Every mapped ce-type has a byte-exact golden | ADR 0008 | `internal/wire/openits/golden_test.go` |
 | No fixtures, no merge | ADR 0008 | Review (manual) — automated by the conformance kit in successor A |
 | Every guard must be shown to fail | Practice (no ADR; promoted here) | `make lint-boundary-selftest`, `make lint-boundary-replace-selftest`, `make lint-boundary-tag-selftest` |
@@ -197,6 +198,35 @@ first, so a `*config.Config` that bypassed `config.Load` could reach
 URN. `internal/config` is cited above for exactly that reason: it is the
 one place today that actually closes that specific gap, not a stand-in for
 enforcing the broader "never derive one from the other" rule.
+
+## openits-models is not reshaped to suit the collector
+
+Decided by [ADR 0016](../adr/0016-collector-as-transitional-shim.md).
+
+The collector is a transitional shim: it exists because field devices do not
+speak openits-models yet, and it is built to be deleted once they do. The
+catalog outlives it. So the accommodation runs one way — the collector adapts
+to the catalog, never the reverse.
+
+Violating this looks like proposing a ce-type, a field, or an enum member
+upstream whose only justification is that a *poller* finds it convenient. The
+tell is the argument's shape: "the collector has nowhere to put this" is not
+a reason for the catalog to grow. "Every DMS in the field has this state and
+the catalog cannot express it" is. The first adds a permanent artefact shaped
+by a temporary component; the second is a real domain gap that would exist
+whether or not this repository did.
+
+The corollary is the half that generates work here. A ce-type the catalog
+*does* declare and the emitter never mapped is a **collector** gap, and
+closing it is collector work — not evidence the catalog is wrong. The
+[gap list](../README.md#known-gaps-and-successor-work) tracks the ones known
+today.
+
+No automated check can see this: it is a rule about the *reasoning* behind a
+change, and it mostly applies to a pull request opened against a different
+repository. Marked `Review (manual)`, and it is the question to ask whenever
+a mapping has nowhere to go — the `wire-emitter` skill's drop-versus-degrade
+step is where it usually surfaces.
 
 ## Every mapped ce-type has a byte-exact golden
 
