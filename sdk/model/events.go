@@ -219,6 +219,28 @@ type ZoneIntervalReport struct {
 
 func (ZoneIntervalReport) EventKind() string { return "zone-interval-report" }
 
+// ZoneOccupancyIntervalReport is the presence half of the same completed
+// interval ZoneIntervalReport covers: how many distinct objects were in the
+// zone and what fraction of the interval it was occupied, as opposed to how
+// many traversed it.
+//
+// Two events rather than one because they are two different measurements of
+// one interval, and ZoneMeasurement's own doc comment is the reason: a stopped
+// vehicle is observed repeatedly and crosses once, which is precisely the
+// condition these sensors exist to notice. Conflating throughput with presence
+// erases it. The catalog draws the same line — crossing stays on
+// openits.perception, presence is its own zone-occupancy service — so one
+// facet fanning out to two events is the collector adapting to the catalog's
+// shape rather than the reverse (ADR 0016).
+type ZoneOccupancyIntervalReport struct {
+	Base
+	IntervalStart    time.Time
+	IntervalDuration time.Duration
+	Zones            []ZoneMeasurement // sorted by ZoneID
+}
+
+func (ZoneOccupancyIntervalReport) EventKind() string { return "zone-occupancy-interval-report" }
+
 // CCTVControlModeChanged fires when control of a camera moves between central,
 // local and override.
 type CCTVControlModeChanged struct {

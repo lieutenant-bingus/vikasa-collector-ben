@@ -19,6 +19,7 @@ import (
 	pcpv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/perception/v1"
 	scv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/signal_control/v1"
 	tsv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/traffic_sensor/v1"
+	zocv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/zone_occupancy/v1"
 
 	"github.com/Vikasa2M/vikasa-collector/internal/wire"
 	"github.com/Vikasa2M/vikasa-collector/sdk/model"
@@ -109,6 +110,12 @@ var ceTypeFor = map[key]string{
 	{"zone-incident-updated", "perception"}:  "openits.perception.zone-incident-updated.v1",
 	{"zone-incident-cleared", "perception"}:  "openits.perception.zone-incident-cleared.v1",
 	{"zone-interval-report", "perception"}:   "openits.perception.zone-interval-report.v1",
+
+	// The presence half of the same interval. openits-models v0.3.0 moved
+	// observed-count and occupancy-percent off the perception report into
+	// their own service, so one poll's interval now routes to two ce-types
+	// across two services.
+	{"zone-occupancy-interval-report", "perception"}: "openits.zone-occupancy.zone-occupancy-interval-report.v1",
 
 	{"cctv-control-mode-changed", "cctv"}: "openits.cctv.mode-changed.v1",
 	{"cctv-tour-state-changed", "cctv"}:   "openits.cctv.tour-state-changed.v1",
@@ -388,11 +395,14 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 					Class: objectClassIdentity(cc.Class), Count: cc.Count,
 				})
 			}
+			// ObservedCount and OccupancyPercent are deliberately absent:
+			// v0.3.0 removed both leaves from this notification and moved
+			// them to zone-occupancy-interval-report, which the same poll
+			// also emits. The values are not dropped, they are published
+			// under the ce-type that now defines them.
 			zone := &pcpv1.ZoneIntervalReportZone{
 				ZoneId:            z.ZoneID,
 				CrossedVolume:     z.CrossedVolume,
-				ObservedCount:     z.ObservedCount,
-				OccupancyPercent:  occupancyPercent(z.OccupancyTenths),
 				ClassCount:        counts,
 				IntervalStart:     timestamppb.New(v.IntervalStart.UTC()),
 				IntervalDurationS: uint32((v.IntervalDuration + 500*time.Millisecond) / time.Second),
@@ -404,6 +414,40 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 		}
 		msg = &pcpv1.ZoneIntervalReport{
 			Kind:           perceptionTypes + "pcp-zone-interval-report",
+			SourceDeviceId: v.DeviceID,
+			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
+			ObservedBy:     e.collectorID,
+			Sequence:       e.nextSequence(v.DeviceID),
+			Zone:           zones,
+		}
+
+	case model.ZoneOccupancyIntervalReport:
+		zones := make([]*zocv1.Zone, 0, len(v.Zones))
+		for _, z := range v.Zones {
+			classes := make([]*zocv1.ObservedClass, 0, len(z.ClassCounts))
+			for _, cc := range z.ClassCounts {
+				// MeanConfidence is left unset: the domain carries no
+				// per-class confidence, and zero is the wire's "not stated"
+				// for a uint32 count of confidence, not a claim of none.
+				classes = append(classes, &zocv1.ObservedClass{
+					Class: objectClassIdentity(cc.Class), Count: cc.Count,
+				})
+			}
+			// PeakOccupancyCount is left unset for the same reason: no
+			// adapter observes a within-interval peak today, and inventing
+			// one from the mean would be a wrong value rather than a missing
+			// one.
+			zones = append(zones, &zocv1.Zone{
+				ZoneId:            z.ZoneID,
+				ObservedCount:     z.ObservedCount,
+				OccupancyPercent:  occupancyPercent(z.OccupancyTenths),
+				ObservedClass:     classes,
+				IntervalStart:     timestamppb.New(v.IntervalStart.UTC()),
+				IntervalDurationS: uint32((v.IntervalDuration + 500*time.Millisecond) / time.Second),
+			})
+		}
+		msg = &zocv1.ZoneOccupancyIntervalReport{
+			Kind:           zoneOccTypes + "zoc-zone-occupancy-interval-report",
 			SourceDeviceId: v.DeviceID,
 			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
 			ObservedBy:     e.collectorID,

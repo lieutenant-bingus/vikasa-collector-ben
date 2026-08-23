@@ -15,6 +15,7 @@ import (
 	pcpv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/perception/v1"
 	scv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/signal_control/v1"
 	tsv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/traffic_sensor/v1"
+	zocv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/zone_occupancy/v1"
 
 	"github.com/Vikasa2M/vikasa-collector/sdk/model"
 )
@@ -558,6 +559,7 @@ func TestCETypes_IsCompleteSortedAndDeduped(t *testing.T) {
 		"openits.traffic-sensor.fault-cleared.v1",
 		"openits.traffic-sensor.fault-raised.v1",
 		"openits.traffic-sensor.traffic-interval-report.v1",
+		"openits.zone-occupancy.zone-occupancy-interval-report.v1",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("CETypes() has %d entries, want %d:\n got: %q\nwant: %q", len(got), len(want), got, want)
@@ -836,7 +838,7 @@ func TestEncode_ZoneIncidentLifecycle(t *testing.T) {
 	if want := "openits-perception-types:incident-wrong-way-vehicle"; det.GetType() != want {
 		t.Errorf("type = %q, want %q", det.GetType(), want)
 	}
-	if want := "openits-perception-types:object-truck"; det.GetObjectClass() != want {
+	if want := "openits-types:object-truck"; det.GetObjectClass() != want {
 		t.Errorf("object_class = %q, want %q", det.GetObjectClass(), want)
 	}
 	if det.GetSeverity() != pcpv1.IncidentSeverity_INCIDENT_SEVERITY_MAJOR {
@@ -920,11 +922,8 @@ func TestEncode_ZoneIntervalReport(t *testing.T) {
 		t.Errorf("kind = %q, want %q", got.GetKind(), want)
 	}
 	z := got.GetZone()[0]
-	if z.GetCrossedVolume() != 40 || z.GetObservedCount() != 42 {
-		t.Errorf("crossed/observed = %d/%d, want 40/42", z.GetCrossedVolume(), z.GetObservedCount())
-	}
-	if z.GetOccupancyPercent() != "31.0" {
-		t.Errorf("occupancy = %q, want \"31.0\"", z.GetOccupancyPercent())
+	if z.GetCrossedVolume() != 40 {
+		t.Errorf("crossed = %d, want 40", z.GetCrossedVolume())
 	}
 	if z.GetAverageSpeedKmh() != "51.25" {
 		t.Errorf("speed = %q, want \"51.25\"", z.GetAverageSpeedKmh())
@@ -933,9 +932,63 @@ func TestEncode_ZoneIntervalReport(t *testing.T) {
 		t.Errorf("interval_duration_s = %d, want 60", z.GetIntervalDurationS())
 	}
 	// Counted by object-class IDENTITY here, not a numeric bin.
+	// Counted by object-class IDENTITY, and that identity moved module in
+	// v0.3.0: object-* was hoisted out of openits-perception-types into the
+	// openits-types foundation layer. Nothing in Go catches a stale prefix
+	// here -- identityrefs are plain strings -- so this assertion is the
+	// check.
 	cc := z.GetClassCount()
-	if len(cc) != 1 || cc[0].GetClass() != "openits-perception-types:object-truck" || cc[0].GetCount() != 4 {
+	if len(cc) != 1 || cc[0].GetClass() != "openits-types:object-truck" || cc[0].GetCount() != 4 {
 		t.Errorf("class counts = %+v", cc)
+	}
+}
+
+// TestEncode_ZoneOccupancyIntervalReport covers the presence half of the same
+// interval. v0.3.0 moved observed-count and occupancy-percent off the
+// perception report and into this ce-type; the test above proves they left,
+// this one proves they arrived.
+func TestEncode_ZoneOccupancyIntervalReport(t *testing.T) {
+	var got zocv1.ZoneOccupancyIntervalReport
+	ceType := encodeOK(t, model.ZoneOccupancyIntervalReport{
+		Base:             base("lidar-01", "perception"),
+		IntervalStart:    time.Date(2026, 8, 9, 11, 59, 0, 0, time.UTC),
+		IntervalDuration: 60 * time.Second,
+		Zones: []model.ZoneMeasurement{{
+			ZoneID: "zone-a", CrossedVolume: 40, ObservedCount: 42,
+			OccupancyTenths: 310, SpeedAvgHundredthsKPH: 5125, SpeedReported: true,
+			ClassCounts: []model.ZoneClassCount{{Class: model.ObjectTruck, Count: 4}},
+		}},
+	}, &got)
+
+	if want := "openits.zone-occupancy.zone-occupancy-interval-report.v1"; ceType != want {
+		t.Errorf("ce-type = %q, want %q", ceType, want)
+	}
+	if want := "openits-zone-occupancy-types:zoc-zone-occupancy-interval-report"; got.GetKind() != want {
+		t.Errorf("kind = %q, want %q", got.GetKind(), want)
+	}
+	z := got.GetZone()[0]
+	if z.GetObservedCount() != 42 {
+		t.Errorf("observed = %d, want 42", z.GetObservedCount())
+	}
+	if z.GetOccupancyPercent() != "31.0" {
+		t.Errorf("occupancy = %q, want \"31.0\"", z.GetOccupancyPercent())
+	}
+	if z.GetIntervalDurationS() != 60 {
+		t.Errorf("interval_duration_s = %d, want 60", z.GetIntervalDurationS())
+	}
+	// Nothing observes a within-interval peak today, so the leaf stays unset
+	// rather than being derived from the mean.
+	if z.GetPeakOccupancyCount() != 0 {
+		t.Errorf("peak = %d, want 0 (unobserved, not inferred)", z.GetPeakOccupancyCount())
+	}
+	oc := z.GetObservedClass()
+	if len(oc) != 1 || oc[0].GetClass() != "openits-types:object-truck" || oc[0].GetCount() != 4 {
+		t.Errorf("observed classes = %+v", oc)
+	}
+	// No per-class confidence in the domain; the leaf is "not stated", and
+	// zero must not read as a confidence of none.
+	if oc[0].GetMeanConfidence() != 0 {
+		t.Errorf("mean_confidence = %d, want 0", oc[0].GetMeanConfidence())
 	}
 }
 

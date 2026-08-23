@@ -129,15 +129,31 @@ func zones(start time.Time, crossed uint32) model.ZoneIntervals {
 	}
 }
 
-func TestZoneIntervalDiffer_FirstObservationEmits(t *testing.T) {
+// One interval yields two events: the crossing report and the occupancy
+// report. Asserting the exact count matters as much as the contents -- a
+// differ that emitted only one would publish half the interval and nothing
+// downstream would notice the other half was missing.
+func TestZoneIntervalDiffer_FirstObservationEmitsBothHalves(t *testing.T) {
 	evs := NewZoneIntervalDiffer().Diff(nil, zones(pcpAt.Add(-time.Minute), 40), pcpBase())
-	if len(evs) != 1 {
-		t.Fatalf("first observation produced %d events, want 1", len(evs))
+	if len(evs) != 2 {
+		t.Fatalf("first observation produced %d events, want 2 (crossing + occupancy)", len(evs))
 	}
-	r := evs[0].(model.ZoneIntervalReport)
-	if r.Zones[0].CrossedVolume != 40 || r.Zones[0].ObservedCount != 42 {
+	r, ok := evs[0].(model.ZoneIntervalReport)
+	if !ok {
+		t.Fatalf("first event = %T, want model.ZoneIntervalReport", evs[0])
+	}
+	o, ok := evs[1].(model.ZoneOccupancyIntervalReport)
+	if !ok {
+		t.Fatalf("second event = %T, want model.ZoneOccupancyIntervalReport", evs[1])
+	}
+	if r.Zones[0].CrossedVolume != 40 || o.Zones[0].ObservedCount != 42 {
 		t.Errorf("crossed/observed = %d/%d, want 40/42 (they are not the same measure)",
-			r.Zones[0].CrossedVolume, r.Zones[0].ObservedCount)
+			r.Zones[0].CrossedVolume, o.Zones[0].ObservedCount)
+	}
+	// Both describe the same interval; a consumer joining them relies on it.
+	if !r.IntervalStart.Equal(o.IntervalStart) || r.IntervalDuration != o.IntervalDuration {
+		t.Errorf("halves describe different intervals: %v/%v vs %v/%v",
+			r.IntervalStart, r.IntervalDuration, o.IntervalStart, o.IntervalDuration)
 	}
 }
 
@@ -151,11 +167,14 @@ func TestZoneIntervalDiffer_SameIntervalReReadEmitsNothing(t *testing.T) {
 func TestZoneIntervalDiffer_NewIntervalEmits(t *testing.T) {
 	prev := zones(pcpAt.Add(-2*time.Minute), 40)
 	evs := NewZoneIntervalDiffer().Diff(prev, zones(pcpAt.Add(-time.Minute), 12), pcpBase())
-	if len(evs) != 1 {
-		t.Fatalf("got %d events, want 1", len(evs))
+	if len(evs) != 2 {
+		t.Fatalf("got %d events, want 2 (crossing + occupancy)", len(evs))
 	}
 	if got := evs[0].(model.ZoneIntervalReport).Zones[0].CrossedVolume; got != 12 {
 		t.Errorf("crossed = %d, want 12 (the interval's own count)", got)
+	}
+	if got := evs[1].(model.ZoneOccupancyIntervalReport).Zones[0].ObservedCount; got != 14 {
+		t.Errorf("observed = %d, want 14 (the interval's own count)", got)
 	}
 }
 

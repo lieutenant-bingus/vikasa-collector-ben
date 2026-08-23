@@ -136,10 +136,24 @@ func (zoneIntervalDiffer) Diff(prev, curr model.Facet, base model.Base) []model.
 	zones := append([]model.ZoneMeasurement(nil), c.Zones...)
 	sort.Slice(zones, func(i, j int) bool { return zones[i].ZoneID < zones[j].ZoneID })
 
-	return []model.Event{model.ZoneIntervalReport{
-		Base:             base,
-		IntervalStart:    c.IntervalStart,
-		IntervalDuration: c.IntervalDuration,
-		Zones:            zones,
-	}}
+	// One interval, two measurements: crossings (throughput) and presence
+	// (occupancy). The catalog separates them into two services, so the differ
+	// emits two events and each maps to its own ce-type -- the emitter
+	// contract is one ce-type per event, and fanning out here rather than in
+	// internal/wire keeps that true. See model.ZoneOccupancyIntervalReport for
+	// why the split is real and not a wire artefact.
+	return []model.Event{
+		model.ZoneIntervalReport{
+			Base:             base,
+			IntervalStart:    c.IntervalStart,
+			IntervalDuration: c.IntervalDuration,
+			Zones:            zones,
+		},
+		model.ZoneOccupancyIntervalReport{
+			Base:             base,
+			IntervalStart:    c.IntervalStart,
+			IntervalDuration: c.IntervalDuration,
+			Zones:            zones,
+		},
+	}
 }

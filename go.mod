@@ -3,7 +3,7 @@ module github.com/Vikasa2M/vikasa-collector
 go 1.26
 
 require (
-	github.com/Vikasa2M/openits-models v0.2.3-0.20260807005833-235e8780f44c
+	github.com/Vikasa2M/openits-models v0.3.0
 	github.com/gosnmp/gosnmp v1.43.2
 	github.com/nats-io/nats-server/v2 v2.14.3
 	github.com/nats-io/nats.go v1.52.0

@@ -20,6 +20,18 @@ const (
 	cctvTypes       = "openits-cctv-types:"
 	trafficSenTypes = "openits-traffic-sensor-types:"
 	perceptionTypes = "openits-perception-types:"
+
+	// openits-types is the foundation layer. object-class and its object-*
+	// leaves lived in openits-perception-types until the v0.3.0 hoist
+	// (openits-perception-types revision 2026-08-15: "Hoist the object-class
+	// identity hierarchy to openits-types"), because a detected object is not
+	// a perception-only concept — zone-occupancy classifies the same way.
+	// Nothing about this relocation is visible to the Go compiler: these are
+	// plain identityref strings, so a stale prefix here keeps building and
+	// ships an identity no consumer can resolve.
+	openitsTypes = "openits-types:"
+
+	zoneOccTypes = "openits-zone-occupancy-types:"
 )
 
 // controllerModeIdentity maps a domain controller mode to its upstream
@@ -273,23 +285,23 @@ func incidentTypeIdentity(t model.IncidentType) string {
 func objectClassIdentity(c model.ObjectClass) string {
 	switch c {
 	case model.ObjectPassengerVehicle:
-		return perceptionTypes + "object-passenger-vehicle"
+		return openitsTypes + "object-passenger-vehicle"
 	case model.ObjectTruck:
-		return perceptionTypes + "object-truck"
+		return openitsTypes + "object-truck"
 	case model.ObjectBus:
-		return perceptionTypes + "object-bus"
+		return openitsTypes + "object-bus"
 	case model.ObjectMotorcycle:
-		return perceptionTypes + "object-motorcycle"
+		return openitsTypes + "object-motorcycle"
 	case model.ObjectBicycle:
-		return perceptionTypes + "object-bicycle"
+		return openitsTypes + "object-bicycle"
 	case model.ObjectPedestrian:
-		return perceptionTypes + "object-pedestrian"
+		return openitsTypes + "object-pedestrian"
 	case model.ObjectAnimal:
-		return perceptionTypes + "object-animal"
+		return openitsTypes + "object-animal"
 	case model.ObjectDebris:
-		return perceptionTypes + "object-debris"
+		return openitsTypes + "object-debris"
 	default:
-		return perceptionTypes + "object-unknown"
+		return openitsTypes + "object-unknown"
 	}
 }
 
@@ -436,10 +448,16 @@ var dataSchemaFor = map[string]string{
 
 	"openits.traffic-sensor.traffic-interval-report.v1": registryBase + "openits-traffic-sensor-events/2026-07-21/",
 
-	"openits.perception.zone-incident-detected.v1": registryBase + "openits-perception-events/2026-07-21/",
-	"openits.perception.zone-incident-updated.v1":  registryBase + "openits-perception-events/2026-07-21/",
-	"openits.perception.zone-incident-cleared.v1":  registryBase + "openits-perception-events/2026-07-21/",
-	"openits.perception.zone-interval-report.v1":   registryBase + "openits-perception-events/2026-07-21/",
+	"openits.perception.zone-incident-detected.v1": registryBase + "openits-perception-events/2026-08-15/",
+	"openits.perception.zone-incident-updated.v1":  registryBase + "openits-perception-events/2026-08-15/",
+	"openits.perception.zone-incident-cleared.v1":  registryBase + "openits-perception-events/2026-08-15/",
+	"openits.perception.zone-interval-report.v1":   registryBase + "openits-perception-events/2026-08-15/",
+
+	// A different defining module, not a perception revision: v0.3.0 split
+	// the presence half of the interval into its own service, so this
+	// ce-type validates against openits-zone-occupancy-events rather than
+	// against the module its sibling event uses.
+	"openits.zone-occupancy.zone-occupancy-interval-report.v1": registryBase + "openits-zone-occupancy-events/2026-08-15/",
 
 	"openits.cctv.mode-changed.v1":       registryBase + "openits-common-mode-events/2026-07-21/",
 	"openits.cctv.tour-state-changed.v1": registryBase + "openits-cctv-events/2026-08-05/",
