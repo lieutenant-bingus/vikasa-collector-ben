@@ -13,23 +13,57 @@ deliberately.
 
 ## Scope
 
-This record is about what the collector reports **about itself**. Device
-reachability is a different concern reporting on a different entity, and its
-schema, payload and semantics are untouched.
+**The `openits-collector` root carries the collector's own health and nothing
+else.** Everything the collector observes about a *downstream device* belongs
+on the `openits` root, in the catalog's own vocabulary, because a device is a
+catalog entity and its condition is a catalog fact.
 
-One thing about device health does change, and only because the two share a
-subject position: its `{service}` token moves from `health` to `device`, so
-that token means the same *kind* of thing on both sides. That is a naming
-consistency fix in service of the self-health design, not a change to what
-device health is or says.
+That is a rule about the root, and it settles what has been an unexamined
+conflation. `device-status-changed` lives under `openits-collector.health.*`
+today for no better reason than that it was convenient to own the schema. But
+the collector is not the subject of that event — a signal controller is — and
+publishing it under the collector's own namespace says otherwise.
 
-The two have been conflated because both live under
-`openits-collector.health.*` and are produced by one emitter. They are not
-the same concern: device health is the collector observing something else,
-at a cardinality of a handful per cabinet, and its consumer is a traffic
-operator. Self-health is the collector observing itself, at a cardinality of
-one per cabinet and 15,000+ per fleet, and its consumer is whoever keeps
-those 15,000 running. Separating them is part of the decision.
+So device reachability leaves this root entirely. It maps to
+`openits.<service>.comm-health-event.v1`, whose `kind` identityref carries
+exactly the transitions the collector already detects:
+
+| domain event today | catalog `kind` |
+|---|---|
+| `DeviceStatusChanged{Reachable: false}` | `comm-lost` |
+| `DeviceStatusChanged{Reachable: true}` | `comm-restored` |
+
+The catalog's `comm-attempt-window` kind, with `attempts-total`,
+`attempts-failed` and `percent-loss`, is also a strictly better home for
+failure counts than the collector's own `consecutive_failures` — a required
+integer that is provably always 1 or 0 today and therefore duplicates
+`reachable` exactly.
+
+**What this costs, stated plainly.** [ADR 0007](0007-collector-owned-health-schema.md)
+exists because gen-1's poll heartbeat vanished when upstream regeneration
+dropped a message, and it concluded that health must never be hostage to
+schema churn. Moving device reachability into the catalog re-accepts that
+exposure *for device health*. That is the right trade: a device's condition is
+a catalog concept, and if the catalog cannot express "this controller stopped
+answering," that is a gap worth fixing upstream rather than routing around
+locally ([ADR 0016](0016-collector-as-transitional-shim.md)). ADR 0007's
+guarantee narrows to what actually needs it — the collector's own health,
+which no catalog will ever model, and which must stay reportable precisely
+when the wire model is broken.
+
+**One upstream gap this exposes, and why asking is legitimate.**
+`comm-health-event` is declared in the shared `openits-common-comm-health-events`
+module but exposed as a channel on `signal-control` alone; no other service
+imports it. The parallel `openits-common-fault-events` module is exposed on
+all nine. So the asymmetry reads as an oversight rather than a decision, and
+asking upstream to expose comm-health the way faults already are is arguing a
+domain concept on its own merits — a DMS that stops answering is exactly as
+real a fact as an ASC that does — not adding a ce-type for a poller's
+convenience. ADR 0016 permits the first and forbids the second.
+
+Nothing blocks on that answer. `ntcip-asc` is the only shipped adapter and it
+is a `signal-control` device, so the mapping works end to end today. The
+services that lack the channel also lack adapters.
 
 ## Context
 
@@ -117,41 +151,38 @@ observability, not safety, and nobody rolls a truck in three minutes for it.
 
 ## Decision
 
-**1. The `{service}` token names the kind of entity the next token
-identifies, and the two families under this root become parallel.**
+**1. `openits-collector` carries only the collector's own health, and its
+`{service}` token names the entity kind.**
 
 ```
-openits-collector.instance.heartbeat.v1   -> …d01.instance.cabinet-042.heartbeat
-openits-collector.instance.started.v1     -> …d01.instance.cabinet-042.started
-openits-collector.instance.stopping.v1    -> …d01.instance.cabinet-042.stopping
-openits-collector.device.status-changed.v1 -> …d01.device.asc-main-and-5th.status-changed
+openits-collector.instance.heartbeat.v1  -> …d01.instance.cabinet-042.heartbeat
+openits-collector.instance.started.v1    -> …d01.instance.cabinet-042.started
+openits-collector.instance.stopping.v1   -> …d01.instance.cabinet-042.stopping
 ```
+
+Device reachability moves to `openits.<service>.comm-health-event.v1` and off
+this root entirely (see Scope), so `openits-collector` has exactly one
+`{service}` value and one entity: the collector instance.
 
 `{service}` is the ce-type's second segment (`decompose`,
-`internal/subject/subject.go`). The first draft of this record put
-self-health under `instance` and left device health under `health`, which
-does not work: `instance` names an entity kind and `health` names a concern,
-so the same subject position would carry two different vocabularies and
-`instance` would read as an arbitrary choice. It is only well-defined in
-contrast with a sibling that follows the same rule.
+`internal/subject/subject.go`). `instance` names the kind of entity the
+*following* token identifies, which is the rule the catalog root already
+follows — `signal-control.<controller-id>`, and now
+`instance.<site>`.
 
-So both are entity kinds. `instance.<site>` and `device.<device-id>` each
-say what the *following* token identifies, which is also what the catalog
-root already does (`signal-control.<controller-id>`). The redundant `device-`
-prefix drops out of the event name because the token now carries it.
+An earlier draft kept device health on this root under a `device` token,
+making the two siblings. That is no longer the shape: with device health on
+the catalog root, there is no sibling to be consistent with, and `instance`
+is simply the entity this root is about.
 
-A fleet operator subscribes `openits-collector.*.*.*.instance.>` and gets
-every collector self-health signal that exists now or later; a traffic
-operator subscribes `openits-collector.*.*.*.device.>` for reachability.
-Different retention, different consumers, different authorization — the same
-argument [ADR 0011](0011-namespace-rooted-subject-spaces.md) made one level
-up when it split the roots.
+A fleet operator subscribes `openits-collector.*.*.*.>` — the whole root —
+and gets collector health and only collector health. That is the property the
+root rule buys, and it is stronger than any subscription a shared root could
+offer.
 
-**This adds no stream.** Bindings truncate above the service token, so both
-families stay in the existing `OPENITS-COLLECTOR-<region>-<agency>-<unit>`
-stream — confirmed by rendering the four ce-types above through
-`Template.Bindings`, which returns exactly two filters. The separation exists
-so the *hub* has a clean filter when it aggregates.
+**This adds no stream, and removes nothing.** Bindings truncate above the
+service token, so `OPENITS-COLLECTOR-<region>-<agency>-<unit>` stays as ADR
+0011 defined it — now carrying a single, coherent family.
 
 **2. Device-less events render `{device_id}` as `site`.** One collector per
 cabinet makes `site` the collector's identity, and `ce-source` already uses
@@ -330,8 +361,31 @@ behind carrier NAT, push-on-a-schedule is not a workaround for the absence of
 scraping, it is the only form that fits the topology. A future Prometheus
 endpoint would serve a local operator standing in the cabinet, not the fleet.
 
-Nothing here changes device health. `device-status-changed` keeps its
-subject, its schema, and its per-device addressing.
+**Device health changes root, schema and emitter.**
+`openits-collector.health.device-status-changed.v1` ceases to exist. Its
+domain event (`model.DeviceStatusChanged`, produced by `internal/runner`) is
+unchanged and keeps producing; what changes is that the *openits* emitter
+claims it instead of the health emitter, mapping it to
+`openits.<service>.comm-health-event.v1` with a `kind` of `comm-lost` or
+`comm-restored`. It gains a byte-exact golden like every other catalog
+mapping, and `internal/wire/health` shrinks to the collector's own events.
+
+This also dissolves a defect found while reviewing the current design rather
+than papering over it. `SourceFor` returns `""` for a device kind absent from
+the profile's `entityKindFor` vocabulary, and `encodeAndPublish` drops any
+event with an empty source — so today a device kind the profile does not name
+would have its *health* silently dropped, which directly contradicted ADR
+0007's promise that health survives upstream churn. Under this record that
+dependency is correct rather than contradictory: device health is a catalog
+event and *should* require catalog vocabulary. Collector self-health uses
+entity kind `collector`, which is unconditionally mapped, so it is never
+subject to it.
+
+The collector's `consecutive_failures` field disappears with the schema. It
+was a required integer that was provably always 1 or 0. Where a real failure
+count is wanted, the catalog's `comm-attempt-window` kind carries
+`attempts-total`, `attempts-failed` and `percent-loss`, which is what the
+field's name always implied and never delivered.
 
 ## Alternatives considered
 
