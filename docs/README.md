@@ -260,18 +260,17 @@ further is required unless the convention changes. Evidence: ledger
 
 ### A guard that was deliberately not built
 
-**No duplicate-prose lint exists.** Across Phase 2, a document reproducing
-prose that already exists elsewhere was caught seven separate times in
-review — the "link, don't restate" discipline
-([design spec §4](specs/2026-08-17-documentation-architecture-design.md#4-single-source-of-truth-for-rules))
+**No duplicate-prose lint exists.** Across the documentation effort, a
+document reproducing prose that already exists elsewhere was caught seven
+separate times in review — the "link, don't restate" discipline
+([stated in `reference/invariants.md`'s preamble](reference/invariants.md#invariants))
 held only because a reviewer caught each one by hand. A shingling check
 across the docs tree would catch this class mechanically, and is the
 natural fifth guard alongside the four `make check` already runs
-([design spec §7.1](specs/2026-08-17-documentation-architecture-design.md#71-checks-all-in-make-check)):
-the invariants-enforcement, config-coverage and asyncapi checks — three
-test files in `internal/docs` carrying five `Test` functions between them,
-run by `go test` — plus `scripts/lint-docs.sh`, which is one guard running
-two structural checks (link/anchor resolution and skill structure). It was deliberately not built
+([inventoried in `explanation/testing-strategy.md`](explanation/testing-strategy.md#doc-guards-structural-not-semantic)):
+three `internal/docs` tests carrying five `Test` functions between them,
+plus `scripts/lint-docs.sh`, which is one guard running two structural
+checks (link/anchor resolution and skill structure). It was deliberately not built
 during Phase 2: a version with an acceptable false-positive rate is real
 design work in its own right — fenced code blocks legitimately repeat
 identifiers verbatim, some

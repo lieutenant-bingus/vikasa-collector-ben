@@ -245,7 +245,8 @@ drifted. Prose accuracy is a review problem and is deliberately not
 attempted here: a check that cannot fail on real decay is worse than no
 check, because it reads as coverage."
 
-Three guards exist today:
+Four guards exist today. Three are Go tests in `internal/docs`, run by
+`go test`; the fourth is a shell script `make check` runs directly.
 
 - `TestConfigReferenceDocumentsEveryField` — every `collector.yaml` field
   reachable by reflection over `config.Config` appears in
@@ -257,6 +258,19 @@ Three guards exist today:
 - `TestAsyncAPIAddressesMatchRenderedSubjects` (plus two sibling tests in the
   same file) — the example subject addresses in `asyncapi.yaml` render
   correctly through the real `internal/subject.Template`.
+- `scripts/lint-docs.sh` — the one guard that is not a Go test, because
+  what it checks is not reachable by reflection: every relative markdown
+  link under `docs/`, in the root documents, in `.claude/skills/`, and in
+  the pull-request template resolves to a real file, and every `#fragment`
+  on a link to a local markdown file matches a real heading in it. It also
+  checks that each `SKILL.md` carries the sections the skill contract
+  requires. The anchor half is what makes the "link, don't restate"
+  discipline survivable: rules live in exactly one place and everything
+  else points at a heading in it, so a renamed heading would otherwise
+  quietly disconnect a rule from every document that cites it.
+
+  `docs/specs/` is deliberately outside its scan — a staging tier for
+  unbuilt designs is allowed to reference things that do not exist yet.
 
 **What doc guards prove:** a specific, named thing a document asserts (a
 field exists, an enforcer exists, an address renders) is still true of the
