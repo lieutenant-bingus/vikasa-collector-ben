@@ -3,14 +3,25 @@
 **Status:** Proposed (2026-08-23)
 **Amends:** [ADR 0007](0007-collector-owned-health-schema.md) — adds to the
 collector-owned health schema it established, and changes how device-less
-events render their subject. Device health (`device-status-changed`) is
-deliberately untouched; see "Scope" below.
+events render their subject.
+
+Breaking subject and ce-type changes are taken freely here rather than
+carried compatibly. The project is pre-1.0, nothing outside this repository
+consumes `openits-collector.*`, and the cost of every one of these changes
+only grows with the first subscriber. They are made as though greenfield,
+deliberately.
 
 ## Scope
 
-This record is about what the collector reports **about itself**. It is not
-about device reachability, which is a different subject reporting on a
-different entity and stays exactly as it is.
+This record is about what the collector reports **about itself**. Device
+reachability is a different concern reporting on a different entity, and its
+schema, payload and semantics are untouched.
+
+One thing about device health does change, and only because the two share a
+subject position: its `{service}` token moves from `health` to `device`, so
+that token means the same *kind* of thing on both sides. That is a naming
+consistency fix in service of the self-health design, not a change to what
+device health is or says.
 
 The two have been conflated because both live under
 `openits-collector.health.*` and are produced by one emitter. They are not
@@ -106,26 +117,41 @@ observability, not safety, and nobody rolls a truck in three minutes for it.
 
 ## Decision
 
-**1. Self-health gets its own service token.** Two new ce-types:
+**1. The `{service}` token names the kind of entity the next token
+identifies, and the two families under this root become parallel.**
 
 ```
-openits-collector.instance.heartbeat.v1
-openits-collector.instance.stopping.v1
+openits-collector.instance.heartbeat.v1   -> …d01.instance.cabinet-042.heartbeat
+openits-collector.instance.started.v1     -> …d01.instance.cabinet-042.started
+openits-collector.instance.stopping.v1    -> …d01.instance.cabinet-042.stopping
+openits-collector.device.status-changed.v1 -> …d01.device.asc-main-and-5th.status-changed
 ```
 
 `{service}` is the ce-type's second segment (`decompose`,
-`internal/subject/subject.go`), so this puts self-health in its own subject
-space without touching device health. A fleet operator subscribes
-`openits-collector.*.*.*.instance.>` and gets every self-health signal that
-exists now or later; a traffic operator subscribes `…health.>` and gets
-device reachability. Different retention, different consumers, different
-authorization — which is the same argument [ADR 0011](0011-namespace-rooted-subject-spaces.md)
-made one level up when it split the roots.
+`internal/subject/subject.go`). The first draft of this record put
+self-health under `instance` and left device health under `health`, which
+does not work: `instance` names an entity kind and `health` names a concern,
+so the same subject position would carry two different vocabularies and
+`instance` would read as an arbitrary choice. It is only well-defined in
+contrast with a sibling that follows the same rule.
+
+So both are entity kinds. `instance.<site>` and `device.<device-id>` each
+say what the *following* token identifies, which is also what the catalog
+root already does (`signal-control.<controller-id>`). The redundant `device-`
+prefix drops out of the event name because the token now carries it.
+
+A fleet operator subscribes `openits-collector.*.*.*.instance.>` and gets
+every collector self-health signal that exists now or later; a traffic
+operator subscribes `openits-collector.*.*.*.device.>` for reachability.
+Different retention, different consumers, different authorization — the same
+argument [ADR 0011](0011-namespace-rooted-subject-spaces.md) made one level
+up when it split the roots.
 
 **This adds no stream.** Bindings truncate above the service token, so both
 families stay in the existing `OPENITS-COLLECTOR-<region>-<agency>-<unit>`
-stream. The separation exists so the *hub* has a clean filter when it
-aggregates; hub-side retention is not this record's decision.
+stream — confirmed by rendering the four ce-types above through
+`Template.Bindings`, which returns exactly two filters. The separation exists
+so the *hub* has a clean filter when it aggregates.
 
 **2. Device-less events render `{device_id}` as `site`.** One collector per
 cabinet makes `site` the collector's identity, and `ce-source` already uses
@@ -233,10 +259,40 @@ heartbeat is the only thing that distinguishes those.
 `collector_id` in the body while `ce-source` carries `site`, so the binding
 nothing currently states is stated once per interval.
 
-**8. `stopping` is emitted on clean shutdown**, best-effort, so a rollout
-restart (ADR 0012) is distinguishable from a crash. Best-effort is the honest
-bar: a process that is killed cannot send it, and that asymmetry is the
-point — a missing `stopping` is evidence, not an error.
+**8. `started` and `stopping` are discrete events; the heartbeat does not
+replace them, and the edge stores nothing to produce them.**
+
+A restart is a *transition* — a discrete, observable occurrence — and
+[ADR 0016](0016-collector-as-transitional-shim.md) already says transitions
+get events. Liveness is the thing that has no transition to observe, which is
+why it needs a periodic beat. The two are the categories that ADR 0016
+distinguishes, not two sources of truth about one fact.
+
+The retention profiles are what make the distinction load-bearing at fleet
+scale. They pull in opposite directions and a single signal cannot serve
+both:
+
+| | rate | what the hub wants | retention |
+|---|---|---|---|
+| `heartbeat` | 15,000 ÷ interval — ~50/s at the default | current liveness, current totals | last value per collector: a table bounded by fleet size, not by time |
+| `started` | only on restart | the restart record | full history, cheap because the rate is low |
+
+**Restart counting belongs at the hub, not the edge.** The collector reports
+each occurrence and never counts them; a cabinet does not need durable local
+state to know it has restarted forty-seven times, and asking it to would mean
+another writer on the same flash that [ADR 0017](0017-durable-synth-state.md)
+is already careful about. The hub aggregates `instance.started` over whatever
+window an operator asks for. Nothing about restart history requires the
+edge KV bucket.
+
+`stopping` is best-effort, and that is the honest bar: a process that is
+killed cannot send it. The asymmetry is the signal — a `started` with no
+preceding `stopping` is an unclean restart, which is exactly what a fleet
+operator wants to page on after a rollout (ADR 0012).
+
+The pair also distinguishes a process restart from a cabinet power cycle
+without any new field: if the leaf connection stayed up across the gap, the
+collector restarted; if the leaf dropped and reconnected, the cabinet did.
 
 ## Consequences
 
@@ -256,11 +312,17 @@ later; `asyncapi.yaml` must be updated with it, and
 `TestAsyncAPIAddressesMatchRenderedSubjects` (`internal/docs/asyncapi_test.go`)
 fails the build until it is, so the drift cannot ship quietly.
 
-Whether `collector-started` should move to the `instance` service token as
-well — becoming `openits-collector.instance.started.v1` — is left open
-deliberately. It is the same family and the symmetry is appealing, but it is
-a second breaking change for a signal the heartbeat now largely subsumes,
-and it may be simpler to retire it than to move it.
+`collector-started` moves to `openits-collector.instance.started.v1` rather
+than being retired. An earlier draft argued for retiring it, on the grounds
+that a heartbeat carrying `boot_id` and `uptime` subsumes it — which is true
+of the *information* and false of the *retention*. Under the last-value
+retention that makes 15,000 collectors a bounded table, only the newest beat
+survives, so a heartbeat-only design silently discards restart history. The
+low-rate discrete event is what carries it, and carries it cheaply.
+
+Crash-looping is visible either way and remains a useful cross-check: a
+collector restarting every few seconds produces `started` events in a burst
+and heartbeats with `uptime` near zero and a new `boot_id` each time.
 
 The heartbeat's counters are the collector's metrics surface. This does not
 close the "no metrics subsystem" gap so much as decide its shape: on a fleet
