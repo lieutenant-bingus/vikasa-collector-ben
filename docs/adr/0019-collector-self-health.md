@@ -51,15 +51,32 @@ guarantee narrows to what actually needs it — the collector's own health,
 which no catalog will ever model, and which must stay reportable precisely
 when the wire model is broken.
 
-**One upstream gap this exposes, and why asking is legitimate.**
+**One upstream gap this exposes, and why asking is not an ADR 0016 problem.**
 `comm-health-event` is declared in the shared `openits-common-comm-health-events`
-module but exposed as a channel on `signal-control` alone; no other service
-imports it. The parallel `openits-common-fault-events` module is exposed on
-all nine. So the asymmetry reads as an oversight rather than a decision, and
-asking upstream to expose comm-health the way faults already are is arguing a
-domain concept on its own merits — a DMS that stops answering is exactly as
-real a fact as an ASC that does — not adding a ce-type for a poller's
-convenience. ADR 0016 permits the first and forbids the second.
+module but reaches `signal-control` alone.
+
+The mechanism is worth stating because it makes the size of the ask concrete.
+Upstream's generator (`tools/yang-proto-gen/catalog.go`) fans a common
+notification out to service S when the identity graph holds at least one
+identity derived from **both** the behavioral base
+(`comm-health-event-kind`) and S's own `<S>-event-kind` root. Faults reach
+all nine services because each declares a dual-base identity —
+`dms-fault-event-kind` has `base openits-types:fault-event-kind` and
+`base dms-event-kind`. Comm-health reaches only signal-control because only
+`sc-comm-health-event-kind` exists; `openits-dms-types.yang` contains no
+occurrence of `comm-health` at all. The change is on the order of eight lines
+of YANG per service, in a shape already used nine times.
+
+And upstream has already said it intends to. `sc-comm-health-event-kind`'s
+own description reads: *"Placeholder sub-base; leaf identities (time-drift,
+comm-attempt-window, link-degraded/recovered) land in a future revision."*
+Signal-control was simply done first.
+
+So this is not asking the catalog to grow a concept for a poller's
+convenience, which [ADR 0016](0016-collector-as-transitional-shim.md)
+forbids. It is asking it to finish a fan-out its own model declares
+unfinished, which ADR 0016 permits — a DMS that stops answering is exactly as
+real a fact as an ASC that does.
 
 Nothing blocks on that answer. `ntcip-asc` is the only shipped adapter and it
 is a `signal-control` device, so the mapping works end to end today. The
@@ -82,6 +99,10 @@ cabinet nobody can visit:
 | `:155` | an event was dropped: no ce-source entity kind |
 | `:169` | a publish failed after all three attempts |
 | `:179` | an event was dropped: no emitter claimed it |
+
+And one it does not merely fail to publish but actively misattributes: an
+adapter panic, recovered by `readGuarded` (`internal/runner/runner.go`), is
+reported as the *device* being unreachable. See clause 12.
 
 A collector that is failing to publish *every single event* is, from the
 bus, indistinguishable from one that has nothing to report.
@@ -325,6 +346,126 @@ The pair also distinguishes a process restart from a cabinet power cycle
 without any new field: if the leaf connection stayed up across the gap, the
 collector restarted; if the leaf dropped and reconnected, the cabinet did.
 
+**9. The heartbeat describes the collector as a process, and carries no
+device state.**
+
+```
+identity    collector_id, version, config_revision, boot_id, uptime_s
+resource    cpu_seconds_total, memory_bytes, heap_objects_bytes, goroutines
+errors      adapter_panics, encode_errors, publish_failures,
+            dropped_no_emitter, dropped_no_source, logs_suppressed
+throughput  events_published
+```
+
+Every counter is cumulative since boot, per clause 4. The whole `resource`
+block comes from a single `runtime/metrics` read — `/cpu/classes/total:cpu-seconds`,
+`/memory/classes/total:bytes`, `/memory/classes/heap/objects:bytes`,
+`/sched/goroutines:goroutines` — with no syscall and no `/proc` parsing.
+
+**CPU is cumulative seconds, not a percentage.** The hub differentiates. A
+point-in-time percentage sampled once per interval says almost nothing, and
+the cumulative form sidesteps every sampling-window question. It earns its
+place by catching a failure class the other two miss: a busy-loop or retry
+storm shows as CPU climbing against a flat heap.
+
+**No device state, deliberately.** An earlier draft carried
+`devices_configured`, `devices_answering`, poll counters and a
+last-successful-poll timestamp. All four are facts about devices, and the
+root rule in Scope puts device facts on the catalog root. A fleet view that
+wants "5 of 6 devices answering" reads the device stream; it does not get it
+smuggled through the collector's own health.
+
+**Disk is out**, for the same kind of reason: the JetStream store lives on a
+disk the host owns and sizes, and [ADR 0012](0012-host-executed-updates.md)
+makes OS ownership a boundary. A collector reporting host disk crosses it.
+
+**What this cannot detect, stated rather than left to be discovered.** A
+collector whose poll goroutines are wedged — deadlocked on a hung socket —
+keeps beating, and with no device state in the payload nothing in the beat
+exposes it. That is resolved at the hub by correlation: a heartbeat arriving
+while the device stream has gone silent is a wedged collector. The hub has
+both streams; the edge does not need to.
+
+**10. Warn-and-above logs ship as their own event family.**
+
+```
+openits-collector.instance.log.v1  ->  …d01.instance.cabinet-042.log
+```
+
+Counters say *something* is wrong; logs say *what*. Every error path in
+`internal/app` currently writes to stderr in a cabinet nobody can visit,
+which is what makes a drop counter unactionable on its own.
+
+- **Floor is warn, and is operator-configurable.** A production fleet may
+  want error-only; a pilot may want more.
+- **Rate-limited per heartbeat interval**, not per wall-clock minute, so the
+  limit scales with whatever cadence the operator configured and there is one
+  tunable rather than two.
+- **The suppressed count rides the heartbeat**, not the log stream. If it
+  lived in a log record it could be starved by the very flood it is
+  reporting; in the heartbeat it is always visible.
+- **Structured attributes are preserved.** `slog` is already structured, and
+  flattening to a message string discards the device id and error that make a
+  line actionable.
+- Message coalescing is deliberately not built. Rate limiting first; add
+  coalescing only if `logs_suppressed` shows the limit saturating routinely.
+
+One honest limit: if the publish path is what is broken, the log record
+saying so cannot be published either. That is not fixable, and it is why the
+counters are the durable record — cumulative, so the first beat after
+recovery reports everything that accumulated during the outage. Logs are
+best-effort detail on top of a signal that survives without them.
+
+**11. The collector reports facts. The hub decides whether they are good.**
+
+No `healthy` boolean, and no thresholds in the payload. Whether three drops
+an hour is routine or an incident is operator policy that differs between a
+pilot and a 15,000-unit deployment, and a verdict computed at the edge cannot
+be retuned without redeploying the fleet to change a number.
+
+This is the same principle that puts restart counting at the hub (clause 8):
+the edge observes, the hub aggregates and judges.
+
+**12. An adapter panic is a collector fault, not a device fault.**
+
+`readGuarded` (`internal/runner/runner.go`) recovers a panicking adapter and
+returns it as a failed poll, which today becomes
+`DeviceStatusChanged{Reachable: false}`. The same happens when an adapter
+breaks its contract by returning a nil snapshot with no error. Both are
+collector-side software defects, and in both cases the device was never
+successfully contacted — it may be perfectly healthy.
+
+Under the root rule this stops being a confusing label and becomes a false
+statement on a shared bus: the event would now publish as
+`openits.<service>.comm-health-event.v1` with `kind: comm-lost`, asserting
+into the *catalog* that a controller stopped answering when in fact our code
+crashed. At fleet scale a bad adapter release would then present as a
+wave of unreachable devices, and dispatch technicians to cabinets for a bug
+in this repository.
+
+So the panic and contract-violation paths stop producing device comm-health
+entirely. They increment `adapter_panics`, emit a warn-level log record with
+the adapter key and the recovered value, and say nothing about the device.
+A device that is genuinely unreachable is still reported as such by the
+ordinary failed-read path, which is unaffected.
+
+**13. `config_revision` is a hash of the config file as loaded.**
+
+Nothing computes one today. `config.Load` gains a SHA-256 of the raw file
+bytes, truncated to 12 hex characters, carried in both `heartbeat` and
+`started`.
+
+Raw bytes rather than a normalized parse, deliberately. Normalizing would
+stop a comment or whitespace change from bumping the revision — but it would
+also let two genuinely different files hash the same, and "the file changed"
+is what an operator rolling out config actually means. A spurious revision
+bump is the cheaper error than a hidden real difference.
+
+The collector reports the revision it is running and never compares it to
+anything. Comparing running-versus-expected across the fleet is
+[ADR 0012](0012-host-executed-updates.md)'s drift reporting and belongs to
+fleet-plan Phase 1 — the same edge-observes / hub-judges split as clause 11.
+
 ## Consequences
 
 A fleet-management consumer can, for the first time, answer "which cabinets
@@ -358,8 +499,47 @@ and heartbeats with `uptime` near zero and a new `boot_id` each time.
 The heartbeat's counters are the collector's metrics surface. This does not
 close the "no metrics subsystem" gap so much as decide its shape: on a fleet
 behind carrier NAT, push-on-a-schedule is not a workaround for the absence of
-scraping, it is the only form that fits the topology. A future Prometheus
-endpoint would serve a local operator standing in the cabinet, not the fleet.
+scraping, it is the only form that fits the topology. Scraping is not merely
+impractical at 15,000 — it is impossible at any size, because the hub cannot
+dial in. A future Prometheus endpoint would serve a local operator standing
+in the cabinet, not the fleet.
+
+Prometheus Agent with `remote_write` is the other push mechanism that fits
+this topology and was weighed seriously. NATS wins on one property that
+matters here more than efficiency: `remote_write` buffers in a bounded WAL
+and drops samples across a long outage, while JetStream on the cabinet
+persists to disk and replays the full backlog on reconnect. On intermittent
+cellular that is the difference between losing hours of history from a
+cabinet and receiving it late. The secondary reasons are real but smaller —
+one transport, one credential set, one failure mode to debug somewhere nobody
+can visit. The honest cost is that this adds a hop rather than avoiding a
+TSDB: something at the hub still consumes these events and writes them into a
+real time-series store. NATS is not a TSDB and this record does not pretend
+otherwise.
+
+**Detailed, high-cardinality metrics are deliberately not pushed, and pulling
+them is deferred.** Nobody reads per-cabinet GC histograms from 15,000 units,
+and shipping them continuously would pay bandwidth for data read a fraction
+of a percent of the time. Pulling them per cabinet on demand is possible —
+NATS request/reply traverses the leaf connection because the cabinet
+established it, which solves the NAT problem rather than working around it —
+but it opens the first inbound path, and that is an architectural threshold
+rather than a feature.
+
+It is deferred for a reason beyond caution: **config-plus-restart is already
+the management interface.** Getting more detail out of one cabinet is
+achievable today by lowering its log floor or shortening its heartbeat
+interval and restarting it. Clumsier and slower, but it needs no new surface,
+which makes a pull path a convenience rather than a capability gap.
+
+*The trigger that should bring it forward:* when fields start being added to
+the heartbeat to answer one-off questions. That is the heartbeat turning into
+a debugging channel when it should stay a fleet-health channel, and it is the
+point at which pull earns its surface. If it is built, it must stay
+read-only, scoped to its own subject and credential, and rate-limited — and
+it does not inherit the signed-payload and last-good-config conditions the
+management-surface spec attaches to inbound *config*, because a read-only
+request cannot brick a cabinet that then cannot receive the fix.
 
 **Device health changes root, schema and emitter.**
 `openits-collector.health.device-status-changed.v1` ceases to exist. Its
@@ -410,6 +590,14 @@ above. It cannot replace the heartbeat, because the collector is a separate
 process from the NATS server it publishes to: it can be dead, wedged, or
 crash-looping while NATS holds the leaf connection open perfectly. Leaf state
 reports on the broker; the heartbeat reports on the collector.
+
+**Compute a health verdict at the edge and publish `healthy: true/false`**
+(rejected). It looks like it saves the hub work and it does the opposite: the
+thresholds that turn counters into a verdict are operator policy, they differ
+between a pilot and a production fleet, and baking them into the collector
+means redeploying 15,000 units to change a number. It also destroys
+information — a consumer receiving `false` cannot tell which of six counters
+caused it without the counters, at which point the boolean was redundant.
 
 **Piggyback liveness on existing telemetry** (rejected). A cabinet whose
 devices are genuinely quiet emits nothing for hours, and that is correct
