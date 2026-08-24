@@ -67,3 +67,34 @@ func TestStaticErrStillFailsEveryCall(t *testing.T) {
 		}
 	}
 }
+
+func TestStaticGetAllReturnsOctets(t *testing.T) {
+	oid := ".1.3.6.1.4.1.1206.4.2.3.6.5.0"
+	want := []byte{3, 0, 3, 0x29, 0x2e}
+	s := &Static{Octets: map[string][]byte{oid: want}}
+	got, err := s.GetAll(context.Background(), []string{oid, ".1.missing"})
+	if err != nil {
+		t.Fatalf("GetAll: %v", err)
+	}
+	if _, ok := got.Ints[oid]; ok {
+		t.Fatal("octet OID must not appear in Ints")
+	}
+	if b, ok := got.Octets[oid]; !ok || string(b) != string(want) {
+		t.Fatalf("Octets[%s] = %v,%v; want %v,true", oid, b, ok, want)
+	}
+	if _, ok := got.Octets[".1.missing"]; ok {
+		t.Fatal("unknown OID must be omitted from Octets")
+	}
+}
+
+func TestStaticGetDoesNotReturnOctets(t *testing.T) {
+	oid := ".1.3.6.1.4.1.1206.4.2.3.6.5.0"
+	s := &Static{Octets: map[string][]byte{oid: {1, 2, 3}}}
+	got, err := s.Get(context.Background(), []string{oid})
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("Get must stay integer-only, got %v", got)
+	}
+}

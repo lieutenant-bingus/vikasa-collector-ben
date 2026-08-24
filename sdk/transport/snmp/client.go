@@ -7,26 +7,38 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/gosnmp/gosnmp"
 )
 
-// Client fetches integer-valued OIDs. OIDs the agent does not answer are
-// omitted from the result map — callers treat absence as a facet-level
-// read failure, never as a zero value.
+// Values is one GET's typed results. OIDs the agent does not answer are
+// omitted from both maps — callers treat absence as a facet-level read
+// failure, never as a zero value. An answered OCTET STRING of length 0 is
+// present in Octets (empty), which is distinct from omission.
+type Values struct {
+	Ints   map[string]int64
+	Octets map[string][]byte
+}
+
+// Client fetches OIDs. Get is the integer-only convenience the ASC adapter
+// uses; GetAll also returns OCTET STRING payloads (MessageIDCode, MULTI).
 type Client interface {
 	Get(ctx context.Context, oids []string) (map[string]int64, error)
+	GetAll(ctx context.Context, oids []string) (Values, error)
 	Close() error
 }
 
-// DialConfig configures a UDP SNMP v2c session.
+// DialConfig configures a UDP SNMP session. Version is "v1" or "v2c"; empty
+// means v2c, which is what ntcip-asc has always spoken.
 type DialConfig struct {
 	Address   string // "host:port"
 	Community string
 	Timeout   time.Duration // default 2s
 	Retries   int           // default 1
+	Version   string        // "v1" or "v2c"; empty defaults to v2c
 }
 
 // Dial opens a gosnmp session. All I/O on the returned Client is
@@ -39,11 +51,15 @@ func Dial(cfg DialConfig) (Client, error) {
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 2 * time.Second
 	}
+	ver, err := ParseVersion(cfg.Version)
+	if err != nil {
+		return nil, err
+	}
 	g := &gosnmp.GoSNMP{
 		Target:    host,
 		Port:      port,
 		Community: cfg.Community,
-		Version:   gosnmp.Version2c,
+		Version:   ver,
 		Timeout:   cfg.Timeout,
 		Retries:   cfg.Retries,
 	}
@@ -59,23 +75,38 @@ type client struct {
 }
 
 func (c *client) Get(ctx context.Context, oids []string) (map[string]int64, error) {
+	all, err := c.GetAll(ctx, oids)
+	if err != nil {
+		return nil, err
+	}
+	return all.Ints, nil
+}
+
+func (c *client) GetAll(ctx context.Context, oids []string) (Values, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return Values{}, err
 	}
-	out := make(map[string]int64, len(oids))
+	out := Values{
+		Ints:   make(map[string]int64, len(oids)),
+		Octets: make(map[string][]byte),
+	}
 	// gosnmp caps PDUs per request; chunk to stay portable across agents.
 	const chunk = 16
 	for i := 0; i < len(oids); i += chunk {
 		end := min(i+chunk, len(oids))
 		pkt, err := c.g.Get(oids[i:end])
 		if err != nil {
-			return nil, fmt.Errorf("snmp get: %w", err)
+			return Values{}, fmt.Errorf("snmp get: %w", err)
 		}
 		for _, pdu := range pkt.Variables {
 			if v, ok := toInt64(pdu); ok {
-				out[pdu.Name] = v
+				out.Ints[pdu.Name] = v
+				continue
+			}
+			if v, ok := toOctet(pdu); ok {
+				out.Octets[pdu.Name] = v
 			}
 		}
 	}
@@ -94,6 +125,41 @@ func toInt64(pdu gosnmp.SnmpPDU) (int64, bool) {
 		return gosnmp.ToBigInt(pdu.Value).Int64(), true
 	default:
 		return 0, false // NoSuchObject / NoSuchInstance / non-numeric: omit
+	}
+}
+
+func toOctet(pdu gosnmp.SnmpPDU) ([]byte, bool) {
+	if pdu.Type != gosnmp.OctetString {
+		return nil, false
+	}
+	return octetBytes(pdu.Value)
+}
+
+func octetBytes(v any) ([]byte, bool) {
+	switch t := v.(type) {
+	case []byte:
+		out := make([]byte, len(t))
+		copy(out, t)
+		return out, true
+	case string:
+		return []byte(t), true
+	case nil:
+		return []byte{}, true
+	default:
+		return nil, false
+	}
+}
+
+// ParseVersion maps config strings onto gosnmp versions. Empty is v2c so
+// existing ntcip-asc dials keep their historical behaviour.
+func ParseVersion(s string) (gosnmp.SnmpVersion, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "v2c", "2c":
+		return gosnmp.Version2c, nil
+	case "v1", "1":
+		return gosnmp.Version1, nil
+	default:
+		return 0, fmt.Errorf("snmp: version %q not supported (want v1 or v2c)", s)
 	}
 }
 

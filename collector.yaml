@@ -115,3 +115,12 @@ devices:
       snmp:
         address: 10.0.0.12:161 # host:port, required
         community: public # optional; defaults to "public"
+  - id: dms-i35-mm214
+    vendor: ntcip
+    device_kind: dms
+    poll_interval: 5s
+    connection:
+      snmp:
+        address: 10.0.0.20:161 # placeholder host:port, required
+        community: public # optional; defaults to "public"
+        version: v1 # optional; ntcip-dms defaults to v1, ntcip-asc defaults to v2c
