@@ -33,8 +33,9 @@ var healthyDMSInts = map[string]int64{
 	".1.3.6.1.4.1.1206.4.2.3.7.4.0":  10,  // num bright levels
 	".1.3.6.1.4.1.1206.4.2.3.7.5.0":  7,   // bright level → 70%
 	".1.3.6.1.4.1.1206.4.2.3.9.6.0":  0,   // door closed
-	".1.3.6.1.4.1.1206.4.2.3.9.7.36.1.3.1": 22, // cabinet °C
-	".1.3.6.1.4.1.1206.4.2.3.9.7.36.1.3.2": 28, // face °C
+	".1.3.6.1.4.1.1206.4.2.3.9.7.36.1.3.1": 28, // face/housing °C (temp row 1)
+	".1.3.6.1.4.1.1206.4.2.3.9.7.36.1.3.2": 22, // cabinet °C (temp row 2)
+	".1.3.6.1.4.1.1206.4.2.3.9.7.32.0": 1,    // humidity NumRows (gate before row GET)
 	".1.3.6.1.4.1.1206.4.2.3.9.7.33.1.3.1": 45, // humidity %
 }
 
@@ -302,6 +303,34 @@ func TestDMSEnvGetFailureStillReturnsStatus(t *testing.T) {
 	}
 	if _, ok := snap.Facet(model.KindDMSEnvironment); ok {
 		t.Fatal("dms-environment must be absent when its Get fails")
+	}
+}
+
+// Ledstar reports dmsHumiditySensorNumRows=0; a humidity row GET genErrors.
+// That must not ride in the env PDU or sign-status-report never ships.
+func TestDMSEmptyHumidityTableStillEmitsEnvironment(t *testing.T) {
+	fx := map[string]int64{}
+	for k, v := range healthyDMSInts {
+		if k == oidDMSHumidity1 || k == oidDMSHumidityNumRows {
+			continue
+		}
+		fx[k] = v
+	}
+	fx[oidDMSHumidityNumRows] = 0
+	snap, err := NewDMS("dms-1", &snmptest.Static{Values: fx, Octets: healthyDMSOctets}).Read(context.Background())
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	env, ok := snap.Facet(model.KindDMSEnvironment)
+	if !ok {
+		t.Fatal("environment facet must survive empty humidity table")
+	}
+	got := env.(model.DMSEnvironment)
+	if got.HumidityReported {
+		t.Fatal("humidity must stay unreported when NumRows=0")
+	}
+	if !got.BrightnessReported || got.BrightnessPercent != 70 {
+		t.Fatalf("brightness should still decode: %+v", got)
 	}
 }
 

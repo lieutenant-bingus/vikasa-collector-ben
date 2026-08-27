@@ -33,12 +33,16 @@ const (
 
 	// dmsStatus scalars / known table cells (GET by OID; no walk)
 	oidDMSStatDoorOpen = ".1.3.6.1.4.1.1206.4.2.3.9.6.0"
-	// Temp/humidity tables under statError: index 1 → cabinet, index 2 → face.
-	// Vendor description strings would refine that mapping; until then this is
-	// the conventional two-sensor layout.
-	oidDMSTempCabinet = ".1.3.6.1.4.1.1206.4.2.3.9.7.36.1.3.1"
-	oidDMSTempFace    = ".1.3.6.1.4.1.1206.4.2.3.9.7.36.1.3.2"
-	oidDMSHumidity1   = ".1.3.6.1.4.1.1206.4.2.3.9.7.33.1.3.1"
+	// Temp table (Ledstar CTL24): row 1 = Sign Housing (face), row 2 = CTL
+	// Cabinet. Descriptions from dmsTempSensorTable; do not swap these.
+	oidDMSTempFace    = ".1.3.6.1.4.1.1206.4.2.3.9.7.36.1.3.1"
+	oidDMSTempCabinet = ".1.3.6.1.4.1.1206.4.2.3.9.7.36.1.3.2"
+	// Humidity is OPTIONAL and must not ride in dmsEnvOIDs: on this firmware
+	// dmsHumiditySensorNumRows=0 and a row-1 GET returns genError, which
+	// aborts the whole PDU and would silently drop the environment facet
+	// (and therefore every sign-status-report).
+	oidDMSHumidityNumRows = ".1.3.6.1.4.1.1206.4.2.3.9.7.32.0"
+	oidDMSHumidity1       = ".1.3.6.1.4.1.1206.4.2.3.9.7.33.1.3.1"
 )
 
 // NTCIP 1203 error objects on this firmware use 2 = none, not 0.
@@ -71,9 +75,8 @@ var dmsEnvOIDs = []string{
 	oidDMSIllumNumBright,
 	oidDMSIllumBrightLevel,
 	oidDMSStatDoorOpen,
-	oidDMSTempCabinet,
 	oidDMSTempFace,
-	oidDMSHumidity1,
+	oidDMSTempCabinet,
 }
 
 var dmsDescriptor = adapter.Descriptor{
@@ -114,8 +117,33 @@ func (a *dms) Read(ctx context.Context) (*model.Snapshot, error) {
 		// hard Read error that would also drop dms-status.
 		return snap, nil
 	}
+	a.mergeOptionalHumidity(ctx, &envVals)
 	a.readDMSEnvironment(snap, envVals)
 	return snap, nil
+}
+
+// mergeOptionalHumidity appends a humidity reading only when the table has
+// rows. Empty-table row GETs genError on Ledstar; probing NumRows first keeps
+// that failure off the critical env path.
+func (a *dms) mergeOptionalHumidity(ctx context.Context, vals *snmp.Values) {
+	rows, err := a.client.GetAll(ctx, []string{oidDMSHumidityNumRows})
+	if err != nil {
+		return
+	}
+	n, ok := rows.Ints[oidDMSHumidityNumRows]
+	if !ok || n <= 0 {
+		return
+	}
+	hum, err := a.client.GetAll(ctx, []string{oidDMSHumidity1})
+	if err != nil {
+		return
+	}
+	if vals.Ints == nil {
+		vals.Ints = make(map[string]int64)
+	}
+	for k, v := range hum.Ints {
+		vals.Ints[k] = v
+	}
 }
 
 func (a *dms) readDMSStatus(snap *model.Snapshot, vals snmp.Values) {
