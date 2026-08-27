@@ -541,7 +541,9 @@ func TestCETypes_IsCompleteSortedAndDeduped(t *testing.T) {
 		"openits.dms.fault-cleared.v1",
 		"openits.dms.fault-raised.v1",
 		"openits.dms.message-activation-failed.v1",
+		"openits.dms.message-changed.v1",
 		"openits.dms.mode-changed.v1",
+		"openits.dms.sign-status-report.v1",
 		"openits.perception.fault-cleared.v1",
 		"openits.perception.fault-raised.v1",
 		"openits.perception.zone-incident-cleared.v1",
@@ -620,7 +622,15 @@ func TestEncode_CarriesDataSchemaPinnedToDefiningEventsModule(t *testing.T) {
 	}, {
 		"message-activation-failed is defined by dms-events, at its own revision",
 		model.DMSMessageActivationFailed{Base: base("dms-1", "dms")},
-		"https://schemas.open-its.org/openits-dms-events/2026-07-23/",
+		"https://schemas.open-its.org/openits-dms-events/2026-08-27/",
+	}, {
+		"message-changed is defined by dms-events, at the v0.4.0 revision",
+		model.DMSMessageChanged{Base: base("dms-1", "dms"), ToMemoryType: model.MemoryChangeable, ToSlot: 1},
+		"https://schemas.open-its.org/openits-dms-events/2026-08-27/",
+	}, {
+		"sign-status-report is defined by dms-events, at the v0.4.0 revision",
+		model.DMSSignStatusReport{Base: base("dms-1", "dms")},
+		"https://schemas.open-its.org/openits-dms-events/2026-08-27/",
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
 			enc, ok, err := New("cabinet-poller-1").Encode(tc.ev)

@@ -216,6 +216,44 @@ func occupancyPercent(tenths uint16) string {
 	return fmt.Sprintf("%d.%d", tenths/10, tenths%10)
 }
 
+// deciCelsius renders signed tenths-of-a-degree as the wire's decimal64
+// string — occupancyPercent's contract with a sign, since housing
+// temperatures are legitimately negative.
+func deciCelsius(v int16) string {
+	n, sign := int(v), ""
+	if n < 0 {
+		sign, n = "-", -n
+	}
+	return fmt.Sprintf("%s%d.%d", sign, n/10, n%10)
+}
+
+// activationTriggerIdentity maps WHY a message reached the sign face to its
+// upstream identity. The identity set spans two modules: the generic causes
+// live in openits-types, the DMS fallback-specific ones in openits-dms-types.
+//
+// ok=false (Unknown, Reset, Other) does NOT decline the event — the
+// activation-trigger leaf is optional, so the caller leaves it unset. Reset
+// has no upstream identity yet; folding it into power-recovery would assert
+// a cause the sign did not report.
+func activationTriggerIdentity(t model.DMSActivationTrigger) (string, bool) {
+	switch t {
+	case model.TriggerCommand:
+		return openitsTypes + "trigger-operator", true
+	case model.TriggerSchedule:
+		return openitsTypes + "trigger-schedule", true
+	case model.TriggerCommLoss:
+		return openitsTypes + "trigger-comm-loss", true
+	case model.TriggerPowerRecovery:
+		return dmsTypes + "trigger-power-recovery", true
+	case model.TriggerPowerLoss:
+		return dmsTypes + "trigger-power-loss", true
+	case model.TriggerEndOfDuration:
+		return dmsTypes + "trigger-end-of-duration", true
+	default:
+		return "", false
+	}
+}
+
 // cctvControlModeIdentity maps who is driving the camera. The upstream set is
 // central / local / central-override / other with NO unknown member — the same
 // shape as dms-control-mode — so an unknown mode is declined rather than
@@ -444,7 +482,12 @@ var dataSchemaFor = map[string]string{
 	"openits.signal-control.preemption-cleared.v1":        registryBase + "openits-signal-control-events/2026-07-21/",
 	"openits.signal-control.detector-report.v1":           registryBase + "openits-signal-control-events/2026-07-21/",
 
-	"openits.dms.message-activation-failed.v1": registryBase + "openits-dms-events/2026-07-23/",
+	// v0.4.0 moved openits-dms-events to 2026-08-27 (the phase leaf at
+	// 2026-08-23, then the two new notifications); the other event modules
+	// cut no revision between v0.3.0 and v0.4.0, so only these three moved.
+	"openits.dms.message-activation-failed.v1": registryBase + "openits-dms-events/2026-08-27/",
+	"openits.dms.message-changed.v1":           registryBase + "openits-dms-events/2026-08-27/",
+	"openits.dms.sign-status-report.v1":        registryBase + "openits-dms-events/2026-08-27/",
 
 	"openits.traffic-sensor.traffic-interval-report.v1": registryBase + "openits-traffic-sensor-events/2026-07-21/",
 

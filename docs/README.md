@@ -125,7 +125,7 @@ device kind already modelled, differed and published.
 hand rather than read off a check is the entry above: there is no
 catalog-conformance test, so nothing tells you when this list changes.
 
-**Four of the eight registered differs have no failed-read test.** The
+**Four of the nine registered differs have no failed-read test.** The
 absence-of-evidence rule (ADR 0013) is proven for the signal, fault, detector
 and DMS differs (`TestFailedFacetSuspendsDiffing`,
 `TestFailedFaultReadNeverClears`, `TestFailedDetectorReadEmitsNothing`,

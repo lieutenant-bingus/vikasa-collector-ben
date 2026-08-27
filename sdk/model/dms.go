@@ -172,10 +172,59 @@ func (e MultiSyntaxError) String() string {
 	}
 }
 
-// DMSStatus is what a sign reports about what it is doing. It carries only
-// state the collector acts on; brightness, pixel/lamp diagnostics, and
-// environment are modeled upstream but nothing has asked for them, so they
-// are omitted until something does (adding them is additive).
+// DMSActivationTrigger is WHY the active message is on the face. NTCIP 1203
+// conflates two orthogonal axes into one dmsMsgSourceMode enumeration: WHICH
+// AUTHORITY is driving the sign (local / central / external — that axis is
+// DMSControlMode) and WHY the current message got there (schedule, comm-loss
+// fallback, power recovery, duration expiry). An adapter splits the object
+// across the two fields; this type is the WHY half. The upstream state model
+// draws the same line at sign/control/state/active/activation-trigger.
+//
+// The zero value is Unknown, not Command: a sign that does not answer the
+// source object must not read as "an operator commanded this."
+type DMSActivationTrigger uint8
+
+const (
+	TriggerUnknown       DMSActivationTrigger = iota
+	TriggerCommand                            // an operator / central / external command activated it
+	TriggerSchedule                           // the sign's time-based scheduler
+	TriggerCommLoss                           // the sign entered its comm-loss fallback
+	TriggerPowerRecovery                      // the sign entered a power-recovery fallback
+	TriggerPowerLoss                          // legacy power-loss reporting, kept distinct from PowerRecovery
+	TriggerReset                              // the sign entered its reset fallback
+	TriggerEndOfDuration                      // the previous activation's duration expired
+	TriggerOther                              // vendor-specific
+)
+
+func (t DMSActivationTrigger) String() string {
+	switch t {
+	case TriggerCommand:
+		return "command"
+	case TriggerSchedule:
+		return "schedule"
+	case TriggerCommLoss:
+		return "comm-loss"
+	case TriggerPowerRecovery:
+		return "power-recovery"
+	case TriggerPowerLoss:
+		return "power-loss"
+	case TriggerReset:
+		return "reset"
+	case TriggerEndOfDuration:
+		return "end-of-duration"
+	case TriggerOther:
+		return "other"
+	default:
+		return "unknown"
+	}
+}
+
+// DMSStatus is what a sign reports about what it is doing: who is driving
+// it, what the face shows, and which stored message is on it. Brightness and
+// the environment sensor cluster are a separate facet (DMSEnvironment) with
+// a separate read path; pixel/lamp diagnostics are modeled upstream but
+// nothing has asked for them, so they are omitted until something does
+// (adding them is additive).
 type DMSStatus struct {
 	ControlMode      DMSControlMode
 	DisplayState     DMSDisplayState
@@ -184,6 +233,19 @@ type DMSStatus struct {
 	MessageStatus    MessageStatus
 	SyntaxError      MultiSyntaxError // meaningful only when MessageStatus == StatusError
 	SyntaxErrorPos   uint32           // character offset into the MULTI string
+
+	// MessageText is the active message's MULTI string, verbatim at the
+	// device's own encoding. Empty means a blank face (ActiveMemoryType ==
+	// MemoryBlank), never "could not read" — an adapter that cannot read the
+	// active message's text fails the facet instead of leaving this empty.
+	MessageText string
+	// MessageCRC is the sign's CRC-16 of the active message (NTCIP 1203
+	// dmsMessageCRC), carried in a uint32; a conforming sign never reports
+	// above 65535. It changes when a slot's content is rewritten in place,
+	// which the (memory-type, slot) pair alone cannot show.
+	MessageCRC uint32
+	// ActivationTrigger is why the active message is on the face.
+	ActivationTrigger DMSActivationTrigger
 }
 
 func (DMSStatus) FacetKind() Kind { return KindDMSStatus }
