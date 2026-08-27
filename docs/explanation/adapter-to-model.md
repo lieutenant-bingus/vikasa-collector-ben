@@ -49,7 +49,7 @@ path to do so.
 ## Eight facets, one per device kind
 
 A facet is one typed slice of device state — signal-controller mode, a set
-of raised faults, a batch of detector samples. There are eight registered
+of raised faults, a batch of detector samples. There are nine registered
 facet kinds today (`grep -n 'Kind[A-Za-z]* Kind = ' sdk/model/*.go`):
 
 | Kind constant | Facet type | What it holds |
@@ -57,7 +57,8 @@ facet kinds today (`grep -n 'Kind[A-Za-z]* Kind = ' sdk/model/*.go`):
 | `KindSignalStatus` | `SignalStatus` | signal-controller mode, conflict flash, active plan, preemption |
 | `KindFaultSet` | `FaultSet` | every fault currently raised on the device |
 | `KindDetectorSamples` | `DetectorSamples` | per-channel vehicle detector counts, one sample per answering channel |
-| `KindDMSStatus` | `DMSStatus` | a dynamic message sign's control mode and display state |
+| `KindDMSStatus` | `DMSStatus` | a dynamic message sign's control mode, display state, and face message |
+| `KindDMSEnvironment` | `DMSEnvironment` | a sign's environment / illumination sensor cluster |
 | `KindCCTVStatus` | `CCTVStatus` | who is driving a camera and what its tours are doing |
 | `KindTrafficIntervals` | `TrafficIntervals` | a completed measurement interval from a roadside traffic sensor |
 | `KindZoneIncidents` | `ZoneIncidents` | incidents a perception sensor currently observes in its zones |
@@ -71,8 +72,8 @@ perception facets were added since. Trust the table above, or re-run the
 `grep` yourself — it is one command.)
 
 Only one adapter exists in this repo today (`ntcip-asc`), and it produces
-three of the eight (`SignalStatus`, `FaultSet`, `DetectorSamples`). The
-other five are fully modeled, diffed, and wired to an emitter with no
+three of the nine (`SignalStatus`, `FaultSet`, `DetectorSamples`). The
+other six are fully modeled, diffed, and wired to an emitter with no
 device on the other end yet — adding an adapter for one is a matter of
 building the transport read, not touching the domain model.
 
@@ -240,10 +241,10 @@ around with a passthrough field here.
 ## Test coverage of the absence path
 
 The absence-of-evidence invariant linked above is enforced by
-`Engine.Apply`'s shape for all eight facet kinds — the loop has no
+`Engine.Apply`'s shape for all nine facet kinds — the loop has no
 per-kind branch, so there is nothing kind-specific to get wrong. Whether
 that has actually been *proven* per kind is a different question, and the
-honest answer today is no. Only four of the eight registered differs have
+honest answer today is no. Only five of the nine registered differs have
 a test that drives a failed read through and checks the outcome:
 
 ```
@@ -251,14 +252,15 @@ $ grep -cE 'func Test.*(Fail|Absent|Suspend|NeverClear)' internal/synth/*_test.g
 internal/synth/cctv_test.go:0
 internal/synth/detector_test.go:1
 internal/synth/dms_test.go:2
+internal/synth/dmsenv_test.go:1
 internal/synth/fault_test.go:1
 internal/synth/perception_test.go:0
 internal/synth/signal_test.go:1
 internal/synth/trafficsensor_test.go:0
 ```
 
-Signal, fault, detector, and DMS have one; CCTV, traffic-interval,
-zone-incident, and zone-interval have none. This document does not claim
+Signal, fault, detector, and both DMS differs have one; CCTV,
+traffic-interval, zone-incident, and zone-interval have none. This document does not claim
 otherwise, and does not fix it — it is tracked as open successor work in
 [`docs/README.md`'s known-gaps list](../README.md#known-gaps-and-successor-work)
 and in [`invariants.md`'s own row](../reference/invariants.md#absence-of-evidence-is-never-a-state-change)

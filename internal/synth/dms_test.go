@@ -16,6 +16,8 @@ var dmsNormal = model.DMSStatus{
 	ControlMode: model.ControlCentral, DisplayState: model.DisplayNormal,
 	ActiveMemoryType: model.MemoryChangeable, ActiveSlot: 4,
 	MessageStatus: model.StatusValid,
+	MessageText:   "[jl3]ROAD WORK[nl]5 MILES AHEAD", MessageCRC: 0xBEEF,
+	ActivationTrigger: model.TriggerCommand,
 }
 
 // Nothing has transitioned on the first observation; we have merely learned
@@ -63,6 +65,76 @@ func TestDMSAxesChangeIndependently(t *testing.T) {
 	ds, ok := evs[0].(model.DMSDisplayStateChanged)
 	if !ok || ds.From != model.DisplayNormal || ds.To != model.DisplayBlank {
 		t.Fatalf("bad display-state event: %+v", evs[0])
+	}
+}
+
+// The face message is its own axis: swapping messages under an unchanged
+// display state fires message-changed alone, and an in-place rewrite of the
+// same slot (CRC/text move, identity doesn't) still counts as a change.
+func TestDMSMessageAxisFiresAlone(t *testing.T) {
+	e := NewEngine(NewDMSDiffer())
+	e.Apply(dmsSnap(t0, dmsNormal))
+
+	// A different slot takes the face; display state stays normal.
+	swapped := dmsNormal
+	swapped.ActiveSlot = 7
+	swapped.MessageText = "[jl3]CRASH AHEAD[nl]USE CAUTION"
+	swapped.MessageCRC = 0x1234
+	swapped.ActivationTrigger = model.TriggerSchedule
+	evs := e.Apply(dmsSnap(t0.Add(time.Second), swapped))
+	if len(evs) != 1 {
+		t.Fatalf("events = %v, want 1 message-changed", kinds(evs))
+	}
+	mc, ok := evs[0].(model.DMSMessageChanged)
+	if !ok || mc.FromSlot != 4 || mc.ToSlot != 7 ||
+		mc.FromText != dmsNormal.MessageText || mc.ToText != swapped.MessageText ||
+		mc.FromCRC != 0xBEEF || mc.ToCRC != 0x1234 ||
+		mc.Trigger != model.TriggerSchedule {
+		t.Fatalf("bad message-changed event: %+v", evs[0])
+	}
+
+	// In-place rewrite: same (memory-type, slot), new content.
+	rewritten := swapped
+	rewritten.MessageText = "[jl3]CRASH CLEARED"
+	rewritten.MessageCRC = 0x5678
+	evs = e.Apply(dmsSnap(t0.Add(2*time.Second), rewritten))
+	if len(evs) != 1 {
+		t.Fatalf("in-place rewrite: events = %v, want 1 message-changed", kinds(evs))
+	}
+	if mc := evs[0].(model.DMSMessageChanged); mc.FromSlot != 7 || mc.ToSlot != 7 || mc.ToCRC != 0x5678 {
+		t.Fatalf("bad in-place rewrite event: %+v", evs[0])
+	}
+}
+
+// The trigger is context on the message axis, not an axis of its own: a
+// changed why with an unchanged what is not a new message.
+func TestDMSTriggerAloneIsNotAChange(t *testing.T) {
+	e := NewEngine(NewDMSDiffer())
+	e.Apply(dmsSnap(t0, dmsNormal))
+	retriggered := dmsNormal
+	retriggered.ActivationTrigger = model.TriggerSchedule
+	if evs := e.Apply(dmsSnap(t0.Add(time.Second), retriggered)); len(evs) != 0 {
+		t.Fatalf("trigger-only change must emit nothing, got %v", kinds(evs))
+	}
+}
+
+// Going blank moves two axes — display state and face message — and each
+// reports on its own.
+func TestDMSBlankFiresDisplayAndMessageAxes(t *testing.T) {
+	e := NewEngine(NewDMSDiffer())
+	e.Apply(dmsSnap(t0, dmsNormal))
+	blank := dmsNormal
+	blank.DisplayState = model.DisplayBlank
+	blank.ActiveMemoryType = model.MemoryBlank
+	blank.ActiveSlot = 0
+	blank.MessageText = ""
+	blank.MessageCRC = 0
+	evs := e.Apply(dmsSnap(t0.Add(time.Second), blank))
+	if got := kinds(evs); len(got) != 2 || got[0] != "display-state-changed" || got[1] != "message-changed" {
+		t.Fatalf("events = %v, want [display-state-changed message-changed] in that order", got)
+	}
+	if mc := evs[1].(model.DMSMessageChanged); mc.ToMemoryType != model.MemoryBlank || mc.ToText != "" {
+		t.Fatalf("blank transition must report the blank bank with empty text, got %+v", mc)
 	}
 }
 

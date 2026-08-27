@@ -141,6 +141,43 @@ type DMSDisplayStateChanged struct {
 
 func (DMSDisplayStateChanged) EventKind() string { return "display-state-changed" }
 
+// DMSMessageChanged fires when the message on the sign face changes — a new
+// activation, one stored message replacing another, a slot's content
+// rewritten in place (CRC moves, identity doesn't), or the face going
+// blank. It carries the sign's own readback of what is now displayed, not
+// the command that requested it, so it also reports fallback messages the
+// sign selected on its own with no central command involved.
+//
+// From describes the previously observed display so a single event renders
+// as changed-from-X-to-Y. A blank face is MemoryBlank plus empty text —
+// blank is a real observation, not an unknown.
+type DMSMessageChanged struct {
+	Base
+	FromMemoryType MessageMemoryType
+	FromSlot       uint32
+	FromText       string
+	FromCRC        uint32
+	ToMemoryType   MessageMemoryType
+	ToSlot         uint32
+	ToText         string
+	ToCRC          uint32
+	Trigger        DMSActivationTrigger // why the new message reached the face
+}
+
+func (DMSMessageChanged) EventKind() string { return "message-changed" }
+
+// DMSSignStatusReport is the periodic display/environment report for a sign
+// (emitted every poll, not just on change — same contract as
+// OperationalStatusReport). It exists because its values vary continuously:
+// a housing temperature has no meaningful "transition" to diff, so it rides
+// a cadence instead, and the poll interval is that cadence.
+type DMSSignStatusReport struct {
+	Base
+	DMSEnvironment
+}
+
+func (DMSSignStatusReport) EventKind() string { return "sign-status-report" }
+
 // DMSMessageActivationFailed fires when a message slot transitions INTO an
 // error state — once per transition, not once per poll while it stays broken.
 type DMSMessageActivationFailed struct {

@@ -126,7 +126,7 @@ read is simply never present in `Snapshot.Facets`, so its differ is never
 invoked and the engine's remembered previous state survives untouched.
 
 **This enforcement is partial, and the table says so rather than implying
-otherwise.** Only 4 of the collector's 8 registered differs have a test
+otherwise.** Only 4 of the collector's 9 registered differs have a test
 proving the failed-read path actually holds for them:
 `TestFailedFacetSuspendsDiffing` (signal), `TestFailedFaultReadNeverClears`
 (fault), `TestFailedDetectorReadEmitsNothing` (detector), and
