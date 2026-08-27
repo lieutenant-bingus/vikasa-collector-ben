@@ -4,22 +4,16 @@ import "github.com/Vikasa2M/vikasa-collector/sdk/model"
 
 // NewDMSDiffer diffs the dms-status facet into transition events.
 //
-// DMS emits on transitions only — the catalog has no periodic DMS state
-// report, so there is no per-poll event to produce. Periodic state reports
-// are the exception upstream, not the rule: 8 of the catalog's 10 services
-// have no status-report ce-type (signal-control and traffic-sensor are the
-// two that do).
+// This facet emits on transitions only. The catalog's periodic DMS report
+// (openits.dms.sign-status-report.v1, added upstream in openits-models
+// v0.4.0 on its own merits, per ADR 0016's route) covers the environment
+// sensor cluster, which is the separate dms-environment facet with its own
+// differ — not a per-poll re-report of this facet's state.
 //
-// That absence is NOT a gap waiting to be filled on the collector's behalf.
-// ADR 0016 is explicit that a poller finding something inconvenient is never
-// a reason to grow the catalog; if a periodic DMS state report is a real
-// domain concept it gets argued upstream on its own merits, and if it is not,
-// transitions are the whole of what a sign has to say.
-//
-// The consequence worth knowing either way: after a collector restart a
-// sign's current state is not re-announced until it next changes. The fix for
-// that is remembering across restarts (ADR 0017), not inventing a transition
-// that did not happen.
+// The consequence worth knowing: after a collector restart a sign's
+// control mode, display state, and face message are not re-announced until
+// they next change. The fix for that is remembering across restarts
+// (ADR 0017), not inventing a transition that did not happen.
 func NewDMSDiffer() Differ { return dmsDiffer{} }
 
 type dmsDiffer struct{}
@@ -34,7 +28,8 @@ func (dmsDiffer) Diff(prev, curr model.Facet, base model.Base) []model.Event {
 	p := prev.(model.DMSStatus)
 
 	// Order is fixed by construction, so events are deterministic without a
-	// sort: control mode, then display state, then activation failure.
+	// sort: control mode, then display state, then face message, then
+	// activation failure.
 	var events []model.Event
 	if p.ControlMode != c.ControlMode {
 		events = append(events, model.DMSControlModeChanged{
@@ -44,6 +39,23 @@ func (dmsDiffer) Diff(prev, curr model.Facet, base model.Base) []model.Event {
 	if p.DisplayState != c.DisplayState {
 		events = append(events, model.DMSDisplayStateChanged{
 			Base: base, From: p.DisplayState, To: c.DisplayState,
+		})
+	}
+	// The face message is its own axis: a sign can swap messages without the
+	// display state moving (normal -> normal), and going blank moves both
+	// axes — two events, one per axis. CRC and text participate so an
+	// in-place rewrite of the same slot still reports; the trigger does NOT —
+	// it says why the current message arrived, and a changed why with an
+	// unchanged what is not a new message.
+	if p.ActiveMemoryType != c.ActiveMemoryType || p.ActiveSlot != c.ActiveSlot ||
+		p.MessageCRC != c.MessageCRC || p.MessageText != c.MessageText {
+		events = append(events, model.DMSMessageChanged{
+			Base:           base,
+			FromMemoryType: p.ActiveMemoryType, FromSlot: p.ActiveSlot,
+			FromText: p.MessageText, FromCRC: p.MessageCRC,
+			ToMemoryType: c.ActiveMemoryType, ToSlot: c.ActiveSlot,
+			ToText: c.MessageText, ToCRC: c.MessageCRC,
+			Trigger: c.ActivationTrigger,
 		})
 	}
 	// Only the TRANSITION into error reports. A sign sitting broken would

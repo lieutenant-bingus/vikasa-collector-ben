@@ -13,16 +13,29 @@ import (
 
 // Fixture transcribed from SNMPv1 GET against a Ledstar CTL24 VMS
 // controller, firmware V6.9n (2026-08-21). Integer OIDs and the 5-byte
-// MessageIDCode (changeable slot 3, CRC 10526) are the recorded values.
+// MessageIDCode (changeable slot 3, CRC 0x292e) are the recorded values.
 // currentBuffer MULTI is the face copy from that same poll. This is not a
 // walk — walks genError on this agent. A later live Read (2026-08-24)
 // against the same controller confirmed the mapping still decodes
 // (control=central, display=normal, changeable slot occupied).
+//
+// Illum / door / msgSourceMode values below are synthetic but OID-faithful
+// (NTCIP 1203 v03 numbers); they exercise the v0.4 decode path until a
+// recorded env poll replaces them.
 var healthyDMSInts = map[string]int64{
-	".1.3.6.1.4.1.1206.4.2.3.6.1.0":  4, // dmsControlMode: central
-	".1.3.6.1.4.1.1206.4.2.3.6.17.0": 2, // dmsActivateMsgError: none
-	".1.3.6.1.4.1.1206.4.2.3.6.18.0": 2, // dmsMultiSyntaxError: none
-	".1.3.6.1.4.1.1206.4.2.3.6.19.0": 0, // syntax position
+	".1.3.6.1.4.1.1206.4.2.3.6.1.0":  4,  // dmsControlMode: central
+	".1.3.6.1.4.1.1206.4.2.3.6.7.0":  8,  // dmsMsgSourceMode: central → command
+	".1.3.6.1.4.1.1206.4.2.3.6.17.0": 2,  // dmsActivateMsgError: none
+	".1.3.6.1.4.1.1206.4.2.3.6.18.0": 2,  // dmsMultiSyntaxError: none
+	".1.3.6.1.4.1.1206.4.2.3.6.19.0": 0,  // syntax position
+	".1.3.6.1.4.1.1206.4.2.3.7.2.0":  100, // max photocell
+	".1.3.6.1.4.1.1206.4.2.3.7.3.0":  40,  // photocell → 40%
+	".1.3.6.1.4.1.1206.4.2.3.7.4.0":  10,  // num bright levels
+	".1.3.6.1.4.1.1206.4.2.3.7.5.0":  7,   // bright level → 70%
+	".1.3.6.1.4.1.1206.4.2.3.9.6.0":  0,   // door closed
+	".1.3.6.1.4.1.1206.4.2.3.9.7.36.1.3.1": 22, // cabinet °C
+	".1.3.6.1.4.1.1206.4.2.3.9.7.36.1.3.2": 28, // face °C
+	".1.3.6.1.4.1.1206.4.2.3.9.7.33.1.3.1": 45, // humidity %
 }
 
 var healthyDMSOctets = map[string][]byte{
@@ -44,18 +57,42 @@ func TestDMSReadGolden(t *testing.T) {
 		t.Fatal("missing dms-status facet")
 	}
 	want := model.DMSStatus{
-		ControlMode:      model.ControlCentral,
-		DisplayState:     model.DisplayNormal,
-		ActiveMemoryType: model.MemoryChangeable,
-		ActiveSlot:       3,
-		MessageStatus:    model.StatusValid,
-		SyntaxError:      model.SyntaxErrorNone,
+		ControlMode:       model.ControlCentral,
+		DisplayState:      model.DisplayNormal,
+		ActiveMemoryType:  model.MemoryChangeable,
+		ActiveSlot:        3,
+		MessageStatus:     model.StatusValid,
+		SyntaxError:       model.SyntaxErrorNone,
+		MessageText:       "[fo2][jl3]LEFT[nl]LANE[nl]CLOSED",
+		MessageCRC:        0x292e, // from the recorded MessageIDCode bytes
+		ActivationTrigger: model.TriggerCommand,
 	}
 	if got := f.(model.DMSStatus); !reflect.DeepEqual(got, want) {
 		t.Fatalf("DMSStatus = %+v, want %+v", got, want)
 	}
 	if snap.FacetFailed(model.KindDMSStatus) {
 		t.Fatalf("unexpected dms-status facet error: %+v", snap.Errors)
+	}
+	env, ok := snap.Facet(model.KindDMSEnvironment)
+	if !ok {
+		t.Fatal("missing dms-environment facet")
+	}
+	wantEnv := model.DMSEnvironment{
+		BrightnessPercent:    70,
+		BrightnessReported:   true,
+		AmbientLightPercent:  40,
+		AmbientLightReported: true,
+		CabinetTempDeciC:     220,
+		CabinetTempReported:  true,
+		FaceTempDeciC:        280,
+		FaceTempReported:     true,
+		HumidityPercent:      45,
+		HumidityReported:     true,
+		DoorOpen:             false,
+		DoorReported:         true,
+	}
+	if got := env.(model.DMSEnvironment); !reflect.DeepEqual(got, wantEnv) {
+		t.Fatalf("DMSEnvironment = %+v, want %+v", got, wantEnv)
 	}
 }
 
@@ -203,11 +240,11 @@ func TestParseSNMPBlockAcceptsV1(t *testing.T) {
 }
 
 func TestParseMessageIDCode(t *testing.T) {
-	mem, slot, ok := parseMessageIDCode([]byte{3, 0, 3, 0x29, 0x2e})
-	if !ok || mem != 3 || slot != 3 {
-		t.Fatalf("got mem=%d slot=%d ok=%v", mem, slot, ok)
+	mem, slot, crc, ok := parseMessageIDCode([]byte{3, 0, 3, 0x29, 0x2e})
+	if !ok || mem != 3 || slot != 3 || crc != 0x292e {
+		t.Fatalf("got mem=%d slot=%d crc=%#x ok=%v", mem, slot, crc, ok)
 	}
-	if _, _, ok := parseMessageIDCode([]byte{3, 0}); ok {
+	if _, _, _, ok := parseMessageIDCode([]byte{3, 0}); ok {
 		t.Fatal("short buffer must not parse")
 	}
 }
@@ -225,5 +262,63 @@ func TestControlModeFromNTCIP(t *testing.T) {
 		if got := controlModeFromNTCIP(in); got != want {
 			t.Errorf("controlModeFromNTCIP(%d) = %v, want %v", in, got, want)
 		}
+	}
+}
+
+func TestActivationTriggerFromNTCIP(t *testing.T) {
+	cases := map[int64]model.DMSActivationTrigger{
+		1:  model.TriggerOther,
+		2:  model.TriggerCommand, // local
+		3:  model.TriggerCommand, // external
+		8:  model.TriggerCommand, // central
+		9:  model.TriggerSchedule,
+		10: model.TriggerPowerRecovery,
+		11: model.TriggerReset,
+		12: model.TriggerCommLoss,
+		13: model.TriggerPowerLoss,
+		14: model.TriggerEndOfDuration,
+		99: model.TriggerUnknown,
+	}
+	for in, want := range cases {
+		if got := activationTriggerFromNTCIP(in); got != want {
+			t.Errorf("activationTriggerFromNTCIP(%d) = %v, want %v", in, got, want)
+		}
+	}
+}
+
+func TestDMSEnvGetFailureStillReturnsStatus(t *testing.T) {
+	// Second Get (env OIDs) fails; status from the first Get must still land.
+	client := &snmptest.Static{
+		Values:   healthyDMSInts,
+		Octets:   healthyDMSOctets,
+		FailCall: map[int]error{2: errors.New("illum timeout")},
+	}
+	snap, err := NewDMS("dms-1", client).Read(context.Background())
+	if err != nil {
+		t.Fatalf("env failure must not be a hard Read error: %v", err)
+	}
+	if _, ok := snap.Facet(model.KindDMSStatus); !ok {
+		t.Fatal("dms-status must survive an env Get failure")
+	}
+	if _, ok := snap.Facet(model.KindDMSEnvironment); ok {
+		t.Fatal("dms-environment must be absent when its Get fails")
+	}
+}
+
+func TestDMSNoEnvSensorsOmitsEnvironmentFacet(t *testing.T) {
+	// Status-only ints: no illum/door/temp. Facet must be omitted, not empty.
+	statusOnly := map[string]int64{
+		oidDMSControlMode:    4,
+		oidDMSMsgSourceMode:  8,
+		oidDMSActivateMsgErr: 2,
+		oidDMSMultiSyntaxErr: 2,
+		oidDMSMultiSyntaxPos: 0,
+	}
+	snap, err := NewDMS("dms-1", &snmptest.Static{Values: statusOnly, Octets: healthyDMSOctets}).Read(context.Background())
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if _, ok := snap.Facet(model.KindDMSEnvironment); ok {
+		t.Fatal("empty env must not produce a facet (would spam empty status reports)")
 	}
 }

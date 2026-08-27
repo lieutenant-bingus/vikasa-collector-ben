@@ -320,10 +320,47 @@ var goldenCases = []struct {
 		ev: model.DMSMessageActivationFailed{Base: gbase("dms-1", "dms"),
 			MemoryType: model.MemoryChangeable, Slot: 7,
 			Error: model.SyntaxErrorFontNotFound, ErrorPosition: 12},
-		ceType:     "openits.dms.message-activation-failed.v1",
-		dataSchema: "https://schemas.open-its.org/openits-dms-events/2026-07-23/",
+		ceType: "openits.dms.message-activation-failed.v1",
+		// The v0.4.0 revision bump moves only ce-dataschema; the payload
+		// bytes are untouched because the phase leaf added at 2026-08-23 is
+		// additive with `activate` at proto default 0 — this event always
+		// described activation, and absent-on-the-wire still does.
+		dataSchema: "https://schemas.open-its.org/openits-dms-events/2026-08-27/",
 		dataHex:    "080210072210636162696e65742d706f6c6c65722d312a0608c0e182d30638014205646d732d314802500c9a062f6f70656e6974732d646d732d74797065733a646d732d6d6573736167652d61637469766174696f6e2d6661696c6564",
 		identHex:   "080210072a0608c0e182d3064205646d732d314802500c9a062f6f70656e6974732d646d732d74797065733a646d732d6d6573736167652d61637469766174696f6e2d6661696c6564",
+	},
+	{
+		name: "dms message-changed",
+		ev: model.DMSMessageChanged{Base: gbase("dms-1", "dms"),
+			FromMemoryType: model.MemoryChangeable, FromSlot: 4,
+			FromText: "[jl3]ROAD WORK", FromCRC: 0xBEEF,
+			ToMemoryType: model.MemoryChangeable, ToSlot: 7,
+			ToText: "[jl3]CRASH AHEAD", ToCRC: 0x1234,
+			Trigger: model.TriggerCommand},
+		ceType:     "openits.dms.message-changed.v1",
+		dataSchema: "https://schemas.open-its.org/openits-dms-events/2026-08-27/",
+		// FromCRC (0xBEEF) appears nowhere below — the wire has no prior-crc
+		// leaf, and the golden proves the drop stays a drop.
+		dataHex:  "080210071a105b6a6c335d435241534820414845414420b4242a1e6f70656e6974732d74797065733a747269676765722d6f70657261746f7230023804420e5b6a6c335d524f414420574f524b4a10636162696e65742d706f6c6c65722d31520608c0e182d30660016a05646d732d319a06256f70656e6974732d646d732d74797065733a646d732d6d6573736167652d6368616e676564",
+		identHex: "080210071a105b6a6c335d435241534820414845414420b4242a1e6f70656e6974732d74797065733a747269676765722d6f70657261746f7230023804420e5b6a6c335d524f414420574f524b520608c0e182d3066a05646d732d319a06256f70656e6974732d646d732d74797065733a646d732d6d6573736167652d6368616e676564",
+	},
+	{
+		name: "dms sign-status-report",
+		ev: model.DMSSignStatusReport{Base: gbase("dms-1", "dms"),
+			DMSEnvironment: model.DMSEnvironment{
+				BrightnessPercent: 62, BrightnessReported: true,
+				AmbientLightPercent: 71, AmbientLightReported: true,
+				CabinetTempDeciC: 415, CabinetTempReported: true,
+				FaceTempDeciC: -75, FaceTempReported: true,
+				// Reported-but-false exercises the documented wire limit: a
+				// false boolean is proto3-absent, so the bytes below carry no
+				// door leaf even though the sensor answered.
+				DoorOpen: false, DoorReported: true,
+			}},
+		ceType:     "openits.dms.sign-status-report.v1",
+		dataSchema: "https://schemas.open-its.org/openits-dms-events/2026-08-27/",
+		dataHex:    "103e18472a0434312e3532042d372e355a10636162696e65742d706f6c6c65722d31620608c0e182d30670017a05646d732d319a06286f70656e6974732d646d732d74797065733a646d732d7369676e2d7374617475732d7265706f7274",
+		identHex:   "103e18472a0434312e3532042d372e35620608c0e182d3067a05646d732d319a06286f70656e6974732d646d732d74797065733a646d732d7369676e2d7374617475732d7265706f7274",
 	},
 }
 
@@ -434,6 +471,10 @@ func emptyMessageFor(ceType string) proto.Message {
 		return &commonv1.FaultCleared{}
 	}
 	switch ceType {
+	case "openits.dms.message-changed.v1":
+		return &dmsv1.MessageChanged{}
+	case "openits.dms.sign-status-report.v1":
+		return &dmsv1.SignStatusReport{}
 	case "openits.traffic-sensor.traffic-interval-report.v1":
 		return &tsv1.TrafficIntervalReport{}
 	case "openits.perception.zone-incident-detected.v1":

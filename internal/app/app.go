@@ -91,6 +91,7 @@ func Run(ctx context.Context, cfg *config.Config, reg *adapter.Registry, natsURL
 		synth.NewFaultDiffer(),
 		synth.NewDetectorDiffer(),
 		synth.NewDMSDiffer(),
+		synth.NewDMSEnvironmentDiffer(),
 		synth.NewTrafficIntervalDiffer(),
 		synth.NewZoneIncidentDiffer(),
 		synth.NewZoneIntervalDiffer(),

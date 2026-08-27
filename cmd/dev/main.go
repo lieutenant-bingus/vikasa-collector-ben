@@ -69,6 +69,11 @@ devices:
     device_kind: asc
     poll_interval: 2s
     connection: {}
+  - id: dev-dms-1
+    vendor: dev
+    device_kind: dms
+    poll_interval: 2s
+    connection: {}
 `
 
 // syntheticASC produces a state that keeps changing, so the differ has
@@ -117,6 +122,60 @@ func (s *syntheticASC) Read(context.Context) (*model.Snapshot, error) {
 	return snap, nil
 }
 
+// syntheticDMS produces face/control/env transitions so the DMS differs
+// and the v0.4 wire surface (message-changed, mode-changed, sign-status-report)
+// show up on the bus. Values exercise the pipeline; they are not a fixture.
+type syntheticDMS struct {
+	mu    sync.Mutex
+	polls int
+}
+
+func (s *syntheticDMS) Descriptor() adapter.Descriptor {
+	return adapter.Descriptor{Vendor: "dev", DeviceKind: "dms", Caps: adapter.CapState}
+}
+
+func (s *syntheticDMS) Close() error { return nil }
+
+func (s *syntheticDMS) Read(context.Context) (*model.Snapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.polls++
+
+	snap := &model.Snapshot{DeviceID: "dev-dms-1", SampledAt: time.Now().UTC()}
+
+	st := model.DMSStatus{
+		ControlMode:       model.ControlCentral,
+		DisplayState:      model.DisplayNormal,
+		ActiveMemoryType:  model.MemoryChangeable,
+		ActiveSlot:        1,
+		MessageStatus:     model.StatusValid,
+		MessageText:       "[jl3]ROAD WORK",
+		MessageCRC:        0x1111,
+		ActivationTrigger: model.TriggerCommand,
+	}
+	if (s.polls/3)%2 == 1 {
+		st.ControlMode = model.ControlLocal
+		st.ActiveSlot = 2
+		st.MessageText = "[jl3]CRASH AHEAD"
+		st.MessageCRC = 0x2222
+		st.ActivationTrigger = model.TriggerSchedule
+	}
+	snap.Facets = append(snap.Facets, st)
+
+	env := model.DMSEnvironment{
+		BrightnessPercent:    70,
+		BrightnessReported:   true,
+		AmbientLightPercent:  uint8(30 + (s.polls % 40)),
+		AmbientLightReported: true,
+		CabinetTempDeciC:     220,
+		CabinetTempReported:  true,
+		DoorOpen:             false,
+		DoorReported:         true,
+	}
+	snap.Facets = append(snap.Facets, env)
+	return snap, nil
+}
+
 func main() {
 	pollFor := flag.Duration("for", 0, "stop after this long (0 = run until Ctrl-C)")
 	flag.Parse()
@@ -154,6 +213,10 @@ func run(stopAfter time.Duration) error {
 	reg.Register(
 		adapter.Descriptor{Vendor: "dev", DeviceKind: "asc", Caps: adapter.CapState},
 		func(string, map[string]any) (adapter.Adapter, error) { return &syntheticASC{}, nil },
+	)
+	reg.Register(
+		adapter.Descriptor{Vendor: "dev", DeviceKind: "dms", Caps: adapter.CapState},
+		func(string, map[string]any) (adapter.Adapter, error) { return &syntheticDMS{}, nil },
 	)
 
 	cfgDir, err := os.MkdirTemp("", "vikasa-dev-config-")
