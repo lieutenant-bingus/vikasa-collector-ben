@@ -35,6 +35,7 @@ const (
 	oidDMSStatDoorOpen = ".1.3.6.1.4.1.1206.4.2.3.9.6.0"
 	// Temp table (Ledstar CTL24): row 1 = Sign Housing (face), row 2 = CTL
 	// Cabinet. Descriptions from dmsTempSensorTable; do not swap these.
+	// TODO: use dmsTempSensorDescription when supporting another make.
 	oidDMSTempFace    = ".1.3.6.1.4.1.1206.4.2.3.9.7.36.1.3.1"
 	oidDMSTempCabinet = ".1.3.6.1.4.1.1206.4.2.3.9.7.36.1.3.2"
 	// Humidity is OPTIONAL and must not ride in dmsEnvOIDs: on this firmware
@@ -112,9 +113,11 @@ func (a *dms) Read(ctx context.Context) (*model.Snapshot, error) {
 
 	envVals, err := a.client.GetAll(ctx, dmsEnvOIDs)
 	if err != nil {
-		// Environment read failed independently. Leave the facet off this
-		// poll — a gap in the series, never a fabricated repeat, never a
-		// hard Read error that would also drop dms-status.
+		// Environment read failed independently. Record the failed facet while
+		// preserving the readable dms-status facet.
+		snap.Errors = append(snap.Errors, model.FacetError{
+			Kind: model.KindDMSEnvironment, Err: "dms environment read: " + err.Error(),
+		})
 		return snap, nil
 	}
 	a.mergeOptionalHumidity(ctx, &envVals)
@@ -157,30 +160,47 @@ func (a *dms) readDMSStatus(snap *model.Snapshot, vals snmp.Values) {
 		return
 	}
 
+	_, hasMsgSource := vals.Octets[oidDMSMsgTableSource]
+	_, hasCurrentBuffer := vals.Octets[oidDMSCurrentBufferMULTI]
+	if !hasMsgSource || !hasCurrentBuffer {
+		missing := "dms message OID unanswered"
+		switch {
+		case !hasMsgSource && !hasCurrentBuffer:
+			missing = "dmsMsgTableSource and currentBuffer MULTI OIDs unanswered"
+		case !hasMsgSource:
+			missing = "dmsMsgTableSource OID unanswered"
+		case !hasCurrentBuffer:
+			missing = "currentBuffer MULTI OID unanswered"
+		}
+		snap.Errors = append(snap.Errors, model.FacetError{
+			Kind: model.KindDMSStatus, Err: missing,
+		})
+		return
+	}
+
 	st := model.DMSStatus{ControlMode: controlModeFromNTCIP(mode)}
 
-	if src, ok := vals.Octets[oidDMSMsgTableSource]; ok {
-		mem, slot, crc, parsed := parseMessageIDCode(src)
-		if parsed {
-			st.ActiveMemoryType = memoryTypeFromNTCIP(int64(mem))
-			st.ActiveSlot = uint32(slot)
-			st.MessageCRC = uint32(crc)
-			if mem == ntcipMemBlank {
-				st.DisplayState = model.DisplayBlank
-			} else {
-				st.DisplayState = model.DisplayNormal
-			}
-		}
-	}
-	if multi, ok := vals.Octets[oidDMSCurrentBufferMULTI]; ok {
-		// Verbatim MULTI on the face. Empty means blank, never "could not
-		// read" — an unanswered OID is omitted from Octets entirely.
-		st.MessageText = string(multi)
-		if len(multi) == 0 {
+	src := vals.Octets[oidDMSMsgTableSource]
+	mem, slot, crc, parsed := parseMessageIDCode(src)
+	if parsed {
+		st.ActiveMemoryType = memoryTypeFromNTCIP(int64(mem))
+		st.ActiveSlot = uint32(slot)
+		st.MessageCRC = uint32(crc)
+		if mem == ntcipMemBlank {
 			st.DisplayState = model.DisplayBlank
-		} else if st.DisplayState == model.DisplayUnknown {
+		} else {
 			st.DisplayState = model.DisplayNormal
 		}
+	}
+
+	// Verbatim MULTI on the face. Empty means blank, never "could not read" —
+	// an unanswered OID was rejected above and is omitted from Octets entirely.
+	multi := vals.Octets[oidDMSCurrentBufferMULTI]
+	st.MessageText = string(multi)
+	if len(multi) == 0 {
+		st.DisplayState = model.DisplayBlank
+	} else if st.DisplayState == model.DisplayUnknown {
+		st.DisplayState = model.DisplayNormal
 	}
 
 	if errCode, ok := vals.Ints[oidDMSActivateMsgErr]; ok {
@@ -230,12 +250,16 @@ func (a *dms) readDMSEnvironment(snap *model.Snapshot, vals snmp.Values) {
 	}
 
 	if t, ok := vals.Ints[oidDMSTempCabinet]; ok {
-		env.CabinetTempDeciC = int16(t * 10)
-		env.CabinetTempReported = true
+		if temp, valid := tempDeciCFromNTCIP(t); valid {
+			env.CabinetTempDeciC = temp
+			env.CabinetTempReported = true
+		}
 	}
 	if t, ok := vals.Ints[oidDMSTempFace]; ok {
-		env.FaceTempDeciC = int16(t * 10)
-		env.FaceTempReported = true
+		if temp, valid := tempDeciCFromNTCIP(t); valid {
+			env.FaceTempDeciC = temp
+			env.FaceTempReported = true
+		}
 	}
 	if h, ok := vals.Ints[oidDMSHumidity1]; ok {
 		if h < 0 {
@@ -256,6 +280,16 @@ func (a *dms) readDMSEnvironment(snap *model.Snapshot, vals snmp.Values) {
 		return
 	}
 	snap.Facets = append(snap.Facets, env)
+}
+
+// tempDeciCFromNTCIP rejects whole-degree values that cannot be represented
+// in the model's signed deci-degree field. This prevents SNMP sentinels such
+// as 32767 from wrapping into a plausible-looking temperature.
+func tempDeciCFromNTCIP(t int64) (int16, bool) {
+	if t < -3276 || t > 3276 {
+		return 0, false
+	}
+	return int16(t * 10), true
 }
 
 // percentOf scales raw/max into 0–100. Used for both photocell and brightness
@@ -288,6 +322,8 @@ func controlModeFromNTCIP(v int64) model.DMSControlMode {
 		return model.ControlCentral
 	case 5:
 		return model.ControlCentralOverride
+	case 6:
+		return model.ControlSimulation
 	default:
 		return model.ControlUnknown
 	}

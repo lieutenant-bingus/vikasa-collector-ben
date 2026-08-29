@@ -75,7 +75,8 @@ devices:
 
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cancel()
-	go func() { _ = app.Run(ctx, cfg, reg, ns.ClientURL(), "test") }()
+	runErr := make(chan error, 1)
+	go func() { runErr <- app.Run(ctx, cfg, reg, ns.ClientURL(), "test") }()
 
 	want := map[string]bool{
 		"openits-collector.health.collector-started.v1": false,
@@ -96,6 +97,8 @@ devices:
 			if allTrue(want) {
 				return
 			}
+		case err := <-runErr:
+			t.Fatalf("app.Run: %v", err)
 		case <-deadline:
 			missing := make([]string, 0)
 			for k, v := range want {

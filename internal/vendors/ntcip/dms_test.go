@@ -19,24 +19,24 @@ import (
 // against the same controller confirmed the mapping still decodes
 // (control=central, display=normal, changeable slot occupied).
 //
-// Illum / door / msgSourceMode values below are synthetic but OID-faithful
-// (NTCIP 1203 v03 numbers); they exercise the v0.4 decode path until a
-// recorded env poll replaces them.
+// The environment integers are transcribed from a live SNMPv1 GET against
+// the same controller on 2026-08-29, including dmsHumiditySensorNumRows=0.
+// The humidity row case is covered separately with an OID-faithful synthetic
+// fixture because the bench sign does not report one.
 var healthyDMSInts = map[string]int64{
-	".1.3.6.1.4.1.1206.4.2.3.6.1.0":  4,  // dmsControlMode: central
-	".1.3.6.1.4.1.1206.4.2.3.6.7.0":  8,  // dmsMsgSourceMode: central → command
-	".1.3.6.1.4.1.1206.4.2.3.6.17.0": 2,  // dmsActivateMsgError: none
-	".1.3.6.1.4.1.1206.4.2.3.6.18.0": 2,  // dmsMultiSyntaxError: none
-	".1.3.6.1.4.1.1206.4.2.3.6.19.0": 0,  // syntax position
-	".1.3.6.1.4.1.1206.4.2.3.7.2.0":  100, // max photocell
-	".1.3.6.1.4.1.1206.4.2.3.7.3.0":  40,  // photocell → 40%
-	".1.3.6.1.4.1.1206.4.2.3.7.4.0":  10,  // num bright levels
-	".1.3.6.1.4.1.1206.4.2.3.7.5.0":  7,   // bright level → 70%
-	".1.3.6.1.4.1.1206.4.2.3.9.6.0":  0,   // door closed
-	".1.3.6.1.4.1.1206.4.2.3.9.7.36.1.3.1": 28, // face/housing °C (temp row 1)
-	".1.3.6.1.4.1.1206.4.2.3.9.7.36.1.3.2": 22, // cabinet °C (temp row 2)
-	".1.3.6.1.4.1.1206.4.2.3.9.7.32.0": 1,    // humidity NumRows (gate before row GET)
-	".1.3.6.1.4.1.1206.4.2.3.9.7.33.1.3.1": 45, // humidity %
+	".1.3.6.1.4.1.1206.4.2.3.6.1.0":        4,     // dmsControlMode: central
+	".1.3.6.1.4.1.1206.4.2.3.6.7.0":        8,     // dmsMsgSourceMode: central → command
+	".1.3.6.1.4.1.1206.4.2.3.6.17.0":       2,     // dmsActivateMsgError: none
+	".1.3.6.1.4.1.1206.4.2.3.6.18.0":       2,     // dmsMultiSyntaxError: none
+	".1.3.6.1.4.1.1206.4.2.3.6.19.0":       0,     // syntax position
+	".1.3.6.1.4.1.1206.4.2.3.7.2.0":        65535, // max photocell
+	".1.3.6.1.4.1.1206.4.2.3.7.3.0":        0,     // photocell → 0%
+	".1.3.6.1.4.1.1206.4.2.3.7.4.0":        16,    // num bright levels
+	".1.3.6.1.4.1.1206.4.2.3.7.5.0":        8,     // bright level → 50%
+	".1.3.6.1.4.1.1206.4.2.3.9.6.0":        0,     // door closed
+	".1.3.6.1.4.1.1206.4.2.3.9.7.36.1.3.1": 27,    // face/housing °C (temp row 1)
+	".1.3.6.1.4.1.1206.4.2.3.9.7.36.1.3.2": 32,    // cabinet °C (temp row 2)
+	".1.3.6.1.4.1.1206.4.2.3.9.7.32.0":     0,     // humidity NumRows: empty table
 }
 
 var healthyDMSOctets = map[string][]byte{
@@ -79,16 +79,14 @@ func TestDMSReadGolden(t *testing.T) {
 		t.Fatal("missing dms-environment facet")
 	}
 	wantEnv := model.DMSEnvironment{
-		BrightnessPercent:    70,
+		BrightnessPercent:    50,
 		BrightnessReported:   true,
-		AmbientLightPercent:  40,
+		AmbientLightPercent:  0,
 		AmbientLightReported: true,
-		CabinetTempDeciC:     220,
+		CabinetTempDeciC:     320,
 		CabinetTempReported:  true,
-		FaceTempDeciC:        280,
+		FaceTempDeciC:        270,
 		FaceTempReported:     true,
-		HumidityPercent:      45,
-		HumidityReported:     true,
 		DoorOpen:             false,
 		DoorReported:         true,
 	}
@@ -114,6 +112,27 @@ func TestDMSUnansweredControlModeIsFacetError(t *testing.T) {
 	}
 	if !snap.FacetFailed(model.KindDMSStatus) {
 		t.Fatal("expected dms-status FacetError")
+	}
+}
+
+func TestDMSUnansweredCurrentBufferIsFacetError(t *testing.T) {
+	octets := map[string][]byte{}
+	for k, v := range healthyDMSOctets {
+		octets[k] = v
+	}
+	delete(octets, oidDMSCurrentBufferMULTI)
+
+	snap, err := NewDMS("dms-1", &snmptest.Static{
+		Values: healthyDMSInts, Octets: octets,
+	}).Read(context.Background())
+	if err != nil {
+		t.Fatalf("partial data must not be a hard error: %v", err)
+	}
+	if _, ok := snap.Facet(model.KindDMSStatus); ok {
+		t.Fatal("incomplete facet must not be present")
+	}
+	if !snap.FacetFailed(model.KindDMSStatus) {
+		t.Fatal("expected dms-status FacetError for unanswered MULTI")
 	}
 }
 
@@ -257,6 +276,7 @@ func TestControlModeFromNTCIP(t *testing.T) {
 		3:  model.ControlExternal,
 		4:  model.ControlCentral,
 		5:  model.ControlCentralOverride,
+		6:  model.ControlSimulation,
 		99: model.ControlUnknown,
 	}
 	for in, want := range cases {
@@ -304,6 +324,9 @@ func TestDMSEnvGetFailureStillReturnsStatus(t *testing.T) {
 	if _, ok := snap.Facet(model.KindDMSEnvironment); ok {
 		t.Fatal("dms-environment must be absent when its Get fails")
 	}
+	if !snap.FacetFailed(model.KindDMSEnvironment) {
+		t.Fatalf("expected dms-environment FacetError, got %+v", snap.Errors)
+	}
 }
 
 // Ledstar reports dmsHumiditySensorNumRows=0; a humidity row GET genErrors.
@@ -329,8 +352,55 @@ func TestDMSEmptyHumidityTableStillEmitsEnvironment(t *testing.T) {
 	if got.HumidityReported {
 		t.Fatal("humidity must stay unreported when NumRows=0")
 	}
-	if !got.BrightnessReported || got.BrightnessPercent != 70 {
-		t.Fatalf("brightness should still decode: %+v", got)
+	if !got.BrightnessReported || got.BrightnessPercent != 50 {
+		t.Fatalf("brightness should still decode as 50%%: %+v", got)
+	}
+}
+
+func TestDMSHumidityDecodeSyntheticFixture(t *testing.T) {
+	fx := map[string]int64{}
+	for k, v := range healthyDMSInts {
+		fx[k] = v
+	}
+	fx[oidDMSHumidityNumRows] = 1
+	fx[oidDMSHumidity1] = 45
+
+	snap, err := NewDMS("dms-1", &snmptest.Static{
+		Values: fx, Octets: healthyDMSOctets,
+	}).Read(context.Background())
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	env, ok := snap.Facet(model.KindDMSEnvironment)
+	if !ok {
+		t.Fatal("missing dms-environment facet")
+	}
+	got := env.(model.DMSEnvironment)
+	if !got.HumidityReported || got.HumidityPercent != 45 {
+		t.Fatalf("humidity = %d reported=%v, want 45/true", got.HumidityPercent, got.HumidityReported)
+	}
+}
+
+func TestDMSTemperatureSentinelIsUnreported(t *testing.T) {
+	fx := map[string]int64{}
+	for k, v := range healthyDMSInts {
+		fx[k] = v
+	}
+	fx[oidDMSTempFace] = 32767
+
+	snap, err := NewDMS("dms-1", &snmptest.Static{
+		Values: fx, Octets: healthyDMSOctets,
+	}).Read(context.Background())
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	env, ok := snap.Facet(model.KindDMSEnvironment)
+	if !ok {
+		t.Fatal("missing dms-environment facet")
+	}
+	got := env.(model.DMSEnvironment)
+	if got.FaceTempReported {
+		t.Fatalf("sentinel temperature must be unreported: %+v", got)
 	}
 }
 
