@@ -136,6 +136,27 @@ func TestDMSUnansweredCurrentBufferIsFacetError(t *testing.T) {
 	}
 }
 
+func TestDMSMalformedMessageIDCodeIsFacetError(t *testing.T) {
+	octets := map[string][]byte{}
+	for k, v := range healthyDMSOctets {
+		octets[k] = v
+	}
+	octets[oidDMSMsgTableSource] = []byte{3, 0}
+
+	snap, err := NewDMS("dms-1", &snmptest.Static{
+		Values: healthyDMSInts, Octets: octets,
+	}).Read(context.Background())
+	if err != nil {
+		t.Fatalf("malformed data must not be a hard error: %v", err)
+	}
+	if _, ok := snap.Facet(model.KindDMSStatus); ok {
+		t.Fatal("malformed message identity must not produce a facet")
+	}
+	if !snap.FacetFailed(model.KindDMSStatus) {
+		t.Fatalf("expected dms-status FacetError, got %+v", snap.Errors)
+	}
+}
+
 func TestDMSReadTransportErrorIsHardError(t *testing.T) {
 	_, err := NewDMS("dms-1", &snmptest.Static{Err: errors.New("timeout")}).Read(context.Background())
 	if err == nil {

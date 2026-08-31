@@ -182,15 +182,19 @@ func (a *dms) readDMSStatus(snap *model.Snapshot, vals snmp.Values) {
 
 	src := vals.Octets[oidDMSMsgTableSource]
 	mem, slot, crc, parsed := parseMessageIDCode(src)
-	if parsed {
-		st.ActiveMemoryType = memoryTypeFromNTCIP(int64(mem))
-		st.ActiveSlot = uint32(slot)
-		st.MessageCRC = uint32(crc)
-		if mem == ntcipMemBlank {
-			st.DisplayState = model.DisplayBlank
-		} else {
-			st.DisplayState = model.DisplayNormal
-		}
+	if !parsed {
+		snap.Errors = append(snap.Errors, model.FacetError{
+			Kind: model.KindDMSStatus, Err: "dmsMsgTableSource: malformed MessageIDCode",
+		})
+		return
+	}
+	st.ActiveMemoryType = memoryTypeFromNTCIP(int64(mem))
+	st.ActiveSlot = uint32(slot)
+	st.MessageCRC = uint32(crc)
+	if mem == ntcipMemBlank {
+		st.DisplayState = model.DisplayBlank
+	} else {
+		st.DisplayState = model.DisplayNormal
 	}
 
 	// Verbatim MULTI on the face. Empty means blank, never "could not read" —
