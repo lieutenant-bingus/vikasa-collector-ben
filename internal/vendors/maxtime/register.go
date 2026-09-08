@@ -2,6 +2,8 @@ package maxtime
 
 import (
 	"fmt"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/Vikasa2M/vikasa-collector/sdk/adapter"
@@ -13,6 +15,9 @@ type httpConfig struct {
 	detectorChannels []uint32
 	username         string
 	password         string
+	asclogURL        string
+	asclogEnabled    bool
+	asclogInterval   time.Duration
 }
 
 // RegisterTo registers the special MAXTIME HTTP ASC adapter. Its connection
@@ -25,6 +30,9 @@ type httpConfig struct {
 //	    username: "admin"
 //	    password: "use-a-secret-store"
 //	    detector_channels: [1, 2, 3]
+//	    asclog: true                         # optional; default true
+//	    asclog_url: "http://controller/v1/asclog/xml/full"  # optional override
+//	    asclog_poll_interval: "15s"          # optional; EventReader cadence
 func RegisterTo(r *adapter.Registry) {
 	r.Register(ascDescriptor, func(deviceID string, conn map[string]any) (adapter.Adapter, error) {
 		cfg, err := parseHTTPBlock(conn)
@@ -35,12 +43,23 @@ func RegisterTo(r *adapter.Registry) {
 		if err != nil {
 			return nil, fmt.Errorf("maxtime-asc %s: %w", deviceID, err)
 		}
-		return &asc{
-			deviceID:         deviceID,
-			client:           client,
-			now:              time.Now,
-			detectorChannels: cfg.detectorChannels,
-		}, nil
+		dev := &device{
+			asc: &asc{
+				deviceID:         deviceID,
+				client:           client,
+				now:              time.Now,
+				detectorChannels: cfg.detectorChannels,
+			},
+			eventInterval: cfg.asclogInterval,
+		}
+		if cfg.asclogEnabled {
+			log, err := newASCLog(deviceID, cfg.asclogURL, cfg.timeout)
+			if err != nil {
+				return nil, fmt.Errorf("maxtime-asc %s: %w", deviceID, err)
+			}
+			dev.log = log
+		}
+		return dev, nil
 	})
 }
 
@@ -83,13 +102,65 @@ func parseHTTPBlock(conn map[string]any) (httpConfig, error) {
 	if err != nil {
 		return httpConfig{}, err
 	}
+
+	asclogEnabled := true
+	if rawASC, ok := raw["asclog"]; ok {
+		enabled, ok := rawASC.(bool)
+		if !ok {
+			return httpConfig{}, fmt.Errorf("connection.http.asclog must be a boolean")
+		}
+		asclogEnabled = enabled
+	}
+
+	asclogURL, _ := raw["asclog_url"].(string)
+	if asclogEnabled && asclogURL == "" {
+		derived, err := deriveASCLogURL(baseURL)
+		if err != nil {
+			return httpConfig{}, err
+		}
+		asclogURL = derived
+	}
+
+	asclogInterval := 15 * time.Second
+	if rawInterval, ok := raw["asclog_poll_interval"]; ok {
+		intervalValue, ok := rawInterval.(string)
+		if !ok {
+			return httpConfig{}, fmt.Errorf("connection.http.asclog_poll_interval must be a duration string")
+		}
+		parsed, err := time.ParseDuration(intervalValue)
+		if err != nil {
+			return httpConfig{}, fmt.Errorf("connection.http.asclog_poll_interval: %w", err)
+		}
+		if parsed <= 0 {
+			return httpConfig{}, fmt.Errorf("connection.http.asclog_poll_interval must be positive")
+		}
+		asclogInterval = parsed
+	}
+
 	return httpConfig{
 		baseURL:          baseURL,
 		timeout:          timeout,
 		detectorChannels: channels,
 		username:         username,
 		password:         password,
+		asclogURL:        asclogURL,
+		asclogEnabled:    asclogEnabled,
+		asclogInterval:   asclogInterval,
 	}, nil
+}
+
+func deriveASCLogURL(baseURL string) (string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil {
+		return "", fmt.Errorf("connection.http.base_url: %w", err)
+	}
+	if parsed.Host == "" {
+		return "", fmt.Errorf("connection.http.base_url host is required to derive asclog_url")
+	}
+	parsed.Path = "/v1/asclog/xml/full"
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String(), nil
 }
 
 func parseDetectorChannels(raw any) ([]uint32, error) {

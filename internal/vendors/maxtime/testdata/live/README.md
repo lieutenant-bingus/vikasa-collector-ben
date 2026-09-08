@@ -20,6 +20,12 @@ Key values validated on capture:
 | `FlashSta` | 1 | 2 | Off → `InConflictFlash=false` |
 | `preemptStatus` | 1 | 0 | No preemption |
 
-The fixture is test input only. Live verification still runs against the
+`asclog-sample.xml` is a trimmed subset of `GET /v1/asclog/xml/full` from the
+same controller on 2026-09-08. The live endpoint returns a fixed ~10 001-event
+ring buffer (~860 KB); the sample keeps enough records to cover every
+`EventTypeID` observed in that capture (phase, overlap, and unmapped/vendor
+codes) so decode tests stay small and auditable.
+
+The fixtures are test input only. Live verification still runs against the
 controller separately (`TestASCLive`, env-gated) and must not be required for
 the normal test suite.

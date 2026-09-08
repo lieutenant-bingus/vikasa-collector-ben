@@ -108,16 +108,35 @@ func Run(ctx context.Context, cfg *config.Config, reg *adapter.Registry, natsURL
 			return fmt.Errorf("device %s: %w", d.ID, err)
 		}
 		adapters = append(adapters, a)
-		sr, ok := a.(adapter.StateReader)
-		if !ok {
-			return fmt.Errorf("device %s: adapter %s lacks CapState", d.ID, a.Descriptor().Key())
+
+		sr, isState := a.(adapter.StateReader)
+		er, isEvents := a.(adapter.EventReader)
+		if !isState && !isEvents {
+			return fmt.Errorf("device %s: adapter %s implements neither CapState nor CapEvents",
+				d.ID, a.Descriptor().Key())
 		}
-		r := runner.New(sr, d.ID, d.PollInterval, 0, engine, sink)
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			r.Run(ctx)
-		}()
+		if isState {
+			r := runner.New(sr, d.ID, d.PollInterval, 0, engine, sink)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				r.Run(ctx)
+			}()
+		}
+		if isEvents {
+			interval := d.PollInterval
+			if h, ok := a.(interface{ EventPollInterval() time.Duration }); ok {
+				if hinted := h.EventPollInterval(); hinted > 0 {
+					interval = hinted
+				}
+			}
+			erun := runner.NewEventRunner(er, d.ID, interval, 0, sink)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				erun.Run(ctx)
+			}()
+		}
 	}
 
 	<-ctx.Done()

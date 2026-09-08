@@ -99,6 +99,40 @@ type DetectorTransition struct {
 
 func (DetectorTransition) EventKind() string { return "detector-transition" }
 
+// PhaseLogEvent is one Indiana phase code from a high-resolution controller
+// log. Unlike PhaseStateChanged (poll-diffed movement state), this is a
+// discrete log record with the controller's own event id and timestamp.
+type PhaseLogEvent struct {
+	Base
+	LogID       uint64
+	PhaseNumber uint32
+	Code        PhaseLogCode
+}
+
+func (PhaseLogEvent) EventKind() string { return "phase-log-event" }
+
+// OverlapLogEvent is one Indiana overlap code from a high-resolution log.
+type OverlapLogEvent struct {
+	Base
+	LogID         uint64
+	OverlapNumber uint32
+	Code          OverlapLogCode
+}
+
+func (OverlapLogEvent) EventKind() string { return "overlap-log-event" }
+
+// UnmappedControllerLogEvent preserves a high-res log record whose
+// EventTypeID has no domain mapping yet (vendor extensions, unmapped
+// Indiana codes). Collection must not drop these silently.
+type UnmappedControllerLogEvent struct {
+	Base
+	LogID     uint64
+	RawCode   uint32
+	Parameter uint32
+}
+
+func (UnmappedControllerLogEvent) EventKind() string { return "unmapped-controller-log-event" }
+
 // FaultRaised fires when a fault appears that was not raised on the previous
 // poll. Its OccurredAt IS the first observation — the facet carries no
 // timestamp of its own, because the adapter has no memory to know one.
