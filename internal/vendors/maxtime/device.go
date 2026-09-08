@@ -2,7 +2,6 @@ package maxtime
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/Vikasa2M/vikasa-collector/sdk/adapter"
@@ -18,11 +17,10 @@ type device struct {
 }
 
 func (d *device) Descriptor() adapter.Descriptor {
-	caps := adapter.CapState
-	if d.log != nil {
-		caps |= adapter.CapEvents
+	return adapter.Descriptor{
+		Vendor: "maxtime", DeviceKind: "asc",
+		Caps: adapter.CapState | adapter.CapEvents,
 	}
-	return adapter.Descriptor{Vendor: "maxtime", DeviceKind: "asc", Caps: caps}
 }
 
 func (d *device) Close() error {
@@ -40,9 +38,6 @@ func (d *device) Read(ctx context.Context) (*model.Snapshot, error) {
 }
 
 func (d *device) Fetch(ctx context.Context) ([]model.Event, error) {
-	if d.log == nil {
-		return nil, fmt.Errorf("maxtime-asc %s: asclog not configured", d.asc.deviceID)
-	}
 	return d.log.Fetch(ctx)
 }
 

@@ -151,4 +151,10 @@ func TestRegisterToCanDisableASCLog(t *testing.T) {
 	if a.Descriptor().Caps.Has(adapter.CapEvents) {
 		t.Fatal("asclog:false must not claim CapEvents")
 	}
+	if _, ok := a.(adapter.EventReader); ok {
+		t.Fatal("asclog:false must not implement EventReader")
+	}
+	if _, ok := a.(adapter.StateReader); !ok {
+		t.Fatal("asclog:false must still implement StateReader")
+	}
 }

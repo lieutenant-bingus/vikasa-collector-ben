@@ -111,6 +111,11 @@ func Run(ctx context.Context, cfg *config.Config, reg *adapter.Registry, natsURL
 
 		sr, isState := a.(adapter.StateReader)
 		er, isEvents := a.(adapter.EventReader)
+		caps := a.Descriptor().Caps
+		if caps.Has(adapter.CapState) != isState || caps.Has(adapter.CapEvents) != isEvents {
+			return fmt.Errorf("device %s: adapter %s Caps (%v) disagree with implemented interfaces",
+				d.ID, a.Descriptor().Key(), caps)
+		}
 		if !isState && !isEvents {
 			return fmt.Errorf("device %s: adapter %s implements neither CapState nor CapEvents",
 				d.ID, a.Descriptor().Key())

@@ -43,23 +43,24 @@ func RegisterTo(r *adapter.Registry) {
 		if err != nil {
 			return nil, fmt.Errorf("maxtime-asc %s: %w", deviceID, err)
 		}
-		dev := &device{
-			asc: &asc{
-				deviceID:         deviceID,
-				client:           client,
-				now:              time.Now,
-				detectorChannels: cfg.detectorChannels,
-			},
-			eventInterval: cfg.asclogInterval,
+		state := &asc{
+			deviceID:         deviceID,
+			client:           client,
+			now:              time.Now,
+			detectorChannels: cfg.detectorChannels,
 		}
-		if cfg.asclogEnabled {
-			log, err := newASCLog(deviceID, cfg.asclogURL, cfg.timeout)
-			if err != nil {
-				return nil, fmt.Errorf("maxtime-asc %s: %w", deviceID, err)
-			}
-			dev.log = log
+		if !cfg.asclogEnabled {
+			// Return *asc alone so the type does not satisfy EventReader —
+			// CapEvents and the Go interface assertion must agree.
+			return state, nil
 		}
-		return dev, nil
+		log, err := newASCLog(deviceID, cfg.asclogURL, cfg.timeout)
+		if err != nil {
+			return nil, fmt.Errorf("maxtime-asc %s: %w", deviceID, err)
+		}
+		return &device{
+			asc: state, log: log, eventInterval: cfg.asclogInterval,
+		}, nil
 	})
 }
 
