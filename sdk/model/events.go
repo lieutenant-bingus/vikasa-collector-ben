@@ -70,6 +70,35 @@ type PreemptionCleared struct{ Base }
 
 func (PreemptionCleared) EventKind() string { return "preemption-cleared" }
 
+// PhaseStateChanged fires when a phase's reported movement state transitions.
+type PhaseStateChanged struct {
+	Base
+	PhaseNumber uint32
+	From, To    SignalState
+}
+
+func (PhaseStateChanged) EventKind() string { return "phase-state-changed" }
+
+// CoordinationChanged fires when one coordination scalar changes.
+type CoordinationChanged struct {
+	Base
+	Axis          CoordinationAxis
+	PreviousValue int64
+	NewValue      int64
+}
+
+func (CoordinationChanged) EventKind() string { return "coordination-changed" }
+
+// DetectorTransition fires when a detector channel's call or presence edge
+// is observed between consecutive successful reads.
+type DetectorTransition struct {
+	Base
+	Channel uint32
+	Kind    DetectorTransitionKind
+}
+
+func (DetectorTransition) EventKind() string { return "detector-transition" }
+
 // FaultRaised fires when a fault appears that was not raised on the previous
 // poll. Its OccurredAt IS the first observation — the facet carries no
 // timestamp of its own, because the adapter has no memory to know one.

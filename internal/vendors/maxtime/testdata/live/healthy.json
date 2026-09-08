@@ -1,0 +1,71 @@
+{
+  "controllerOpMode": [
+    {"name": "controllerOpMode", "data": {"1": "5"}}
+  ],
+  "FlashSta": [
+    {"name": "FlashSta", "data": {"1": "2"}}
+  ],
+  "PatrnSta": [
+    {"name": "PatrnSta", "data": {"1": "254"}}
+  ],
+  "preemptStatus": [
+    {"name": "preemptStatus", "data": {"1": "0"}}
+  ],
+  "CoordOpp": [
+    {"name": "CoordOpp", "data": {"1": "1"}}
+  ],
+  "CoordSel": [
+    {"name": "CoordSel", "data": {"1": "254"}}
+  ],
+  "actualOffset": [
+    {"name": "actualOffset", "data": {"1": "0"}}
+  ],
+  "coordCycleLengthStatus": [
+    {"name": "coordCycleLengthStatus", "data": {"1": "120"}}
+  ],
+  "coordCoordinationModeStatus": [
+    {"name": "coordCoordinationModeStatus", "data": {"1": "2"}}
+  ],
+  "signalState": [
+    {"name": "signalState", "data": {"1": "2", "2": "2", "3": "2", "4": "2"}}
+  ],
+  "Reds": [
+    {"name": "Reds", "data": {"1": "15"}}
+  ],
+  "Yellows": [
+    {"name": "Yellows", "data": {"1": "0"}}
+  ],
+  "Greens": [
+    {"name": "Greens", "data": {"1": "0"}}
+  ],
+  "SAlarms": [
+    {"name": "SAlarms", "data": {"1": "0"}}
+  ],
+  "Alarms1": [
+    {"name": "Alarms1", "data": {"1": "0"}}
+  ],
+  "Alarms2": [
+    {"name": "Alarms2", "data": {"1": "0"}}
+  ],
+  "alarmSta": [
+    {"name": "alarmSta", "data": {"1": "0", "2": "0", "3": "0", "4": "0", "5": "0", "6": "0"}}
+  ],
+  "DtAlrms": [
+    {"name": "DtAlrms", "data": {"1": "0", "2": "0"}}
+  ],
+  "DtGpAlrm": [
+    {"name": "DtGpAlrm", "data": {"1": "0"}}
+  ],
+  "VehCalls": [
+    {"name": "VehCalls", "data": {"1": "0"}}
+  ],
+  "DtGrpAct": [
+    {"name": "DtGrpAct", "data": {"1": "0"}}
+  ],
+  "Volume": [
+    {"name": "Volume", "data": {"1": "0", "2": "0"}}
+  ],
+  "percentOccupancy": [
+    {"name": "percentOccupancy", "data": {"1": "0", "2": "0"}}
+  ]
+}
