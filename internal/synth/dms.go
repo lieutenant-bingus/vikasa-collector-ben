@@ -60,7 +60,8 @@ func (dmsDiffer) Diff(prev, curr model.Facet, base model.Base) []model.Event {
 	}
 	// Only the TRANSITION into error reports. A sign sitting broken would
 	// otherwise re-report every poll — a storm, not information.
-	if p.MessageStatus != model.StatusError && c.MessageStatus == model.StatusError {
+	if p.MessageStatus != model.StatusUnknown &&
+		p.MessageStatus != model.StatusError && c.MessageStatus == model.StatusError {
 		events = append(events, model.DMSMessageActivationFailed{
 			Base: base, MemoryType: c.ActiveMemoryType, Slot: c.ActiveSlot,
 			Error: c.SyntaxError, ErrorPosition: c.SyntaxErrorPos,

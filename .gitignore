@@ -19,6 +19,10 @@ go.work.sum
 .vscode/
 .env
 
+# Local bench-device config (real IPs). Never commit.
+collector.local.yaml
+*.local.yaml
+
 # Claude Code project dir — only committed contributor skills are tracked
 .claude/*
 !.claude/skills/

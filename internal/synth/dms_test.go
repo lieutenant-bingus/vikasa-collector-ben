@@ -183,6 +183,20 @@ func TestDMSActivationFailureReportsOnceOnTransition(t *testing.T) {
 	}
 }
 
+func TestDMSUnknownActivationStatusDoesNotReportFailure(t *testing.T) {
+	e := NewEngine(NewDMSDiffer())
+	initial := dmsNormal
+	initial.MessageStatus = model.StatusUnknown
+	e.Apply(dmsSnap(t0, initial))
+
+	broken := initial
+	broken.MessageStatus = model.StatusError
+	broken.SyntaxError = model.SyntaxErrorFontNotFound
+	if evs := e.Apply(dmsSnap(t0.Add(time.Second), broken)); len(evs) != 0 {
+		t.Fatalf("unknown-to-error activation status must not report, got %v", kinds(evs))
+	}
+}
+
 // The iron rule, for this facet.
 func TestDMSFailedReadEmitsNothing(t *testing.T) {
 	e := NewEngine(NewDMSDiffer())
