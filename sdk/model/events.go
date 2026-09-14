@@ -296,3 +296,28 @@ type CCTVTourStateChanged struct {
 }
 
 func (CCTVTourStateChanged) EventKind() string { return "cctv-tour-state-changed" }
+
+// GatePositionChanged fires when one gate's motion/rest state transitions.
+// Gates are independent: two gates moving in one poll produce two events.
+//
+// Interim: no openits-models wire mapping yet — the emitter chain drops these
+// loudly until a reversible-lane / gate mapping is added (wire-emitter skill).
+type GatePositionChanged struct {
+	Base
+	GateID   string
+	From, To GatePosition
+}
+
+func (GatePositionChanged) EventKind() string { return "gate-position-changed" }
+
+// GateModeChanged fires when one gate's operating mode transitions
+// (auto / manual / offline). Independent of GatePositionChanged.
+//
+// Interim: unmapped on the wire — same note as GatePositionChanged.
+type GateModeChanged struct {
+	Base
+	GateID   string
+	From, To GateMode
+}
+
+func (GateModeChanged) EventKind() string { return "gate-mode-changed" }
