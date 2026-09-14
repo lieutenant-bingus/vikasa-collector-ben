@@ -49,6 +49,8 @@ func TestFacetEventKindsAndAccessors(t *testing.T) {
 		{FaultCleared{Base: b, FaultID: "mmu-fault"}, "fault-cleared"},
 		{DetectorReport{Base: b, IntervalStart: at.Add(-time.Second), IntervalDuration: time.Second,
 			Readings: []DetectorReading{{Channel: 1, VolumeDelta: 3, OccupancyTenths: 125}}}, "detector-report"},
+		{GatePositionChanged{Base: b, GateID: "WG-111", From: GatePositionClosed, To: GatePositionOpening}, "gate-position-changed"},
+		{GateModeChanged{Base: b, GateID: "WG-111", From: GateModeAuto, To: GateModeManual}, "gate-mode-changed"},
 	}
 	for _, c := range cases {
 		if got := c.ev.EventKind(); got != c.kind {

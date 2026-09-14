@@ -96,6 +96,7 @@ func Run(ctx context.Context, cfg *config.Config, reg *adapter.Registry, natsURL
 		synth.NewZoneIncidentDiffer(),
 		synth.NewZoneIntervalDiffer(),
 		synth.NewCCTVDiffer(),
+		synth.NewGateDiffer(),
 	)
 	var wg sync.WaitGroup
 	var adapters []adapter.Adapter
