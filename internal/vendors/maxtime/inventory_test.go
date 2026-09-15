@@ -30,17 +30,17 @@ func TestParsePreemptDescriptions(t *testing.T) {
 }
 
 func TestDecodeMIBString(t *testing.T) {
-	if got := decodeMIBString("US%2023%20%28SR%2013%29%20"); got != "US 23 (SR 13)" {
+	if got := decodeMIBString("Main%20St%20%28SR%201%29%20"); got != "Main St (SR 1)" {
 		t.Fatalf("got %q", got)
 	}
-	if got := mibString(map[string]string{"1": "Button%20Gwinnett-Preempt"}); got != "Button Gwinnett-Preempt" {
+	if got := mibString(map[string]string{"1": "Second%20St-Preempt"}); got != "Second St-Preempt" {
 		t.Fatalf("mibString=%q", got)
 	}
 }
 
 func TestInventoryEnrichDetectorTransition(t *testing.T) {
 	inv := &Inventory{}
-	inv.setASC("US 23", "Button Gwinnett", "047", map[uint32]string{1: "NB", 6: "NB", 2: "SB"})
+	inv.setASC("Main St", "Second St", "047", map[uint32]string{1: "NB", 6: "NB", 2: "SB"})
 	inv.setDetectors(map[uint32]DetectorInventory{
 		3: {Lane: "NB thru", PhaseServed: 1},
 	})

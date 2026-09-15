@@ -451,9 +451,9 @@ func TestParseHTTPBlockInventoryAndCV(t *testing.T) {
 func TestASCInventoryRefreshFromMIB(t *testing.T) {
 	reader := fakeMIBReader{values: map[string]map[string]string{
 		mibControllerOpMode:        {"1": "5"},
-		mibMainStreet:              {"1": "US%2023%20%28SR%2013%29"},
-		mibSecondStreet:            {"1": "Button%20Gwinnett-Preempt"},
-		mibUnitDatabaseDescription: {"1": "047-US%2023"},
+		mibMainStreet:              {"1": "Main%20St%20%28SR%201%29"},
+		mibSecondStreet:            {"1": "Second%20St-Preempt"},
+		mibUnitDatabaseDescription: {"1": "047-Main%20St"},
 		mibPreemptDescription: {
 			"3": "NB%20-%20Ph%201%266",
 			"4": "SB - Ph 2&5",
@@ -487,7 +487,7 @@ func TestASCInventoryRefreshFromMIB(t *testing.T) {
 		t.Fatalf("Read: %v", err)
 	}
 	snap := a.Inventory().Snapshot()
-	if snap.MainStreet != "US 23 (SR 13)" || snap.SecondStreet != "Button Gwinnett-Preempt" {
+	if snap.MainStreet != "Main St (SR 1)" || snap.SecondStreet != "Second St-Preempt" {
 		t.Fatalf("streets = %q / %q", snap.MainStreet, snap.SecondStreet)
 	}
 	if snap.PhaseApproach[1] != "NB" || snap.PhaseApproach[2] != "SB" {

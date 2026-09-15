@@ -557,15 +557,16 @@ func TestEncode_SignalIndicationChanged(t *testing.T) {
 func TestEncode_SiteInventoryReport(t *testing.T) {
 	var got scv1.SiteInventoryReport
 	ceType := encodeOK(t, model.SiteInventoryReport{
-		Base: base("asc-1", "asc"), MainStreet: "US 23", SecondStreet: "Button Gwinnett",
+		Base: base("asc-1", "asc"), MainStreet: "Main St", SecondStreet: "Second St",
 		LatitudeE7: 339948344, LongitudeE7: -845295964, MapHex: "0012", MapMsgID: 18,
 		PhaseApproaches: []model.PhaseApproach{{Phase: 1, Approach: "NB"}},
 	}, &got)
 	if want := "openits.signal-control.site-inventory-report.v1"; ceType != want {
 		t.Errorf("ce-type = %q", ceType)
 	}
-	if got.GetMainStreet() != "US 23" || got.GetMapMessageId() != 18 || len(got.GetPhaseApproach()) != 1 {
-		t.Fatalf("got = %+v", got)
+	if got.GetMainStreet() != "Main St" || got.GetMapMessageId() != 18 || len(got.GetPhaseApproach()) != 1 {
+		t.Fatalf("got main=%q mapID=%d phases=%d",
+			got.GetMainStreet(), got.GetMapMessageId(), len(got.GetPhaseApproach()))
 	}
 }
 

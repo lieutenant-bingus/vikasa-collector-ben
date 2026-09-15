@@ -81,14 +81,29 @@ func (inv *Inventory) LookupDetector(channel uint32) DetectorInventory {
 	return d
 }
 
+// InventorySnapshot is a mutex-free copy of Inventory fields for read-only use.
+type InventorySnapshot struct {
+	MainStreet    string
+	SecondStreet  string
+	Description   string
+	PhaseApproach map[uint32]string
+	Detectors     map[uint32]DetectorInventory
+	LatitudeE7    int64
+	LongitudeE7   int64
+	MapHex        string
+	SpatHex       string
+	MapMsgID      int
+	SpatMsgID     int
+}
+
 // Snapshot returns a shallow copy of scalar fields + maps for tests.
-func (inv *Inventory) Snapshot() Inventory {
+func (inv *Inventory) Snapshot() InventorySnapshot {
 	if inv == nil {
-		return Inventory{}
+		return InventorySnapshot{}
 	}
 	inv.mu.RLock()
 	defer inv.mu.RUnlock()
-	out := Inventory{
+	out := InventorySnapshot{
 		MainStreet:   inv.MainStreet,
 		SecondStreet: inv.SecondStreet,
 		Description:  inv.Description,
