@@ -3,7 +3,7 @@ module github.com/Vikasa2M/vikasa-collector
 go 1.26
 
 require (
-	github.com/Vikasa2M/openits-models v0.5.1-asc.1
+	github.com/Vikasa2M/openits-models v0.5.0
 	github.com/gosnmp/gosnmp v1.44.0
 	github.com/nats-io/nats-server/v2 v2.14.5
 	github.com/nats-io/nats.go v1.53.1
@@ -23,8 +23,3 @@ require (
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 )
-
-// Fork pin until Vikasa2M/openits-models cuts a release with the ASC JetStream
-// catalog additions. Remove this replace and retarget the require when that
-// tag lands on the canonical module (ADR 0010 / lint-boundary Rule C).
-replace github.com/Vikasa2M/openits-models => github.com/lieutenant-bingus/openits-models-ben v0.5.1-asc.1

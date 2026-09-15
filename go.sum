@@ -1,3 +1,5 @@
+github.com/Vikasa2M/openits-models v0.5.0 h1:aHH6qP/UsndbrDc4ZhLB9QAddJfco+R0q13W/o5u1Kg=
+github.com/Vikasa2M/openits-models v0.5.0/go.mod h1:RDbcM6Qmsip4zlllZfaJv5KgWiEBO/vGhbasWvsCUkc=
 github.com/antithesishq/antithesis-sdk-go v0.7.2-default-no-op h1:p2zFsAzvhIpFya8AIOHIbWf7NGvO34QpLGclyf7nXj8=
 github.com/antithesishq/antithesis-sdk-go v0.7.2-default-no-op/go.mod h1:FQyySiasQQM8735Ddel3MRojmy4dA1IqCeyJ5jmPMbI=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
@@ -10,8 +12,6 @@ github.com/gosnmp/gosnmp v1.44.0 h1:6SUNAJWjSu/j05rm+M1G39NoPW8jvShiFqYf6XNnM+k=
 github.com/gosnmp/gosnmp v1.44.0/go.mod h1:30xQDXCVXXehh/xwRd62+JwIizwc3HZaBi4F/Hv5/0o=
 github.com/klauspost/compress v1.19.2 h1:hMRETovs/pu/dVWN7zIT1PGG8t509MwT6bO7XSi26R8=
 github.com/klauspost/compress v1.19.2/go.mod h1:cwPg85FWrGar70rWktvGQj8/hthj3wpl0PGDogxkrSQ=
-github.com/lieutenant-bingus/openits-models-ben v0.5.1-asc.1 h1:+FXAJ/KXNY1jfqN3yNUsdAYgbNo74N+fDT/KAXfMo5k=
-github.com/lieutenant-bingus/openits-models-ben v0.5.1-asc.1/go.mod h1:RDbcM6Qmsip4zlllZfaJv5KgWiEBO/vGhbasWvsCUkc=
 github.com/minio/highwayhash v1.0.4 h1:asJizugGgchQod2ja9NJlGOWq4s7KsAWr5XUc9Clgl4=
 github.com/minio/highwayhash v1.0.4/go.mod h1:GGYsuwP/fPD6Y9hMiXuapVvlIUEhFhMTh0rxU3ik1LQ=
 github.com/nats-io/jwt/v2 v2.8.2 h1:XXRgB60MSTnqsRwejQurVDs/hcv2dkt+86GjI+I/bMc=
