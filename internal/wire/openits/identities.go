@@ -569,8 +569,8 @@ var dataSchemaFor = map[string]string{
 	"openits.cctv.mode-changed.v1":       registryBase + "openits-common-mode-events/2026-07-21/",
 	"openits.cctv.tour-state-changed.v1": registryBase + "openits-cctv-events/2026-08-05/",
 
-	"openits.reversible-lane.fault-raised.v1":           registryBase + "openits-common-fault-events/2026-07-21/",
-	"openits.reversible-lane.fault-cleared.v1":          registryBase + "openits-common-fault-events/2026-07-21/",
-	"openits.reversible-lane.gate-position-changed.v1":  registryBase + "openits-reversible-lane-events/2026-09-14/",
-	"openits.reversible-lane.gate-mode-changed.v1":      registryBase + "openits-reversible-lane-events/2026-09-14/",
+	"openits.reversible-lane.fault-raised.v1":          registryBase + "openits-common-fault-events/2026-07-21/",
+	"openits.reversible-lane.fault-cleared.v1":         registryBase + "openits-common-fault-events/2026-07-21/",
+	"openits.reversible-lane.gate-position-changed.v1": registryBase + "openits-reversible-lane-events/2026-09-14/",
+	"openits.reversible-lane.gate-mode-changed.v1":     registryBase + "openits-reversible-lane-events/2026-09-14/",
 }
