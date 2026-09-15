@@ -421,6 +421,135 @@ func TestASCDescriptor(t *testing.T) {
 	}
 }
 
+func TestParseHTTPBlockInventoryAndCV(t *testing.T) {
+	cfg, err := parseHTTPBlock(map[string]any{
+		"http": map[string]any{
+			"base_url":    "http://controller/maxtime",
+			"cv_base_url": "http://controller/maxtime-cv",
+			"asclog":      false,
+			"inventory": map[string]any{
+				"detectors": map[string]any{
+					"3": map[string]any{
+						"approach": "NB", "lane": "NB thru", "phase_served": 1,
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.cvBaseURL != "http://controller/maxtime-cv" {
+		t.Fatalf("cv_base_url = %q", cfg.cvBaseURL)
+	}
+	d := cfg.detectors[3]
+	if d.Approach != "NB" || d.Lane != "NB thru" || d.PhaseServed != 1 {
+		t.Fatalf("detectors[3] = %+v", d)
+	}
+}
+
+func TestASCInventoryRefreshFromMIB(t *testing.T) {
+	reader := fakeMIBReader{values: map[string]map[string]string{
+		mibControllerOpMode:        {"1": "5"},
+		mibMainStreet:              {"1": "US%2023%20%28SR%2013%29"},
+		mibSecondStreet:            {"1": "Button%20Gwinnett-Preempt"},
+		mibUnitDatabaseDescription: {"1": "047-US%2023"},
+		mibPreemptDescription: {
+			"3": "NB%20-%20Ph%201%266",
+			"4": "SB - Ph 2&5",
+		},
+		// Minimal stubs so Read continues past other facets.
+		mibPatternStatus:       {"1": "0"},
+		mibPreemptStatus:       {"1": "0"},
+		mibFlashStatus:         {"1": "2"},
+		mibCoordOperational:    {"1": "1"},
+		mibCoordSelected:       {"1": "254"},
+		mibActualOffset:        {"1": "0"},
+		mibCoordCycleLength:    {"1": "120"},
+		mibCoordModeStatus:     {"1": "2"},
+		mibSignalState:         {"1": "0", "2": "0", "3": "0", "4": "0"},
+		mibRedIndications:      {"1": "0"},
+		mibYellowIndications:   {"1": "0"},
+		mibGreenIndications:    {"1": "0"},
+		mibShortAlarms:         {"1": "0"},
+		mibAlarms1:             {"1": "0"},
+		mibAlarms2:             {"1": "0"},
+		mibAlarmStatus:         {"1": "0"},
+		mibDetectorVolume:      {"1": "0", "2": "0"},
+		mibDetectorOccupancy:   {"1": "0", "2": "0"},
+		mibDetectorAlarms:      {"1": "0"},
+		mibDetectorGroupAlarms: {"1": "0"},
+		mibVehicleCalls:        {"1": "0"},
+		mibDetectorGroupActive: {"1": "0"},
+	}}
+	a := &asc{deviceID: "maxtime-asc-1", client: reader, now: time.Now, inv: &Inventory{}}
+	if _, err := a.Read(context.Background()); err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	snap := a.Inventory().Snapshot()
+	if snap.MainStreet != "US 23 (SR 13)" || snap.SecondStreet != "Button Gwinnett-Preempt" {
+		t.Fatalf("streets = %q / %q", snap.MainStreet, snap.SecondStreet)
+	}
+	if snap.PhaseApproach[1] != "NB" || snap.PhaseApproach[2] != "SB" {
+		t.Fatalf("phase approach = %v", snap.PhaseApproach)
+	}
+}
+
+func TestCVInventoryRefresh(t *testing.T) {
+	cv := fakeMIBReader{values: map[string]map[string]string{
+		mibIntGeoLatitude:  {"1": "339948344"},
+		mibIntGeoLongitude: {"1": "-845295964"},
+		mibMapBinary:       {"1": "%00%12%80"},
+		mibSpatBinary:      {"1": "%00%13%80"},
+	}}
+	inv := &Inventory{}
+	refreshCVInventory(context.Background(), cv, inv)
+	snap := inv.Snapshot()
+	if snap.LatitudeE7 != 339948344 || snap.LongitudeE7 != -845295964 {
+		t.Fatalf("geo = %d,%d", snap.LatitudeE7, snap.LongitudeE7)
+	}
+	if snap.MapHex != "001280" || snap.MapMsgID != 18 {
+		t.Fatalf("map = %q id=%d", snap.MapHex, snap.MapMsgID)
+	}
+	if snap.SpatHex != "001380" || snap.SpatMsgID != 19 {
+		t.Fatalf("spat = %q id=%d", snap.SpatHex, snap.SpatMsgID)
+	}
+}
+
+func TestCVInventoryRefreshFromLiveFixture(t *testing.T) {
+	raw, err := os.ReadFile("testdata/live/cv_geo_map_spat.json")
+	if err != nil {
+		t.Skip("cv live fixture missing")
+	}
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	values := make(map[string]map[string]string, len(envelope))
+	for name, rawRecord := range envelope {
+		var records []struct {
+			Data map[string]string `json:"data"`
+		}
+		if err := json.Unmarshal(rawRecord, &records); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if len(records) == 0 || records[0].Data == nil {
+			t.Fatalf("%s empty", name)
+		}
+		values[name] = records[0].Data
+	}
+	inv := &Inventory{}
+	refreshCVInventory(context.Background(), fakeMIBReader{values: values}, inv)
+	snap := inv.Snapshot()
+	if snap.LatitudeE7 != 339948344 || snap.MapMsgID != 18 || snap.SpatMsgID != 19 {
+		t.Fatalf("snap = lat=%d mapID=%d spatID=%d mapHexLen=%d",
+			snap.LatitudeE7, snap.MapMsgID, snap.SpatMsgID, len(snap.MapHex))
+	}
+	if len(snap.MapHex) < 40 || len(snap.SpatHex) < 40 {
+		t.Fatalf("hex too short map=%d spat=%d", len(snap.MapHex), len(snap.SpatHex))
+	}
+}
+
 func TestParseHTTPBlockRejectsMalformedConfig(t *testing.T) {
 	tests := []struct {
 		name string

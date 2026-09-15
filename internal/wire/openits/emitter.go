@@ -126,6 +126,18 @@ var ceTypeFor = map[key]string{
 	{"preemption-cleared", "asc"}:        "openits.signal-control.preemption-cleared.v1",
 	{"detector-report", "asc"}:           "openits.signal-control.detector-report.v1",
 
+	// High-resolution log and poll-diffed signal-control transitions. Phase
+	// movement-state diffs (PhaseStateChanged) stay unclaimed: the catalog
+	// phase-state-change notification is Indiana-kind shaped, which HR log
+	// PhaseLogEvent already provides.
+	{"phase-log-event", "asc"}:               "openits.signal-control.phase-state-change.v1",
+	{"overlap-log-event", "asc"}:             "openits.signal-control.overlap-change.v1",
+	{"unmapped-controller-log-event", "asc"}: "openits.signal-control.unmapped-event.v1",
+	{"detector-transition", "asc"}:           "openits.signal-control.detector-transition.v1",
+	{"coordination-changed", "asc"}:          "openits.signal-control.coordination-change.v1",
+	{"signal-indication-changed", "asc"}:     "openits.signal-control.signal-indication-changed.v1",
+	{"site-inventory-report", "asc"}:         "openits.signal-control.site-inventory-report.v1",
+
 	{"message-activation-failed", "dms"}: "openits.dms.message-activation-failed.v1",
 	{"message-changed", "dms"}:           "openits.dms.message-changed.v1",
 	{"sign-status-report", "dms"}:        "openits.dms.sign-status-report.v1",
@@ -251,8 +263,8 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 		if !ok {
 			return nil, false, nil
 		}
-		// ActivePlanID is DROPPED: the wire OperationalStatusReport has no plan
-		// field. It is not lost to consumers — plan-applied carries it.
+		// ActivePlanID is carried on the periodic status report so consumers
+		// see the current plan without waiting for a plan-applied transition.
 		msg = &scv1.OperationalStatusReport{
 			Kind:           scTypes + "sc-mode-event-kind",
 			SourceDeviceId: v.DeviceID,
@@ -261,6 +273,7 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 			Sequence:       e.nextSequence(v.DeviceID),
 			Mode:           mode,
 			FlashActive:    v.InConflictFlash,
+			PlanId:         v.ActivePlanID,
 		}
 
 	case model.PreemptionActivated:
@@ -289,9 +302,10 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 		dets := make([]*scv1.DetectorReportDetector, 0, len(v.Readings))
 		for _, r := range v.Readings {
 			dets = append(dets, &scv1.DetectorReportDetector{
-				DetectorId: r.Channel,
-				Volume:     r.VolumeDelta,
-				Occupancy:  occupancyPercent(r.OccupancyTenths),
+				DetectorId:  r.Channel,
+				PhaseServed: r.PhaseServed,
+				Volume:      r.VolumeDelta,
+				Occupancy:   occupancyPercent(r.OccupancyTenths),
 			})
 		}
 		msg = &scv1.DetectorReport{
@@ -306,6 +320,138 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 			// than pre-breaking the domain to match the wire.
 			IntervalDurationS: uint32((v.IntervalDuration + 500*time.Millisecond) / time.Second),
 			Detector:          dets,
+		}
+
+	case model.PhaseLogEvent:
+		kind, ok := phaseLogIdentity(v.Code)
+		if !ok {
+			return nil, false, nil
+		}
+		psc := &scv1.PhaseStateChange{
+			Kind:           kind,
+			SourceDeviceId: v.DeviceID,
+			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
+			ObservedBy:     e.collectorID,
+			Sequence:       e.nextSequence(v.DeviceID),
+			PhaseNumber:    v.PhaseNumber,
+		}
+		switch v.Code {
+		case model.PhaseLogHoldActive:
+			psc.HoldActive = true
+		case model.PhaseLogCallRegistered:
+			psc.CallRegistered = true
+		}
+		if code, ok := phaseLogIndianaCode(v.Code); ok {
+			psc.Source = indianaWireSource(code, v.PhaseNumber)
+		}
+		msg = psc
+
+	case model.OverlapLogEvent:
+		kind, ok := overlapLogIdentity(v.Code)
+		if !ok {
+			return nil, false, nil
+		}
+		oc := &scv1.OverlapChange{
+			Kind:           kind,
+			SourceDeviceId: v.DeviceID,
+			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
+			ObservedBy:     e.collectorID,
+			Sequence:       e.nextSequence(v.DeviceID),
+			OverlapNumber:  v.OverlapNumber,
+		}
+		if code, ok := overlapLogIndianaCode(v.Code); ok {
+			oc.Source = indianaWireSource(code, v.OverlapNumber)
+		}
+		msg = oc
+
+	case model.UnmappedControllerLogEvent:
+		msg = &scv1.UnmappedEvent{
+			Kind:           scTypes + "sc-unmapped-event",
+			SourceDeviceId: v.DeviceID,
+			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
+			ObservedBy:     e.collectorID,
+			Sequence:       e.nextSequence(v.DeviceID),
+			Source:         indianaWireSource(v.RawCode, v.Parameter),
+		}
+
+	case model.DetectorTransition:
+		kind, ok := detectorTransitionIdentity(v.Kind)
+		if !ok {
+			return nil, false, nil
+		}
+		// wire-source left absent: the same domain event is produced by both
+		// HR-log decode and MIB poll-diff, and synthesized events must not
+		// claim a wire provenance (openits-types wire-source grouping).
+		msg = &scv1.DetectorTransition{
+			Kind:           kind,
+			SourceDeviceId: v.DeviceID,
+			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
+			ObservedBy:     e.collectorID,
+			Sequence:       e.nextSequence(v.DeviceID),
+			Channel:        v.Channel,
+			Lane:           v.Lane,
+			Approach:       v.Approach,
+			PhaseServed:    v.PhaseServed,
+		}
+
+	case model.SignalIndicationChanged:
+		current, ok := indicationColorIdentity(v.To)
+		if !ok {
+			return nil, false, nil
+		}
+		sic := &scv1.SignalIndicationChanged{
+			Kind:           scTypes + "sc-signal-indication-changed",
+			SourceDeviceId: v.DeviceID,
+			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
+			ObservedBy:     e.collectorID,
+			Sequence:       e.nextSequence(v.DeviceID),
+			Channel:        v.Channel,
+			CurrentColor:   current,
+		}
+		if prior, ok := indicationColorIdentity(v.From); ok {
+			sic.PriorColor = prior
+		}
+		msg = sic
+
+	case model.SiteInventoryReport:
+		phases := make([]*scv1.PhaseApproach, 0, len(v.PhaseApproaches))
+		for _, p := range v.PhaseApproaches {
+			phases = append(phases, &scv1.PhaseApproach{
+				PhaseNumber: p.Phase,
+				Approach:    p.Approach,
+			})
+		}
+		msg = &scv1.SiteInventoryReport{
+			Kind:           scTypes + "sc-site-inventory-report",
+			SourceDeviceId: v.DeviceID,
+			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
+			ObservedBy:     e.collectorID,
+			Sequence:       e.nextSequence(v.DeviceID),
+			MainStreet:     v.MainStreet,
+			SecondStreet:   v.SecondStreet,
+			Description:    v.Description,
+			LatitudeE7:     v.LatitudeE7,
+			LongitudeE7:    v.LongitudeE7,
+			MapHex:         v.MapHex,
+			SpatHex:        v.SpatHex,
+			MapMessageId:   v.MapMsgID,
+			SpatMessageId:  v.SpatMsgID,
+			PhaseApproach:  phases,
+		}
+
+	case model.CoordinationChanged:
+		kind, ok := coordinationAxisIdentity(v.Axis)
+		if !ok {
+			return nil, false, nil
+		}
+		msg = &scv1.CoordinationChange{
+			Kind:           kind,
+			SourceDeviceId: v.DeviceID,
+			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
+			ObservedBy:     e.collectorID,
+			Sequence:       e.nextSequence(v.DeviceID),
+			PreviousValue:  int32(v.PreviousValue),
+			NewValue:       int32(v.NewValue),
 		}
 
 	case model.CCTVControlModeChanged:

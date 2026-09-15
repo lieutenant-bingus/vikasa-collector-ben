@@ -477,10 +477,17 @@ var dataSchemaFor = map[string]string{
 	"openits.perception.fault-cleared.v1":     registryBase + "openits-common-fault-events/2026-07-21/",
 
 	"openits.signal-control.plan-applied.v1":              registryBase + "openits-signal-control-events/2026-07-21/",
-	"openits.signal-control.operational-status-report.v1": registryBase + "openits-signal-control-events/2026-07-21/",
 	"openits.signal-control.preemption-activated.v1":      registryBase + "openits-signal-control-events/2026-07-21/",
 	"openits.signal-control.preemption-cleared.v1":        registryBase + "openits-signal-control-events/2026-07-21/",
 	"openits.signal-control.detector-report.v1":           registryBase + "openits-signal-control-events/2026-07-21/",
+	"openits.signal-control.phase-state-change.v1":        registryBase + "openits-signal-control-events/2026-07-21/",
+	"openits.signal-control.overlap-change.v1":            registryBase + "openits-signal-control-events/2026-07-21/",
+	"openits.signal-control.unmapped-event.v1":            registryBase + "openits-signal-control-events/2026-07-21/",
+	"openits.signal-control.detector-transition.v1":       registryBase + "openits-signal-control-events/2026-09-15/",
+	"openits.signal-control.coordination-change.v1":       registryBase + "openits-signal-control-events/2026-07-21/",
+	"openits.signal-control.signal-indication-changed.v1": registryBase + "openits-signal-control-events/2026-09-15/",
+	"openits.signal-control.site-inventory-report.v1":     registryBase + "openits-signal-control-events/2026-09-15/",
+	"openits.signal-control.operational-status-report.v1": registryBase + "openits-signal-control-events/2026-09-15/",
 
 	// v0.4.0 moved openits-dms-events to 2026-08-27 (the phase leaf at
 	// 2026-08-23, then the two new notifications); the other event modules

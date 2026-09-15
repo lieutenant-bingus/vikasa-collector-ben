@@ -57,8 +57,11 @@ type mibReader interface {
 type asc struct {
 	deviceID         string
 	client           mibReader
+	cv               mibReader // optional MaxTime-CV MIB reader
 	now              func() time.Time
 	detectorChannels []uint32
+	inv              *Inventory
+	invOnce          sync.Once
 }
 
 // NewASC wraps a MIB reader as a maxtime-asc StateReader. It is exported so
@@ -66,13 +69,41 @@ type asc struct {
 func NewASC(deviceID string, client interface {
 	Get(context.Context, string) (map[string]string, error)
 }) adapter.StateReader {
-	return &asc{deviceID: deviceID, client: client, now: time.Now}
+	return &asc{deviceID: deviceID, client: client, now: time.Now, inv: &Inventory{}}
 }
 
 func (a *asc) Descriptor() adapter.Descriptor { return ascDescriptor }
 func (a *asc) Close() error                   { return nil }
 
+// EnrichEvents applies site inventory to detector events (state + HR paths).
+func (a *asc) EnrichEvents(events []model.Event) {
+	if a == nil || a.inv == nil {
+		return
+	}
+	a.inv.EnrichEvents(events)
+}
+
+// Inventory returns the live inventory cache (for tests).
+func (a *asc) Inventory() *Inventory {
+	if a == nil {
+		return nil
+	}
+	return a.inv
+}
+
+func (a *asc) ensureInventory(ctx context.Context) {
+	if a.inv == nil {
+		a.inv = &Inventory{}
+	}
+	a.invOnce.Do(func() {
+		refreshASCInventory(ctx, a.client, a.inv)
+		refreshCVInventory(ctx, a.cv, a.inv)
+	})
+}
+
 func (a *asc) Read(ctx context.Context) (*model.Snapshot, error) {
+	a.ensureInventory(ctx)
+
 	op, err := a.client.Get(ctx, mibControllerOpMode)
 	if err != nil {
 		// This request is the controller's primary liveness check. A failure
@@ -91,7 +122,37 @@ func (a *asc) Read(ctx context.Context) (*model.Snapshot, error) {
 	a.readFaultSet(ctx, snap)
 	a.readDetectors(ctx, snap)
 	a.readDetectorChannelStatuses(ctx, snap)
+	a.attachSiteInventory(snap)
 	return snap, nil
+}
+
+func (a *asc) attachSiteInventory(snap *model.Snapshot) {
+	if a.inv == nil {
+		return
+	}
+	s := a.inv.Snapshot()
+	if s.MainStreet == "" && s.SecondStreet == "" && s.Description == "" &&
+		s.LatitudeE7 == 0 && s.LongitudeE7 == 0 && s.MapHex == "" && s.SpatHex == "" &&
+		len(s.PhaseApproach) == 0 {
+		return
+	}
+	approaches := make([]model.PhaseApproach, 0, len(s.PhaseApproach))
+	for phase, approach := range s.PhaseApproach {
+		approaches = append(approaches, model.PhaseApproach{Phase: phase, Approach: approach})
+	}
+	sort.Slice(approaches, func(i, j int) bool { return approaches[i].Phase < approaches[j].Phase })
+	snap.Facets = append(snap.Facets, model.SiteInventory{
+		MainStreet:      s.MainStreet,
+		SecondStreet:    s.SecondStreet,
+		Description:     s.Description,
+		LatitudeE7:      s.LatitudeE7,
+		LongitudeE7:     s.LongitudeE7,
+		MapHex:          s.MapHex,
+		SpatHex:         s.SpatHex,
+		MapMsgID:        uint32(s.MapMsgID),
+		SpatMsgID:       uint32(s.SpatMsgID),
+		PhaseApproaches: approaches,
+	})
 }
 
 func (a *asc) readSignalStatus(ctx context.Context, snap *model.Snapshot, op map[string]string) {

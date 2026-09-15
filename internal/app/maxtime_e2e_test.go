@@ -215,6 +215,136 @@ func TestMaxtimeASCReachesJetStreamWithAuthenticatedMapping(t *testing.T) {
 	}
 }
 
+func TestMaxtimeASCLogReachesJetStream(t *testing.T) {
+	values := loadMaxtimeFixture(t)
+	var fetches atomic.Int32
+	prime := `<EventResponses><EventResponse>` +
+		`<Event ID="100" TimeStamp="09-15-2026 12:00:00.0" EventTypeID="1" Parameter="2"/>` +
+		`</EventResponse></EventResponses>`
+	follow := `<EventResponses><EventResponse>` +
+		`<Event ID="100" TimeStamp="09-15-2026 12:00:00.0" EventTypeID="1" Parameter="2"/>` +
+		`<Event ID="101" TimeStamp="09-15-2026 12:00:01.0" EventTypeID="1" Parameter="2"/>` +
+		`<Event ID="102" TimeStamp="09-15-2026 12:00:01.1" EventTypeID="61" Parameter="1"/>` +
+		`<Event ID="103" TimeStamp="09-15-2026 12:00:01.2" EventTypeID="82" Parameter="3"/>` +
+		`<Event ID="104" TimeStamp="09-15-2026 12:00:01.3" EventTypeID="613" Parameter="19"/>` +
+		`</EventResponse></EventResponses>`
+
+	controller := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v1/asclog/xml/full":
+			n := fetches.Add(1)
+			w.Header().Set("Content-Type", "application/xml")
+			if n == 1 {
+				_, _ = w.Write([]byte(prime))
+				return
+			}
+			_, _ = w.Write([]byte(follow))
+		case strings.HasPrefix(r.URL.Path, "/maxtime/api/mibs/"):
+			serveMaxtimeMIB(w, path.Base(r.URL.Path), values[path.Base(r.URL.Path)], r)
+		case r.URL.Path == "/maxprofile/accounts/loginWithPassword":
+			_, _ = w.Write([]byte(`{"data":{"tokens":{"accessToken":"test-token"}}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer controller.Close()
+
+	ns, err := server.NewServer(&server.Options{Port: -1, JetStream: true, StoreDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ns.Start()
+	t.Cleanup(ns.Shutdown)
+	if !ns.ReadyForConnections(5 * time.Second) {
+		t.Fatal("nats not ready")
+	}
+
+	reg := adapter.NewRegistry()
+	maxtime.RegisterTo(reg)
+	cfg := &config.Config{
+		CollectorID:  "maxtime-asclog-e2e",
+		Region:       "us-ga",
+		Agency:       "metro",
+		AgencyUnit:   "d01",
+		Site:         "cab-1",
+		ModelVersion: "openits/v1",
+		Devices: []config.Device{{
+			ID:           "maxtime-asc-1",
+			Vendor:       "maxtime",
+			DeviceKind:   "asc",
+			PollInterval: 200 * time.Millisecond,
+			Connection: map[string]any{"http": map[string]any{
+				"base_url":             controller.URL + "/maxtime",
+				"username":             "admin",
+				"password":             "secret",
+				"asclog":               true,
+				"asclog_poll_interval": "40ms",
+			}},
+		}},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	defer cancel()
+	if err := Run(ctx, cfg, reg, ns.ClientURL(), "test"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if fetches.Load() < 2 {
+		t.Fatalf("asclog fetches = %d, want at least priming + follow-up", fetches.Load())
+	}
+
+	nc, err := nats.Connect(ns.ClientURL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer nc.Close()
+	js, err := jetstream.New(nc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, err := js.Stream(context.Background(), "OPENITS-US-GA-METRO-D01")
+	if err != nil {
+		t.Fatalf("stream: %v", err)
+	}
+	info, err := stream.Info(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	consumer, err := stream.CreateOrUpdateConsumer(context.Background(),
+		jetstream.ConsumerConfig{Durable: "maxtime-asclog-e2e"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var sawPhase, sawOverlap, sawDetector, sawUnmapped bool
+	for i := uint64(0); i < info.State.Msgs; i++ {
+		msg, err := consumer.Next(jetstream.FetchMaxWait(500 * time.Millisecond))
+		if err != nil {
+			t.Fatalf("read JetStream message %d: %v", i, err)
+		}
+		_ = msg.Ack()
+		switch msg.Headers().Get("ce-type") {
+		case "openits.signal-control.phase-state-change.v1":
+			if bytes.Contains(msg.Data(), []byte("phase-begin-green")) {
+				sawPhase = true
+			}
+		case "openits.signal-control.overlap-change.v1":
+			if bytes.Contains(msg.Data(), []byte("overlap-begin-green")) {
+				sawOverlap = true
+			}
+		case "openits.signal-control.detector-transition.v1":
+			if bytes.Contains(msg.Data(), []byte("vehicle-detector-on")) {
+				sawDetector = true
+			}
+		case "openits.signal-control.unmapped-event.v1":
+			sawUnmapped = true
+		}
+	}
+	if !sawPhase || !sawOverlap || !sawDetector || !sawUnmapped {
+		t.Fatalf("asclog JetStream coverage: phase=%v overlap=%v detector=%v unmapped=%v msgs=%d",
+			sawPhase, sawOverlap, sawDetector, sawUnmapped, info.State.Msgs)
+	}
+}
+
 func loadMaxtimeFixture(t *testing.T) map[string]map[string]string {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join("..", "vendors", "maxtime", "testdata", "live", "healthy.json"))

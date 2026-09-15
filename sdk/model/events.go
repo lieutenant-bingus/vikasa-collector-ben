@@ -95,9 +95,42 @@ type DetectorTransition struct {
 	Base
 	Channel uint32
 	Kind    DetectorTransitionKind
+	// Optional inventory enrichment. Adapters/synth may leave these zero;
+	// site inventory (ASC preempt labels, CV MAP) may fill them before emit.
+	Approach    string // e.g. "NB", "SB Peachtree"
+	Lane        string // e.g. "NB thru"
+	PhaseServed uint32 // phase this detector calls; 0 means unknown/unset
 }
 
 func (DetectorTransition) EventKind() string { return "detector-transition" }
+
+// SignalIndicationChanged fires when an output channel's displayed color
+// changes between consecutive successful polls.
+type SignalIndicationChanged struct {
+	Base
+	Channel uint32
+	From    SignalColor
+	To      SignalColor
+}
+
+func (SignalIndicationChanged) EventKind() string { return "signal-indication-changed" }
+
+// SiteInventoryReport carries ASC/CV site labels and optional J2735 hex.
+type SiteInventoryReport struct {
+	Base
+	MainStreet      string
+	SecondStreet    string
+	Description     string
+	LatitudeE7      int64
+	LongitudeE7     int64
+	MapHex          string
+	SpatHex         string
+	MapMsgID        uint32
+	SpatMsgID       uint32
+	PhaseApproaches []PhaseApproach
+}
+
+func (SiteInventoryReport) EventKind() string { return "site-inventory-report" }
 
 // PhaseLogEvent is one Indiana phase code from a high-resolution controller
 // log. Unlike PhaseStateChanged (poll-diffed movement state), this is a
@@ -162,6 +195,7 @@ type DetectorReading struct {
 	Channel         uint32
 	VolumeDelta     uint32
 	OccupancyTenths uint16
+	PhaseServed     uint32 // optional inventory; 0 means unknown/unset
 }
 
 // DetectorReport is the per-interval detector summary, emitted every poll

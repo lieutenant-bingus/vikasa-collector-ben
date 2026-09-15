@@ -1,3 +1,7 @@
+# Local-only config (secrets / site-specific)
+*.local.yaml
+configs/*.local.yaml
+
 # Binaries / build artifacts
 *.exe
 *.dll

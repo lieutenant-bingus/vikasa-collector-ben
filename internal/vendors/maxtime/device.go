@@ -38,7 +38,22 @@ func (d *device) Read(ctx context.Context) (*model.Snapshot, error) {
 }
 
 func (d *device) Fetch(ctx context.Context) ([]model.Event, error) {
-	return d.log.Fetch(ctx)
+	if d.asc != nil {
+		d.asc.ensureInventory(ctx)
+	}
+	events, err := d.log.Fetch(ctx)
+	if err != nil {
+		return nil, err
+	}
+	d.EnrichEvents(events)
+	return events, nil
+}
+
+// EnrichEvents applies site inventory (ASC/CV/config) to detector events.
+func (d *device) EnrichEvents(events []model.Event) {
+	if d.asc != nil {
+		d.asc.EnrichEvents(events)
+	}
 }
 
 // EventPollInterval is the cadence for the EventRunner. Zero means the app

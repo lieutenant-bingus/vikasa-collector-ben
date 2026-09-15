@@ -3,6 +3,7 @@ package maxtime
 import (
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 
 type httpConfig struct {
 	baseURL          string
+	cvBaseURL        string
 	timeout          time.Duration
 	detectorChannels []uint32
 	username         string
@@ -18,6 +20,7 @@ type httpConfig struct {
 	asclogURL        string
 	asclogEnabled    bool
 	asclogInterval   time.Duration
+	detectors        map[uint32]DetectorInventory
 }
 
 // RegisterTo registers the special MAXTIME HTTP ASC adapter. Its connection
@@ -26,6 +29,7 @@ type httpConfig struct {
 //	connection:
 //	  http:
 //	    base_url: "http://controller/maxtime"
+//	    cv_base_url: "http://controller/maxtime-cv"  # optional MAP/SPaT/geo
 //	    timeout: "2s"
 //	    username: "admin"
 //	    password: "use-a-secret-store"
@@ -33,6 +37,9 @@ type httpConfig struct {
 //	    asclog: true                         # optional; default true
 //	    asclog_url: "http://controller/v1/asclog/xml/full"  # optional override
 //	    asclog_poll_interval: "15s"          # optional; EventReader cadence
+//	    inventory:                           # optional static detector map
+//	      detectors:
+//	        "3": { approach: "NB", lane: "NB thru", phase_served: 1 }
 func RegisterTo(r *adapter.Registry) {
 	r.Register(ascDescriptor, func(deviceID string, conn map[string]any) (adapter.Adapter, error) {
 		cfg, err := parseHTTPBlock(conn)
@@ -43,11 +50,23 @@ func RegisterTo(r *adapter.Registry) {
 		if err != nil {
 			return nil, fmt.Errorf("maxtime-asc %s: %w", deviceID, err)
 		}
+		inv := &Inventory{}
+		if len(cfg.detectors) > 0 {
+			inv.setDetectors(cfg.detectors)
+		}
 		state := &asc{
 			deviceID:         deviceID,
 			client:           client,
 			now:              time.Now,
 			detectorChannels: cfg.detectorChannels,
+			inv:              inv,
+		}
+		if cfg.cvBaseURL != "" {
+			cv, err := newHTTPMIBReader(cfg.cvBaseURL, cfg.timeout, cfg.username, cfg.password)
+			if err != nil {
+				return nil, fmt.Errorf("maxtime-asc %s: cv_base_url: %w", deviceID, err)
+			}
+			state.cv = cv
 		}
 		if !cfg.asclogEnabled {
 			// Return *asc alone so the type does not satisfy EventReader —
@@ -73,6 +92,7 @@ func parseHTTPBlock(conn map[string]any) (httpConfig, error) {
 	if baseURL == "" {
 		return httpConfig{}, fmt.Errorf("connection.http.base_url required")
 	}
+	cvBaseURL, _ := raw["cv_base_url"].(string)
 
 	timeout := 2 * time.Second
 	if rawTimeout, ok := raw["timeout"]; ok {
@@ -138,8 +158,14 @@ func parseHTTPBlock(conn map[string]any) (httpConfig, error) {
 		asclogInterval = parsed
 	}
 
+	dets, err := parseInventoryDetectors(raw["inventory"])
+	if err != nil {
+		return httpConfig{}, err
+	}
+
 	return httpConfig{
 		baseURL:          baseURL,
+		cvBaseURL:        cvBaseURL,
 		timeout:          timeout,
 		detectorChannels: channels,
 		username:         username,
@@ -147,6 +173,7 @@ func parseHTTPBlock(conn map[string]any) (httpConfig, error) {
 		asclogURL:        asclogURL,
 		asclogEnabled:    asclogEnabled,
 		asclogInterval:   asclogInterval,
+		detectors:        dets,
 	}, nil
 }
 
@@ -203,4 +230,79 @@ func parseDetectorChannels(raw any) ([]uint32, error) {
 		}
 	}
 	return channels, nil
+}
+
+func parseInventoryDetectors(raw any) (map[uint32]DetectorInventory, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	block, ok := raw.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("connection.http.inventory must be a map")
+	}
+	rawDets, ok := block["detectors"]
+	if !ok || rawDets == nil {
+		return nil, nil
+	}
+	dets, ok := rawDets.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("connection.http.inventory.detectors must be a map")
+	}
+	out := make(map[uint32]DetectorInventory, len(dets))
+	for key, value := range dets {
+		ch, err := strconv.ParseUint(strings.TrimSpace(key), 10, 32)
+		if err != nil || ch == 0 {
+			return nil, fmt.Errorf("connection.http.inventory.detectors key %q must be a positive channel number", key)
+		}
+		entry, ok := value.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("connection.http.inventory.detectors.%s must be a map", key)
+		}
+		var d DetectorInventory
+		if approach, _ := entry["approach"].(string); approach != "" {
+			d.Approach = approach
+		}
+		if lane, _ := entry["lane"].(string); lane != "" {
+			d.Lane = lane
+		}
+		if rawPhase, ok := entry["phase_served"]; ok {
+			phase, err := positiveUint32(rawPhase)
+			if err != nil {
+				return nil, fmt.Errorf("connection.http.inventory.detectors.%s.phase_served: %w", key, err)
+			}
+			d.PhaseServed = phase
+		}
+		out[uint32(ch)] = d
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
+}
+
+func positiveUint32(raw any) (uint32, error) {
+	switch v := raw.(type) {
+	case int:
+		if v > 0 {
+			return uint32(v), nil
+		}
+	case int64:
+		if v > 0 && v <= int64(^uint32(0)) {
+			return uint32(v), nil
+		}
+	case uint64:
+		if v > 0 && v <= uint64(^uint32(0)) {
+			return uint32(v), nil
+		}
+	case float64:
+		if v > 0 && v == float64(uint32(v)) {
+			return uint32(v), nil
+		}
+	case string:
+		n, err := strconv.ParseUint(strings.TrimSpace(v), 10, 32)
+		if err == nil && n > 0 {
+			return uint32(n), nil
+		}
+	}
+	return 0, fmt.Errorf("must be a positive integer")
 }

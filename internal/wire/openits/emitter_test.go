@@ -446,6 +446,9 @@ func TestEncode_OperationalStatusReport_MapsModeAndFlash(t *testing.T) {
 	if !got.GetFlashActive() {
 		t.Error("flash_active = false, want true")
 	}
+	if got.GetPlanId() != 3 {
+		t.Errorf("plan_id = %d, want 3", got.GetPlanId())
+	}
 }
 
 func TestEncode_PreemptionPair(t *testing.T) {
@@ -503,6 +506,97 @@ func TestEncode_DetectorReport_RoundsIntervalAndFormatsOccupancy(t *testing.T) {
 	}
 }
 
+func TestEncode_PhaseLogEvent_MapsIndianaKindAndWireSource(t *testing.T) {
+	var got scv1.PhaseStateChange
+	ceType := encodeOK(t, model.PhaseLogEvent{
+		Base: base("asc-1", "asc"), LogID: 99, PhaseNumber: 2, Code: model.PhaseLogBeginGreen,
+	}, &got)
+	if want := "openits.signal-control.phase-state-change.v1"; ceType != want {
+		t.Errorf("ce-type = %q, want %q", ceType, want)
+	}
+	if want := "openits-signal-control-types:phase-begin-green"; got.GetKind() != want {
+		t.Errorf("kind = %q, want %q", got.GetKind(), want)
+	}
+	if got.GetPhaseNumber() != 2 {
+		t.Errorf("phase_number = %d, want 2", got.GetPhaseNumber())
+	}
+	src := got.GetSource()
+	if src == nil || src.GetDecoder() != "indiana" || src.GetIndiana().GetIndianaCode() != 1 {
+		t.Errorf("wire-source = %+v, want indiana code 1", src)
+	}
+}
+
+func TestEncode_DetectorTransition_PresenceOn(t *testing.T) {
+	var got scv1.DetectorTransition
+	ceType := encodeOK(t, model.DetectorTransition{
+		Base: base("asc-1", "asc"), Channel: 1, Kind: model.DetectorTransitionPresenceOn,
+	}, &got)
+	if want := "openits.signal-control.detector-transition.v1"; ceType != want {
+		t.Errorf("ce-type = %q, want %q", ceType, want)
+	}
+	if got.GetKind() != "openits-signal-control-types:vehicle-detector-presence-on" {
+		t.Errorf("kind = %q", got.GetKind())
+	}
+}
+
+func TestEncode_SignalIndicationChanged(t *testing.T) {
+	var got scv1.SignalIndicationChanged
+	ceType := encodeOK(t, model.SignalIndicationChanged{
+		Base: base("asc-1", "asc"), Channel: 2,
+		From: model.SignalColorRed, To: model.SignalColorGreen,
+	}, &got)
+	if want := "openits.signal-control.signal-indication-changed.v1"; ceType != want {
+		t.Errorf("ce-type = %q", ceType)
+	}
+	if got.GetPriorColor() != "openits-signal-control-types:indication-color-red" ||
+		got.GetCurrentColor() != "openits-signal-control-types:indication-color-green" {
+		t.Fatalf("colors = %q -> %q", got.GetPriorColor(), got.GetCurrentColor())
+	}
+}
+
+func TestEncode_SiteInventoryReport(t *testing.T) {
+	var got scv1.SiteInventoryReport
+	ceType := encodeOK(t, model.SiteInventoryReport{
+		Base: base("asc-1", "asc"), MainStreet: "US 23", SecondStreet: "Button Gwinnett",
+		LatitudeE7: 339948344, LongitudeE7: -845295964, MapHex: "0012", MapMsgID: 18,
+		PhaseApproaches: []model.PhaseApproach{{Phase: 1, Approach: "NB"}},
+	}, &got)
+	if want := "openits.signal-control.site-inventory-report.v1"; ceType != want {
+		t.Errorf("ce-type = %q", ceType)
+	}
+	if got.GetMainStreet() != "US 23" || got.GetMapMessageId() != 18 || len(got.GetPhaseApproach()) != 1 {
+		t.Fatalf("got = %+v", got)
+	}
+}
+
+func TestEncode_DetectorTransition_InventoryFields(t *testing.T) {
+	var got scv1.DetectorTransition
+	ceType := encodeOK(t, model.DetectorTransition{
+		Base: base("asc-1", "asc"), Channel: 3, Kind: model.DetectorTransitionCallOn,
+		Approach: "NB", Lane: "NB thru", PhaseServed: 1,
+	}, &got)
+	if want := "openits.signal-control.detector-transition.v1"; ceType != want {
+		t.Errorf("ce-type = %q, want %q", ceType, want)
+	}
+	if got.GetApproach() != "NB" || got.GetLane() != "NB thru" || got.GetPhaseServed() != 1 {
+		t.Fatalf("inventory fields = approach=%q lane=%q phase=%d",
+			got.GetApproach(), got.GetLane(), got.GetPhaseServed())
+	}
+}
+
+func TestEncode_UnmappedControllerLog_PreservesIndianaCodes(t *testing.T) {
+	var got scv1.UnmappedEvent
+	ceType := encodeOK(t, model.UnmappedControllerLogEvent{
+		Base: base("asc-1", "asc"), LogID: 7, RawCode: 613, Parameter: 19,
+	}, &got)
+	if want := "openits.signal-control.unmapped-event.v1"; ceType != want {
+		t.Errorf("ce-type = %q, want %q", ceType, want)
+	}
+	if got.GetSource().GetIndiana().GetIndianaCode() != 613 {
+		t.Errorf("indiana_code = %d, want 613", got.GetSource().GetIndiana().GetIndianaCode())
+	}
+}
+
 func TestEncode_DMSMessageActivationFailed(t *testing.T) {
 	var got dmsv1.MessageActivationFailed
 	ceType := encodeOK(t, model.DMSMessageActivationFailed{
@@ -550,14 +644,21 @@ func TestCETypes_IsCompleteSortedAndDeduped(t *testing.T) {
 		"openits.perception.zone-incident-detected.v1",
 		"openits.perception.zone-incident-updated.v1",
 		"openits.perception.zone-interval-report.v1",
+		"openits.signal-control.coordination-change.v1",
 		"openits.signal-control.detector-report.v1",
+		"openits.signal-control.detector-transition.v1",
 		"openits.signal-control.fault-cleared.v1",
 		"openits.signal-control.fault-raised.v1",
 		"openits.signal-control.mode-changed.v1",
 		"openits.signal-control.operational-status-report.v1",
+		"openits.signal-control.overlap-change.v1",
+		"openits.signal-control.phase-state-change.v1",
 		"openits.signal-control.plan-applied.v1",
 		"openits.signal-control.preemption-activated.v1",
 		"openits.signal-control.preemption-cleared.v1",
+		"openits.signal-control.signal-indication-changed.v1",
+		"openits.signal-control.site-inventory-report.v1",
+		"openits.signal-control.unmapped-event.v1",
 		"openits.traffic-sensor.fault-cleared.v1",
 		"openits.traffic-sensor.fault-raised.v1",
 		"openits.traffic-sensor.traffic-interval-report.v1",

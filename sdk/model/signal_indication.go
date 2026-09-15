@@ -36,9 +36,33 @@ type ChannelIndication struct {
 }
 
 // SignalIndications holds one entry per channel the adapter read, sorted by
-// Channel. There is no catalog ce-type for raw indication state today, so
-// synth does not diff this facet — it is carried for inventory and future
-// wire mapping only.
+// Channel. Synth diffs this into SignalIndicationChanged events.
 type SignalIndications struct{ Channels []ChannelIndication }
 
 func (SignalIndications) FacetKind() Kind { return KindSignalIndications }
+
+// KindSiteInventory is ASC/CV site labels and optional J2735 MAP/SPaT hex.
+const KindSiteInventory Kind = "site-inventory"
+
+// PhaseApproach is one NEMA phase → approach label.
+type PhaseApproach struct {
+	Phase    uint32
+	Approach string
+}
+
+// SiteInventory is intersection geography/labels for ATSPM enrichment.
+// PhaseApproaches is sorted by Phase.
+type SiteInventory struct {
+	MainStreet     string
+	SecondStreet   string
+	Description    string
+	LatitudeE7     int64
+	LongitudeE7    int64
+	MapHex         string
+	SpatHex        string
+	MapMsgID       uint32
+	SpatMsgID      uint32
+	PhaseApproaches []PhaseApproach
+}
+
+func (SiteInventory) FacetKind() Kind { return KindSiteInventory }

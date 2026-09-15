@@ -93,6 +93,8 @@ func Run(ctx context.Context, cfg *config.Config, reg *adapter.Registry, natsURL
 		synth.NewPhaseDiffer(),
 		synth.NewCoordinationDiffer(),
 		synth.NewDetectorChannelDiffer(),
+		synth.NewSignalIndicationDiffer(),
+		synth.NewSiteInventoryDiffer(),
 		synth.NewDMSDiffer(),
 		synth.NewDMSEnvironmentDiffer(),
 		synth.NewTrafficIntervalDiffer(),
@@ -121,7 +123,15 @@ func Run(ctx context.Context, cfg *config.Config, reg *adapter.Registry, natsURL
 				d.ID, a.Descriptor().Key())
 		}
 		if isState {
-			r := runner.New(sr, d.ID, d.PollInterval, 0, engine, sink)
+			stateSink := sink
+			if en, ok := a.(interface{ EnrichEvents([]model.Event) }); ok {
+				base := sink
+				stateSink = func(events []model.Event) {
+					en.EnrichEvents(events)
+					base(events)
+				}
+			}
+			r := runner.New(sr, d.ID, d.PollInterval, 0, engine, stateSink)
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -135,7 +145,18 @@ func Run(ctx context.Context, cfg *config.Config, reg *adapter.Registry, natsURL
 					interval = hinted
 				}
 			}
-			erun := runner.NewEventRunner(er, d.ID, interval, 0, sink)
+			eventSink := sink
+			// device.Fetch already enriches; EnrichEvents on the sink is
+			// harmless (idempotent fill-if-empty) and covers adapters that
+			// enrich only at the sink boundary.
+			if en, ok := a.(interface{ EnrichEvents([]model.Event) }); ok {
+				base := sink
+				eventSink = func(events []model.Event) {
+					en.EnrichEvents(events)
+					base(events)
+				}
+			}
+			erun := runner.NewEventRunner(er, d.ID, interval, 0, eventSink)
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
