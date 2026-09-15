@@ -17,6 +17,7 @@ import (
 	commonv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/common/v1"
 	dmsv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/dms/v1"
 	pcpv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/perception/v1"
+	rlv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/reversible_lane/v1"
 	scv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/signal_control/v1"
 	tsv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/traffic_sensor/v1"
 	zocv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/zone_occupancy/v1"
@@ -103,6 +104,12 @@ var ceTypeFor = map[key]string{
 	{"fault-cleared", "traffic-sensor"}: "openits.traffic-sensor.fault-cleared.v1",
 	{"fault-raised", "perception"}:      "openits.perception.fault-raised.v1",
 	{"fault-cleared", "perception"}:     "openits.perception.fault-cleared.v1",
+
+	{"fault-raised", "acs"}:  "openits.reversible-lane.fault-raised.v1",
+	{"fault-cleared", "acs"}: "openits.reversible-lane.fault-cleared.v1",
+
+	{"gate-position-changed", "acs"}: "openits.reversible-lane.gate-position-changed.v1",
+	{"gate-mode-changed", "acs"}:     "openits.reversible-lane.gate-mode-changed.v1",
 
 	{"traffic-interval-report", "traffic-sensor"}: "openits.traffic-sensor.traffic-interval-report.v1",
 
@@ -198,7 +205,7 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 		// faultKindIdentity falls back to the service base identity. It only
 		// fails for a device kind this emitter does not serve, which the
 		// ce-type lookup above has already excluded.
-		kind, ok := faultKindIdentity(v.Category, v.DeviceKind)
+		kind, ok := faultKindIdentity(v.Category, v.DeviceKind, v.FaultID)
 		if !ok {
 			return nil, false, nil
 		}
@@ -213,7 +220,7 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 			Description:    v.Description,
 		}
 	case model.FaultCleared:
-		kind, ok := faultKindIdentity(model.CategoryUnknown, v.DeviceKind)
+		kind, ok := faultKindIdentity(model.CategoryUnknown, v.DeviceKind, v.FaultID)
 		if !ok {
 			return nil, false, nil
 		}
@@ -580,6 +587,30 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 			r.HeaterActive = v.HeaterActive
 		}
 		msg = r
+
+	case model.GatePositionChanged:
+		msg = &rlv1.GatePositionChanged{
+			Kind:             rlTypes + "rl-gate-position-changed",
+			SourceDeviceId:   v.DeviceID,
+			OccurredAt:       timestamppb.New(v.OccurredAt.UTC()),
+			ObservedBy:       e.collectorID,
+			Sequence:         e.nextSequence(v.DeviceID),
+			GateId:           v.GateID,
+			PreviousPosition: gatePositionFor(v.From),
+			NewPosition:      gatePositionFor(v.To),
+		}
+
+	case model.GateModeChanged:
+		msg = &rlv1.GateModeChanged{
+			Kind:           rlTypes + "rl-gate-mode-changed",
+			SourceDeviceId: v.DeviceID,
+			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
+			ObservedBy:     e.collectorID,
+			Sequence:       e.nextSequence(v.DeviceID),
+			GateId:         v.GateID,
+			PreviousMode:   gateOperatingModeFor(v.From),
+			NewMode:        gateOperatingModeFor(v.To),
+		}
 
 	default:
 		return nil, false, nil

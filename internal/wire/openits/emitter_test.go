@@ -550,6 +550,10 @@ func TestCETypes_IsCompleteSortedAndDeduped(t *testing.T) {
 		"openits.perception.zone-incident-detected.v1",
 		"openits.perception.zone-incident-updated.v1",
 		"openits.perception.zone-interval-report.v1",
+		"openits.reversible-lane.fault-cleared.v1",
+		"openits.reversible-lane.fault-raised.v1",
+		"openits.reversible-lane.gate-mode-changed.v1",
+		"openits.reversible-lane.gate-position-changed.v1",
 		"openits.signal-control.detector-report.v1",
 		"openits.signal-control.fault-cleared.v1",
 		"openits.signal-control.fault-raised.v1",
@@ -715,6 +719,7 @@ func TestEncode_SharedFaultsRouteForEveryServedDeviceKind(t *testing.T) {
 		{"cctv", "openits.cctv.fault-raised.v1", "openits.cctv.fault-cleared.v1"},
 		{"traffic-sensor", "openits.traffic-sensor.fault-raised.v1", "openits.traffic-sensor.fault-cleared.v1"},
 		{"perception", "openits.perception.fault-raised.v1", "openits.perception.fault-cleared.v1"},
+		{"acs", "openits.reversible-lane.fault-raised.v1", "openits.reversible-lane.fault-cleared.v1"},
 	} {
 		t.Run(tc.deviceKind, func(t *testing.T) {
 			var raised commonv1.FaultRaised
@@ -749,7 +754,7 @@ func TestFaultKindIdentity_UnmappedCategoryFallsBackPerService(t *testing.T) {
 		"traffic-sensor": "openits-traffic-sensor-types:traffic-sensor-fault-event-kind",
 		"perception":     "openits-perception-types:perception-fault-event-kind",
 	} {
-		got, ok := faultKindIdentity(model.CategoryConflict, deviceKind)
+		got, ok := faultKindIdentity(model.CategoryConflict, deviceKind, "f1")
 		if !ok {
 			t.Errorf("%s: no fault identity at all", deviceKind)
 			continue
@@ -757,6 +762,25 @@ func TestFaultKindIdentity_UnmappedCategoryFallsBackPerService(t *testing.T) {
 		if got != want {
 			t.Errorf("%s: kind = %q, want %q", deviceKind, got, want)
 		}
+	}
+}
+
+func TestFaultKindIdentity_ACSMapsByFaultID(t *testing.T) {
+	for faultID, want := range map[string]string{
+		"gate/WG-111/failed-to-close": "openits-reversible-lane-types:reversible-lane-fault-gate-failed-to-close",
+		"gate/BG-114/estop":           "openits-reversible-lane-types:reversible-lane-fault-gate-estop",
+		"cabinet/lf-fault":            "openits-reversible-lane-types:reversible-lane-fault-cabinet-lf",
+		"cabinet/gate-estop":          "openits-reversible-lane-types:reversible-lane-fault-cabinet-estop",
+		"something-else":              "openits-reversible-lane-types:reversible-lane-fault-event-kind",
+	} {
+		got, ok := faultKindIdentity(model.CategoryCabinet, "acs", faultID)
+		if !ok || got != want {
+			t.Errorf("%s: got (%q, %v), want %q", faultID, got, ok, want)
+		}
+	}
+	base, ok := faultKindIdentity(model.CategoryUnknown, "acs", "gate/WG-111/failed-to-close")
+	if !ok || base != "openits-reversible-lane-types:reversible-lane-fault-event-kind" {
+		t.Errorf("clear path: got (%q, %v)", base, ok)
 	}
 }
 

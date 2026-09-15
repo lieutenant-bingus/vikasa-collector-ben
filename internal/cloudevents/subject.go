@@ -67,6 +67,10 @@ func entityKindFor(deviceKind string) (string, bool) {
 		// follows the event family, not the chassis, so one physical camera
 		// can legitimately appear as both.
 		return "perception", true
+	case "acs":
+		// Cameleon ACS cabinets publish reversible-lane gate/fault events;
+		// entity kind follows that service family, not the vendor chassis.
+		return "reversible-lane", true
 	case "":
 		// Collector-level events (collector-started) have no device; the
 		// collector itself is the entity.

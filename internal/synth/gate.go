@@ -13,7 +13,6 @@ import (
 // raise does not also invent a position change.
 //
 // First poll emits nothing: we learned the state, nothing transitioned.
-// Wire mapping for these events is deferred (loud-drop until mapped).
 func NewGateDiffer() Differ { return gateDiffer{} }
 
 type gateDiffer struct{}
