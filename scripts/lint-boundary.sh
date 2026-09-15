@@ -95,10 +95,12 @@ for pkg in $pkgs; do
   fi
 done
 
-# ---- Rule C: no replace directive for the model module (ADR 0010) ----------
-# A `replace` would make every developer's build depend on a local checkout, so
-# CI would be testing a tree nobody else has. Rules A and B cannot see this:
-# a replaced module still imports cleanly.
+# ---- Rule C: no LOCAL replace for the model module (ADR 0010) -------------
+# A filesystem replace (../openits-models, ./vendor/..., C:\...) makes CI
+# test a tree nobody else has. A remote replace
+# (github.com/<org>/<repo> <version>) is still a reviewable go.mod line and
+# is fetchable by CI — used on feature forks until a tagged release lands
+# on the canonical module. Reject only the local form.
 #
 # Parsed textually rather than via `go mod edit -json` so the check stays
 # offline and works against a fixture path.
@@ -109,11 +111,20 @@ replaces=$(awk '
   /^replace[[:space:]]/    { print }
 ' "$gomod")
 
-if grep -q -- "$forbidden" <<<"$replaces"; then
-  echo "BOUNDARY VIOLATION (replace directive): $gomod replaces $forbidden (ADR 0010)" >&2
-  grep -- "$forbidden" <<<"$replaces" | sed 's/^/  /' >&2
-  fail=1
-fi
+while IFS= read -r line; do
+  [ -z "$line" ] && continue
+  echo "$line" | grep -q -- "$forbidden" || continue
+  # RHS is the last field of `replace A => B` or `replace A => B V`.
+  rhs=$(awk '{print $NF}' <<<"$line")
+  case "$rhs" in
+    .*|../*|/*|[A-Za-z]:*)
+      echo "BOUNDARY VIOLATION (replace directive): $gomod replaces $forbidden with a local path (ADR 0010)" >&2
+      echo "  $line" | sed 's/^/  /' >&2
+      echo "  use a remote module path (github.com/...) or a release tag pin with no replace" >&2
+      fail=1
+      ;;
+  esac
+done <<<"$replaces"
 
 # ---- Rule D: the model pin names a release tag (ADR 0018) ------------------
 # ADR 0010 pinned openits-models at main HEAD as a pseudo-version, and left
