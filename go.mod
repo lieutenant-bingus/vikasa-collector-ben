@@ -3,7 +3,7 @@ module github.com/Vikasa2M/vikasa-collector
 go 1.26
 
 require (
-	github.com/Vikasa2M/openits-models v0.4.0
+	github.com/Vikasa2M/openits-models v0.5.0
 	github.com/gosnmp/gosnmp v1.44.0
 	github.com/nats-io/nats-server/v2 v2.14.5
 	github.com/nats-io/nats.go v1.53.1
@@ -11,12 +11,10 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-// plc co-development only: sibling checkout of lieutenant-bingus/openits-models-ben.
-// ADR 0010 forbids replace on paths destined for upstream CI — before opening an
-// upstream PR, drop this line and pin a published openits-models tag / pseudo-version.
-// After models plc is on GitHub, prefer:
-//   replace github.com/Vikasa2M/openits-models => github.com/lieutenant-bingus/openits-models-ben <pseudo>
-replace github.com/Vikasa2M/openits-models => ../openits-models-ben
+// plc co-development: gate events live on the models fork until tagged on the
+// canonical module. Remote replace (CI-fetchable); local ../ paths are still
+// rejected by scripts/lint-boundary.sh (ADR 0010).
+replace github.com/Vikasa2M/openits-models => github.com/lieutenant-bingus/openits-models-ben v0.0.0-20260915134907-35e25b85e1d6
 
 require (
 	github.com/antithesishq/antithesis-sdk-go v0.7.2-default-no-op // indirect

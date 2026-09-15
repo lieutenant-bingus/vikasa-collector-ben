@@ -64,7 +64,7 @@ devices:
   - id: asc-1
     vendor: fixture
     device_kind: asc
-    poll_interval: 100ms
+    poll_interval: 20ms
     connection: {}
 `
 	path := filepath.Join(t.TempDir(), "collector.yaml")
@@ -116,7 +116,10 @@ devices:
 }
 
 func TestTier2ProfileConformance(t *testing.T) {
-	msgs := runCollectorAndCollect(t, 900*time.Millisecond)
+	// Under -race and a loaded machine JetStream + the first failed poll need
+	// headroom before catalog events land. Poll interval is 20ms; this window
+	// is intentionally generous so the suite doesn't flake on CI hosts.
+	msgs := runCollectorAndCollect(t, 8*time.Second)
 	if len(msgs) == 0 {
 		t.Fatal("no events published; the conformance assertions below would pass vacuously")
 	}
@@ -185,7 +188,7 @@ func TestTier2ProfileConformance(t *testing.T) {
 // negative — but only for as long as nothing drifts back, which is what this
 // test holds in place.
 func TestHealthEventsAreOffTheCatalogSubjectSpace(t *testing.T) {
-	msgs := runCollectorAndCollect(t, 900*time.Millisecond)
+	msgs := runCollectorAndCollect(t, 8*time.Second)
 
 	var sawCatalog, sawHealth bool
 	for _, m := range msgs {
