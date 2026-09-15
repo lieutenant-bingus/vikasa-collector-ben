@@ -13,6 +13,7 @@ import (
 	commonv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/common/v1"
 	dmsv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/dms/v1"
 	pcpv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/perception/v1"
+	rlv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/reversible_lane/v1"
 	scv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/signal_control/v1"
 	tsv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/traffic_sensor/v1"
 	zocv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/zone_occupancy/v1"
@@ -362,6 +363,41 @@ var goldenCases = []struct {
 		dataHex:    "103e18472a0434312e3532042d372e355a10636162696e65742d706f6c6c65722d31620608c0e182d30670017a05646d732d319a06286f70656e6974732d646d732d74797065733a646d732d7369676e2d7374617475732d7265706f7274",
 		identHex:   "103e18472a0434312e3532042d372e35620608c0e182d3067a05646d732d319a06286f70656e6974732d646d732d74797065733a646d732d7369676e2d7374617475732d7265706f7274",
 	},
+	{
+		name: "reversible-lane gate-position-changed",
+		ev: model.GatePositionChanged{Base: gbase("acs-1", "acs"),
+			GateID: "WG-111", From: model.GatePositionClosed, To: model.GatePositionOpening},
+		ceType:     "openits.reversible-lane.gate-position-changed.v1",
+		dataSchema: "https://schemas.open-its.org/openits-reversible-lane-events/2026-09-14/",
+		dataHex:    "0a0657472d313131100218032210636162696e65742d706f6c6c65722d312a0608c0e182d306380142056163732d319a06366f70656e6974732d72657665727369626c652d6c616e652d74797065733a726c2d676174652d706f736974696f6e2d6368616e676564",
+		identHex:   "0a0657472d313131100218032a0608c0e182d30642056163732d319a06366f70656e6974732d72657665727369626c652d6c616e652d74797065733a726c2d676174652d706f736974696f6e2d6368616e676564",
+	},
+	{
+		name: "reversible-lane gate-mode-changed",
+		ev: model.GateModeChanged{Base: gbase("acs-1", "acs"),
+			GateID: "WG-111", From: model.GateModeAuto, To: model.GateModeManual},
+		ceType:     "openits.reversible-lane.gate-mode-changed.v1",
+		dataSchema: "https://schemas.open-its.org/openits-reversible-lane-events/2026-09-14/",
+		dataHex:    "0a0657472d313131100118022210636162696e65742d706f6c6c65722d312a0608c0e182d306380142056163732d319a06326f70656e6974732d72657665727369626c652d6c616e652d74797065733a726c2d676174652d6d6f64652d6368616e676564",
+		identHex:   "0a0657472d313131100118022a0608c0e182d30642056163732d319a06326f70656e6974732d72657665727369626c652d6c616e652d74797065733a726c2d676174652d6d6f64652d6368616e676564",
+	},
+	{
+		name: "reversible-lane fault-raised",
+		ev: model.FaultRaised{Base: gbase("acs-1", "acs"), FaultID: "gate/WG-111/failed-to-close",
+			Severity: model.SeverityMajor, Category: model.CategoryCabinet, Description: "gate failed to close"},
+		ceType:     "openits.reversible-lane.fault-raised.v1",
+		dataSchema: "https://schemas.open-its.org/openits-common-fault-events/2026-07-21/",
+		dataHex:    "0a056163732d31121b676174652f57472d3131312f6661696c65642d746f2d636c6f73651803221467617465206661696c656420746f20636c6f73652a0608c0e182d3063210636162696e65742d706f6c6c65722d3140019a06486f70656e6974732d72657665727369626c652d6c616e652d74797065733a72657665727369626c652d6c616e652d6661756c742d676174652d6661696c65642d746f2d636c6f7365",
+		identHex:   "0a056163732d31121b676174652f57472d3131312f6661696c65642d746f2d636c6f73651803221467617465206661696c656420746f20636c6f73652a0608c0e182d3069a06486f70656e6974732d72657665727369626c652d6c616e652d74797065733a72657665727369626c652d6c616e652d6661756c742d676174652d6661696c65642d746f2d636c6f7365",
+	},
+	{
+		name:       "reversible-lane fault-cleared",
+		ev:         model.FaultCleared{Base: gbase("acs-1", "acs"), FaultID: "gate/WG-111/failed-to-close"},
+		ceType:     "openits.reversible-lane.fault-cleared.v1",
+		dataSchema: "https://schemas.open-its.org/openits-common-fault-events/2026-07-21/",
+		dataHex:    "0a056163732d31121b676174652f57472d3131312f6661696c65642d746f2d636c6f73651a0608c0e182d3062210636162696e65742d706f6c6c65722d3130019a063e6f70656e6974732d72657665727369626c652d6c616e652d74797065733a72657665727369626c652d6c616e652d6661756c742d6576656e742d6b696e64",
+		identHex:   "0a056163732d31121b676174652f57472d3131312f6661696c65642d746f2d636c6f73651a0608c0e182d3069a063e6f70656e6974732d72657665727369626c652d6c616e652d74797065733a72657665727369626c652d6c616e652d6661756c742d6576656e742d6b696e64",
+	},
 }
 
 // TestGoldens pins the exact bytes every mapped event encodes to.
@@ -501,6 +537,10 @@ func emptyMessageFor(ceType string) proto.Message {
 		return &scv1.DetectorReport{}
 	case "openits.dms.message-activation-failed.v1":
 		return &dmsv1.MessageActivationFailed{}
+	case "openits.reversible-lane.gate-position-changed.v1":
+		return &rlv1.GatePositionChanged{}
+	case "openits.reversible-lane.gate-mode-changed.v1":
+		return &rlv1.GateModeChanged{}
 	default:
 		panic("no message type for ce-type " + ceType)
 	}

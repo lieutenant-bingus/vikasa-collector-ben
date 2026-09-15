@@ -64,6 +64,7 @@ func TestSourceFor_EntityKindsForTheLabDeviceKinds(t *testing.T) {
 		// entity kind follows the event family, not the chassis, so one
 		// physical camera can legitimately appear as both.
 		"perception": "urn:openits:perception:us-tx:txdot:d07:cam-03",
+		"acs":        "urn:openits:reversible-lane:us-tx:txdot:d07:cam-03",
 	} {
 		if got := SourceFor(tenant, deviceKind, "cam-03"); got != want {
 			t.Errorf("%s: SourceFor = %q, want %q", deviceKind, got, want)

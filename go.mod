@@ -11,6 +11,13 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
+// plc co-development only: sibling checkout of lieutenant-bingus/openits-models-ben.
+// ADR 0010 forbids replace on paths destined for upstream CI — before opening an
+// upstream PR, drop this line and pin a published openits-models tag / pseudo-version.
+// After models plc is on GitHub, prefer:
+//   replace github.com/Vikasa2M/openits-models => github.com/lieutenant-bingus/openits-models-ben <pseudo>
+replace github.com/Vikasa2M/openits-models => ../openits-models-ben
+
 require (
 	github.com/antithesishq/antithesis-sdk-go v0.7.2-default-no-op // indirect
 	github.com/google/go-tpm v0.9.8 // indirect

@@ -21,11 +21,8 @@ import (
 // TestACSEventsReachJetStream runs the real collector spine against embedded
 // JetStream and a scripted ACS word reader (no network, no site addresses).
 //
-// Gate / fault domain events for device_kind "acs" currently have no
-// ce-source entity-kind and no openits wire mapping, so they loud-drop by
-// design. This e2e asserts the spine stays healthy: collector-started lands,
-// and the adapter is polled successfully at least twice (position change on
-// the scripted fixture proves the read path).
+// Asserts collector-started, then a gate-position-changed CloudEvent after the
+// scripted fixture flips WG-111 from closed to opening on the second poll.
 func TestACSEventsReachJetStream(t *testing.T) {
 	ns, err := server.NewServer(&server.Options{Port: -1, JetStream: true, StoreDir: t.TempDir()})
 	if err != nil {
@@ -90,29 +87,31 @@ devices:
 	go func() { runErr <- app.Run(ctx, cfg, reg, ns.ClientURL(), "test") }()
 
 	gotStarted := false
+	gotGatePos := false
 	deadline := time.After(10 * time.Second)
-	tick := time.NewTicker(50 * time.Millisecond)
-	defer tick.Stop()
 	for {
 		select {
 		case m := <-seen:
 			ceType := m.Header.Get("ce-type")
-			t.Logf("subject=%s ce-type=%s", m.Subject, ceType)
+			t.Logf("subject=%s ce-type=%s ce-source=%s", m.Subject, ceType, m.Header.Get("ce-source"))
 			if ceType == "openits-collector.health.collector-started.v1" {
 				gotStarted = true
+			}
+			if ceType == "openits.reversible-lane.gate-position-changed.v1" {
+				gotGatePos = true
+				if src := m.Header.Get("ce-source"); src != "urn:openits:reversible-lane:us-ga:metro:d01:acs-1" {
+					t.Errorf("ce-source = %q, want reversible-lane URN", src)
+				}
 			}
 		case err := <-runErr:
 			if ctx.Err() != nil {
 				break
 			}
 			t.Fatalf("app.Run: %v", err)
-		case <-tick.C:
-			// Gate events loud-drop (no acs entity-kind / wire map yet), so we
-			// cannot wait for another CloudEvent — advance on poll count.
 		case <-deadline:
-			t.Fatalf("timed out; started=%v polls=%d", gotStarted, script.polls.Load())
+			t.Fatalf("timed out; started=%v gate-position=%v polls=%d", gotStarted, gotGatePos, script.polls.Load())
 		}
-		if gotStarted && script.polls.Load() >= 2 {
+		if gotStarted && gotGatePos {
 			cancel()
 			<-runErr
 			return
@@ -121,8 +120,7 @@ devices:
 }
 
 // scriptedWords returns the ACS1 fixture, then flips WG-111 to opening on
-// later polls so the gate differ has a transition to process (even though
-// the wire layer drops it until mapped).
+// later polls so the gate differ emits gate-position-changed onto the wire.
 type scriptedWords struct {
 	mu    sync.Mutex
 	base  []uint16
@@ -135,7 +133,7 @@ func (s *scriptedWords) ReadWords(_ byte, address1Based, count int) ([]uint16, e
 	n := s.polls.Add(1)
 	words := append([]uint16(nil), s.base...)
 	if n >= 2 {
-		// %R101: auto + opening (status=3) + keep lock-open bit pattern-ish
+		// %R101: auto + opening (status=3)
 		words[101-90] = 0x0031 // mode auto (1), status opening (3<<4)
 	}
 	off := address1Based - 90
