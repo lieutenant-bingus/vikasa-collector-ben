@@ -157,13 +157,27 @@ func (r *Runner) pollOnce(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		r.devices.PollFailed(r.deviceID, r.now().UTC(), err)
+		failedAt := r.now().UTC()
+		r.devices.PollFailed(r.deviceID, failedAt, err)
 		r.consecutiveFailures++
 		if r.consecutiveFailures == 1 {
-			r.out([]model.Event{model.DeviceStatusChanged{
-				Base:      model.Base{DeviceID: r.deviceID, DeviceKind: r.deviceKind, OccurredAt: r.now().UTC()},
+			last := r.devices.LastSuccess(r.deviceID)
+			ev := model.DeviceStatusChanged{
+				Base:      model.Base{DeviceID: r.deviceID, DeviceKind: r.deviceKind, OccurredAt: failedAt},
 				Reachable: false, Reason: err.Error(), ConsecutiveFailures: 1,
-			}})
+				LastContact: last,
+			}
+			// comm-lost requires last-contact, the last valid response. A
+			// device this process has never heard from has none, so the
+			// catalog event would be invalid. Leave LastContact zero: the
+			// openits emitter declines it and the health emitter publishes
+			// openits-collector.health.device-status-changed.
+			if last.IsZero() {
+				r.counters.CommLostWithoutContact.Add(1)
+				r.log.Warn("no last-contact; publishing collector health device-status-changed instead of comm-lost",
+					"device", r.deviceID, "device_kind", r.deviceKind)
+			}
+			r.out([]model.Event{ev})
 		}
 	default:
 		r.devices.PollOK(r.deviceID, r.now().UTC())

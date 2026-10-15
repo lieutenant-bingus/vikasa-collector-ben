@@ -6,10 +6,14 @@
 package gesrtp
 
 import (
+	"context"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
+	"sync"
 	"time"
 )
 
@@ -41,6 +45,7 @@ const (
 
 // Client is a read-focused SRTP connection to a GE/Emerson PLC.
 type Client struct {
+	ioMu    sync.Mutex
 	conn    net.Conn
 	timeout time.Duration
 	seq     byte
@@ -63,8 +68,11 @@ func Dial(addr string, timeout time.Duration) (*Client, error) {
 	return c, nil
 }
 
-// Close ends the SRTP session.
+// Close ends the SRTP session. It shares ioMu with reads so a close cannot
+// Read the reply that belongs to an in-flight ReadMemory.
 func (c *Client) Close() error {
+	c.ioMu.Lock()
+	defer c.ioMu.Unlock()
 	if c.conn == nil {
 		return nil
 	}
@@ -95,7 +103,7 @@ func (c *Client) init() error {
 	return nil
 }
 
-func (c *Client) nextSeq() byte {
+func (c *Client) nextSeqLocked() byte {
 	c.seq++
 	if c.seq == 0 {
 		c.seq = 1
@@ -124,7 +132,11 @@ const maxInlineUnits = 6
 // ReadMemory reads count units starting at address0Based.
 // For word memories (R/AI/AQ), count is words.
 // For byte memories (I/Q/M/...), address is 0-based byte index and count is bytes.
-func (c *Client) ReadMemory(memType byte, address0Based int, count int) ([]byte, error) {
+// ctx cancels the in-flight read by expiring the connection deadline.
+func (c *Client) ReadMemory(ctx context.Context, memType byte, address0Based int, count int) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if count < 1 {
 		return nil, fmt.Errorf("count must be >= 1")
 	}
@@ -132,7 +144,9 @@ func (c *Client) ReadMemory(memType byte, address0Based int, count int) ([]byte,
 		return nil, fmt.Errorf("address must be >= 0")
 	}
 
-	// Chunk so VersaMax keeps data inline in the 56-byte reply (more reliable than 0x94 follow-ups).
+	// Chunk at 6 words. A real ACS answers that size with a 0x94 follow-on
+	// (12 data bytes after the header) and answers the trailing 2-word
+	// chunk inline (0xd4).
 	unitBytes := 1
 	switch memType {
 	case MemR, MemAI, MemAQ:
@@ -151,11 +165,14 @@ func (c *Client) ReadMemory(memType byte, address0Based int, count int) ([]byte,
 	remaining := count
 	addr := address0Based
 	for remaining > 0 {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		n := chunk
 		if n > remaining {
 			n = remaining
 		}
-		part, err := c.readMemoryOnce(memType, addr, n)
+		part, err := c.readMemoryOnce(ctx, memType, addr, n)
 		if err != nil {
 			return nil, err
 		}
@@ -166,42 +183,92 @@ func (c *Client) ReadMemory(memType byte, address0Based int, count int) ([]byte,
 	return out, nil
 }
 
-func (c *Client) readMemoryOnce(memType byte, address0Based int, count int) ([]byte, error) {
-	msg := baseMessage(c.nextSeq())
+func (c *Client) readMemoryOnce(ctx context.Context, memType byte, address0Based int, count int) ([]byte, error) {
+	c.ioMu.Lock()
+	defer c.ioMu.Unlock()
+	if c.conn == nil {
+		return nil, fmt.Errorf("srtp connection closed")
+	}
+	conn := c.conn
+	seq := c.nextSeqLocked()
+	msg := baseMessage(seq)
 	msg[42] = svcReadSysMemory
 	msg[43] = memType
 	binary.LittleEndian.PutUint16(msg[44:46], uint16(address0Based))
 	binary.LittleEndian.PutUint16(msg[46:48], uint16(count))
 
-	if err := c.conn.SetDeadline(time.Now().Add(c.timeout)); err != nil {
+	stop, err := armDeadline(ctx, conn, c.timeout)
+	if err != nil {
 		return nil, err
 	}
-	if _, err := c.conn.Write(msg); err != nil {
+	defer stop()
+
+	if _, err := conn.Write(msg); err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return nil, fmt.Errorf("read write: %w", err)
 	}
 
 	first := make([]byte, 2048)
-	n, err := c.conn.Read(first)
+	n, err := conn.Read(first)
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return nil, fmt.Errorf("read response: %w", err)
 	}
+	shown := n
+	if shown > 56 {
+		shown = 56
+	}
+	slog.Debug("srtp reply", "n", n, "hdr", hex.EncodeToString(first[:shown]))
 	if n < 56 {
 		return nil, fmt.Errorf("short response: %d bytes", n)
 	}
+	if first[2] != seq {
+		return nil, fmt.Errorf("response sequence 0x%02x, want 0x%02x", first[2], seq)
+	}
 
 	need := expectedByteLen(memType, count)
-
-	// Large payloads: header (msg type 0x94), then raw data. Sometimes both arrive together.
-	if first[31] == 0x94 {
-		data := first[56:n]
-		if len(data) < need {
+	// Byte 31 selects the layout. 0xd4 carries the bytes inline at offset 44
+	// and byte 42 is the PLC status. 0x94 carries the bytes after the header
+	// and byte 42 is that data length, not a status.
+	switch first[31] {
+	case 0xd4:
+		if first[0] != 0x03 {
+			return nil, fmt.Errorf("unexpected response type 0x%02x (want 0x03) hdr31=0xd4", first[0])
+		}
+		if st := first[42]; st != 0 {
+			return nil, fmt.Errorf("srtp status 0x%02x", st)
+		}
+		inline := first[44:n]
+		if len(inline) < need {
+			return nil, fmt.Errorf("short inline reply: got %d bytes, want %d", len(inline), need)
+		}
+		return append([]byte(nil), inline[:need]...), nil
+	case 0x94:
+		if first[0] != 0x03 {
+			return nil, fmt.Errorf("unexpected response type 0x%02x (want 0x03) hdr31=0x94", first[0])
+		}
+		declared := int(first[42])
+		if declared < need {
+			return nil, fmt.Errorf("srtp data length 0x%02x shorter than %d bytes", first[42], need)
+		}
+		data := append([]byte(nil), first[56:n]...)
+		if len(data) < declared {
 			buf := make([]byte, 4096)
-			for len(data) < need {
-				if err := c.conn.SetDeadline(time.Now().Add(c.timeout)); err != nil {
+			for len(data) < declared {
+				stopMore, err := armDeadline(ctx, conn, c.timeout)
+				if err != nil {
 					return nil, err
 				}
-				m, err := c.conn.Read(buf)
+				m, err := conn.Read(buf)
+				stopMore()
 				if err != nil {
+					if ctx.Err() != nil {
+						return nil, ctx.Err()
+					}
 					if err == io.EOF && len(data) > 0 {
 						break
 					}
@@ -213,20 +280,26 @@ func (c *Client) readMemoryOnce(memType byte, address0Based int, count int) ([]b
 		if len(data) < need {
 			return nil, fmt.Errorf("incomplete data packet: got %d want %d (hdr type=0x94)", len(data), need)
 		}
-		return append([]byte(nil), data[:need]...), nil
+		return data[:need], nil
+	default:
+		return nil, fmt.Errorf("unexpected srtp reply type 0x%02x status 0x%02x", first[31], first[42])
 	}
+}
 
-	if first[0] != 0x03 {
-		return nil, fmt.Errorf("unexpected response type 0x%02x (want 0x03) hdr31=0x%02x", first[0], first[31])
+// armDeadline bounds one exchange by the shorter of the client timeout and
+// ctx. Cancelling ctx expires the deadline so a blocked Read returns.
+func armDeadline(ctx context.Context, conn net.Conn, timeout time.Duration) (func(), error) {
+	deadline := time.Now().Add(timeout)
+	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+		deadline = d
 	}
-
-	inline := first[44:n]
-	if len(inline) < need {
-		out := make([]byte, need)
-		copy(out, inline)
-		return out, nil
+	if err := conn.SetDeadline(deadline); err != nil {
+		return nil, err
 	}
-	return append([]byte(nil), inline[:need]...), nil
+	stop := context.AfterFunc(ctx, func() {
+		_ = conn.SetDeadline(time.Now())
+	})
+	return func() { stop() }, nil
 }
 
 func expectedByteLen(memType byte, count int) int {
@@ -242,8 +315,8 @@ func expectedByteLen(memType byte, count int) int {
 }
 
 // ReadWords reads %R/%AI/%AQ style word memory. address is 1-based (%R1 => 1).
-func (c *Client) ReadWords(memType byte, address1Based int, count int) ([]uint16, error) {
-	raw, err := c.ReadMemory(memType, address1Based-1, count)
+func (c *Client) ReadWords(ctx context.Context, memType byte, address1Based int, count int) ([]uint16, error) {
+	raw, err := c.ReadMemory(ctx, memType, address1Based-1, count)
 	if err != nil {
 		return nil, err
 	}
@@ -255,13 +328,13 @@ func (c *Client) ReadWords(memType byte, address1Based int, count int) ([]uint16
 }
 
 // ReadBytes reads discrete byte memory. byteIndex0 is 0-based (%I1-%I8 => 0).
-func (c *Client) ReadBytes(memType byte, byteIndex0 int, count int) ([]byte, error) {
-	return c.ReadMemory(memType, byteIndex0, count)
+func (c *Client) ReadBytes(ctx context.Context, memType byte, byteIndex0 int, count int) ([]byte, error) {
+	return c.ReadMemory(ctx, memType, byteIndex0, count)
 }
 
 // ReadBit reads a single discrete bit. address1Based is GE numbering (%I1 => 1).
-func (c *Client) ReadBit(memType byte, address1Based int) (bool, error) {
-	raw, err := c.ReadMemory(memType, address1Based-1, 1)
+func (c *Client) ReadBit(ctx context.Context, memType byte, address1Based int) (bool, error) {
+	raw, err := c.ReadMemory(ctx, memType, address1Based-1, 1)
 	if err != nil {
 		return false, err
 	}

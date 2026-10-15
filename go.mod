@@ -5,7 +5,7 @@ go 1.26.0
 toolchain go1.26.9
 
 require (
-	github.com/Vikasa2M/openits-models v0.5.0
+	github.com/Vikasa2M/openits-models v0.7.1-0.20261015003505-85c86d0b1ade
 	github.com/gosnmp/gosnmp v1.45.0
 	github.com/nats-io/jwt/v2 v2.8.2
 	github.com/nats-io/nats-server/v2 v2.15.0
@@ -14,11 +14,6 @@ require (
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
 )
-
-// plc co-development: gate events live on the models fork until tagged on the
-// canonical module. Remote replace (CI-fetchable); local ../ paths are still
-// rejected by scripts/lint-boundary.sh (ADR 0010).
-replace github.com/Vikasa2M/openits-models => github.com/lieutenant-bingus/openits-models-ben v0.0.0-20260915134907-35e25b85e1d6
 
 require (
 	github.com/antithesishq/antithesis-sdk-go v0.8.0-default-no-op // indirect

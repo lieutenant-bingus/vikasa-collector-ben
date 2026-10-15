@@ -43,11 +43,14 @@ func TestGateAxesChangeIndependently(t *testing.T) {
 	opening.Raw = 0x0035
 	evs := e.Apply(gateSnap(t0.Add(time.Second), opening))
 	if len(evs) != 1 {
-		t.Fatalf("events = %v, want 1 gate-position-changed", kinds(evs))
+		t.Fatalf("events = %v, want 1 gate-status-changed", kinds(evs))
 	}
-	pc, ok := evs[0].(model.GatePositionChanged)
-	if !ok || pc.GateID != "WG-111" || pc.From != model.GatePositionClosed || pc.To != model.GatePositionOpening {
+	pc, ok := evs[0].(model.GateStatusChanged)
+	if !ok || pc.GateID != "WG-111" || pc.PreviousPosition != model.GatePositionClosed || pc.Position != model.GatePositionOpening {
 		t.Fatalf("bad position event: %+v", evs[0])
+	}
+	if pc.Mode != model.GateModeAuto || pc.PreviousMode != model.GateModeAuto {
+		t.Fatalf("mode rode along as %+v -> %+v", pc.PreviousMode, pc.Mode)
 	}
 	if pc.DeviceKind != "acs" {
 		t.Fatalf("DeviceKind = %q, want acs", pc.DeviceKind)
@@ -57,11 +60,14 @@ func TestGateAxesChangeIndependently(t *testing.T) {
 	manual.Mode = model.GateModeManual
 	evs = e.Apply(gateSnap(t0.Add(2*time.Second), manual))
 	if len(evs) != 1 {
-		t.Fatalf("events = %v, want 1 gate-mode-changed", kinds(evs))
+		t.Fatalf("events = %v, want 1 gate-status-changed", kinds(evs))
 	}
-	mc, ok := evs[0].(model.GateModeChanged)
-	if !ok || mc.From != model.GateModeAuto || mc.To != model.GateModeManual {
+	mc, ok := evs[0].(model.GateStatusChanged)
+	if !ok || mc.PreviousMode != model.GateModeAuto || mc.Mode != model.GateModeManual {
 		t.Fatalf("bad mode event: %+v", evs[0])
+	}
+	if mc.Position != model.GatePositionOpening {
+		t.Fatalf("position = %v, want opening", mc.Position)
 	}
 }
 
@@ -73,14 +79,12 @@ func TestGateCombinedTransitions(t *testing.T) {
 	both.Position = model.GatePositionOpened
 	both.Mode = model.GateModeOffline
 	evs := e.Apply(gateSnap(t0.Add(time.Second), both))
-	if got := kinds(evs); len(got) != 2 {
-		t.Fatalf("events = %v, want position then mode", got)
+	if got := kinds(evs); len(got) != 1 || got[0] != "gate-status-changed" {
+		t.Fatalf("events = %v, want one gate-status-changed", got)
 	}
-	if _, ok := evs[0].(model.GatePositionChanged); !ok {
-		t.Fatalf("first event = %T, want GatePositionChanged", evs[0])
-	}
-	if _, ok := evs[1].(model.GateModeChanged); !ok {
-		t.Fatalf("second event = %T, want GateModeChanged", evs[1])
+	st := evs[0].(model.GateStatusChanged)
+	if st.Position != model.GatePositionOpened || st.Mode != model.GateModeOffline {
+		t.Fatalf("status = %+v", st)
 	}
 }
 
@@ -99,7 +103,7 @@ func TestGateTwoGatesIndependent(t *testing.T) {
 	if len(evs) != 1 {
 		t.Fatalf("events = %v, want only BG-114", kinds(evs))
 	}
-	pc := evs[0].(model.GatePositionChanged)
+	pc := evs[0].(model.GateStatusChanged)
 	if pc.GateID != "BG-114" {
 		t.Fatalf("GateID = %q", pc.GateID)
 	}

@@ -23,7 +23,7 @@ func TestSnapshotJSONNamesArePinned(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{
-		"adapter_panics", "dropped_at_shutdown", "dropped_no_emitter", "dropped_no_source",
+		"adapter_panics", "comm_lost_without_contact", "dropped_at_shutdown", "dropped_no_emitter", "dropped_no_source",
 		"dropped_queue_full", "dropped_unpublishable", "encode_errors", "events_published",
 		"facets_rejected", "logs_suppressed",
 	}

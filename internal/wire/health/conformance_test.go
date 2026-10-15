@@ -10,6 +10,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/Vikasa2M/vikasa-collector/internal/wire/openits"
 	"github.com/Vikasa2M/vikasa-collector/sdk/model"
 )
 
@@ -125,9 +126,12 @@ func TestAsyncAPIDocumentsNothingUnemittable(t *testing.T) {
 	for _, ceType := range NewHealthEmitter().CETypes() {
 		emittable[ceType] = true
 	}
+	for _, ceType := range openits.New("collector").CETypes() {
+		emittable[ceType] = true
+	}
 	for ceType := range doc.Channels {
 		if !emittable[ceType] {
-			t.Errorf("asyncapi.yaml documents %q but no health event produces it", ceType)
+			t.Errorf("asyncapi.yaml documents %q but no emitter produces it", ceType)
 		}
 	}
 }

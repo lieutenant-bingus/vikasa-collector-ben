@@ -4,10 +4,13 @@
 # reachability and collector self-health must stay reportable precisely when
 # the wire model is in flux, so they can never be held hostage to upstream
 # schema churn. openits-models publishes its own asyncapi.yaml for the catalog
-# events the wire emitters relay; this file covers only the collector-owned
-# root `openits-collector.*` — the collector instance's own health
-# (`instance.*`, ADR 0019), plus device reachability (`health.*`) for device
-# kinds whose service has no comm-health-event in the pinned catalog.
+# events the wire emitters relay. This file covers the collector-owned root
+# `openits-collector.*` — the collector instance's own health (`instance.*`,
+# ADR 0019), plus device reachability (`health.*`) for device kinds whose
+# service has no comm-health-event in the pinned catalog, and for a
+# never-contacted device that cannot carry last-contact. It also records the
+# subject for `openits.reversible-lane.gate-status-changed.v1`, whose protobuf
+# schema stays in openits-models.
 #
 # Unlike the catalog's bare addresses, addresses here are tenant-parameterized:
 # the CE `type` is the schema identity, while the NATS subject roots the
@@ -145,6 +148,28 @@ channels:
       openits-collector.instance.log.v1:
         $ref: '#/components/messages/openits-collector.instance.log.v1'
 
+  openits.reversible-lane.gate-status-changed.v1:
+    address: openits.{region}.{agency}.{agency_unit}.reversible-lane.{device_id}.gate-status-changed
+    title: reversible-lane — gate-status-changed
+    description: |
+      Catalog event the cameleon-acs adapter emits when a gate's position or
+      operating mode changes. One notification replaced gate-position-changed
+      and gate-mode-changed. The protobuf payload and its schema live in
+      openits-models (openits.reversible-lane.gate-status-changed.v1); this
+      channel records the subject the collector actually publishes.
+    parameters:
+      region:
+        description: Tenant region token; must match ^[a-z0-9][a-z0-9-]*$.
+      agency:
+        description: Tenant agency token; must match ^[a-z0-9][a-z0-9-]*$.
+      agency_unit:
+        description: Tenant agency-unit token; must match ^[a-z0-9][a-z0-9-]*$.
+      device_id:
+        description: ACS device this gate belongs to, matching its configured id.
+    messages:
+      openits.reversible-lane.gate-status-changed.v1:
+        $ref: '#/components/messages/openits.reversible-lane.gate-status-changed.v1'
+
 operations:
   publishDeviceStatusChanged:
     action: send
@@ -166,6 +191,10 @@ operations:
     action: send
     channel:
       $ref: '#/channels/openits-collector.instance.log.v1'
+  publishGateStatusChanged:
+    action: send
+    channel:
+      $ref: '#/channels/openits.reversible-lane.gate-status-changed.v1'
 
 components:
   messages:
@@ -176,8 +205,10 @@ components:
         A fallback (ADR 0019, as amended). A device's reachability is a catalog
         fact and goes out as <service>.comm-health-event (comm-lost /
         comm-restored) wherever the pinned catalog has that channel —
-        signal-control today. This collector-owned event carries it only for
-        device kinds whose service does not yet (DMS today), so it is not lost.
+        signal-control today, except a never-contacted device, which has no
+        last-contact and so cannot be a valid comm-lost. This collector-owned
+        event carries reachability for that case, and for device kinds whose
+        service does not yet have the channel (DMS today), so it is not lost.
 
         Emitted only on transitions, never per failed poll: the first failure
         after success reports unreachable, and the first success after failure
@@ -284,7 +315,7 @@ components:
         $ref: '#/components/schemas/cloudEventHeaders'
       payload:
         type: object
-        required: [occurred_at, collector_id, version, config_revision, boot_id, uptime_s, cpu_seconds_total, memory_bytes, heap_objects_bytes, goroutines, events_published, dropped_queue_full, dropped_unpublishable, dropped_at_shutdown, dropped_no_emitter, dropped_no_source, encode_errors, adapter_panics, facets_rejected, logs_suppressed]
+        required: [occurred_at, collector_id, version, config_revision, boot_id, uptime_s, cpu_seconds_total, memory_bytes, heap_objects_bytes, goroutines, events_published, dropped_queue_full, dropped_unpublishable, dropped_at_shutdown, dropped_no_emitter, dropped_no_source, encode_errors, adapter_panics, comm_lost_without_contact, facets_rejected, logs_suppressed]
         properties:
           occurred_at:
             type: string
@@ -341,12 +372,25 @@ components:
           adapter_panics:
             type: integer
             description: Cumulative since boot. Adapter Read panics the runner recovered (ADR 0019 clause 12).
+          comm_lost_without_contact:
+            type: integer
+            description: Cumulative since boot. Down-transitions published as health.device-status-changed because this process has never received a valid response, so a catalog comm-lost would have no last-contact.
           facets_rejected:
             type: integer
             description: Cumulative since boot. Facets refused because their Go type was not their differ's.
           logs_suppressed:
             type: integer
             description: Cumulative since boot. Warn-and-above log records not shipped as instance.log events because the per-interval limit was reached (ADR 0019 clause 10).
+
+    openits.reversible-lane.gate-status-changed.v1:
+      contentType: application/protobuf
+      summary: A reversible-lane gate's position or operating mode changed.
+      description: |
+        Relayed from the pinned openits-models catalog
+        (kind openits-reversible-lane-types:rl-gate-status-changed). The
+        payload is the catalog protobuf, not JSON. ce-source uses entity kind
+        reversible-lane. occurred-at is the event-header instant; the gate
+        state tree names the same instant observed-at.
 
     openits-collector.instance.log.v1:
       contentType: application/json

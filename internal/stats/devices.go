@@ -58,6 +58,20 @@ func (d *Devices) PollFailed(id string, at time.Time, err error) {
 	s.ConsecutiveFailures++
 }
 
+// LastSuccess returns the time of the last successful poll of id, the
+// DeviceStatus.LastSuccess field. The zero time means this process has not
+// yet received a valid response from the device. A later failure does not
+// clear it.
+func (d *Devices) LastSuccess(id string) time.Time {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	s := d.byID[id]
+	if s == nil {
+		return time.Time{}
+	}
+	return s.LastSuccess
+}
+
 // EverPolled reports whether any device has ever been polled successfully.
 // It latches: the readiness rule (management-surface spec §1) depends on a
 // later outage never making it false again.

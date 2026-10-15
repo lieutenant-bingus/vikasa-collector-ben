@@ -82,7 +82,7 @@ func TestHeartbeatGolden(t *testing.T) {
 	}
 	want := `{"occurred_at":"2026-07-12T10:00:00Z","collector_id":"cab-042-collector","version":"v0.2.0","config_revision":"24790e5d193f","boot_id":"cd5a78e48f9b1b4a","uptime_s":3600,` +
 		`"cpu_seconds_total":12.5,"memory_bytes":20971520,"heap_objects_bytes":4194304,"goroutines":42,` +
-		`"events_published":812,"dropped_queue_full":1,"dropped_unpublishable":0,"dropped_at_shutdown":0,"dropped_no_emitter":0,"dropped_no_source":0,"encode_errors":0,"adapter_panics":2,"facets_rejected":0,"logs_suppressed":0}`
+		`"events_published":812,"dropped_queue_full":1,"dropped_unpublishable":0,"dropped_at_shutdown":0,"dropped_no_emitter":0,"dropped_no_source":0,"encode_errors":0,"adapter_panics":2,"comm_lost_without_contact":0,"facets_rejected":0,"logs_suppressed":0}`
 	if string(enc.Data) != want {
 		t.Fatalf("Data = %s\nwant  %s", enc.Data, want)
 	}

@@ -89,6 +89,12 @@ func (FaultRaised) EventKind() string { return "fault-raised" }
 type FaultCleared struct {
 	Base
 	FaultID string
+	// Category is the class of the fault being cleared, copied from the
+	// raise so the wire kind can match. Zero is CategoryUnknown.
+	Category FaultCategory
+	// FirstObserved is when the fault was first seen. Zero means the
+	// emitter should use OccurredAt.
+	FirstObserved time.Time
 }
 
 func (FaultCleared) EventKind() string { return "fault-cleared" }
@@ -297,22 +303,18 @@ type CCTVTourStateChanged struct {
 
 func (CCTVTourStateChanged) EventKind() string { return "cctv-tour-state-changed" }
 
-// GatePositionChanged fires when one gate's motion/rest state transitions.
-// Gates are independent: two gates moving in one poll produce two events.
-type GatePositionChanged struct {
+// GateStatusChanged fires when one gate's position or operating mode
+// changes. Both axes are carried on the one event: the wire notification
+// is a single gate-status snapshot, and a poll that moves both is one
+// change. Gates are independent, so two gates moving in one poll produce
+// two events.
+type GateStatusChanged struct {
 	Base
-	GateID   string
-	From, To GatePosition
+	GateID           string
+	Position         GatePosition
+	PreviousPosition GatePosition
+	Mode             GateMode
+	PreviousMode     GateMode
 }
 
-func (GatePositionChanged) EventKind() string { return "gate-position-changed" }
-
-// GateModeChanged fires when one gate's operating mode transitions
-// (auto / manual / offline). Independent of GatePositionChanged.
-type GateModeChanged struct {
-	Base
-	GateID   string
-	From, To GateMode
-}
-
-func (GateModeChanged) EventKind() string { return "gate-mode-changed" }
+func (GateStatusChanged) EventKind() string { return "gate-status-changed" }

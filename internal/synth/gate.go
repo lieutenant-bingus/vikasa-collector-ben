@@ -42,14 +42,14 @@ func (gateDiffer) Diff(prev, curr model.Facet, base model.Base) []model.Event {
 			// gate — no fabricated transition from Unknown.
 			continue
 		}
-		if pg.Position != cg.Position {
-			events = append(events, model.GatePositionChanged{
-				Base: base, GateID: id, From: pg.Position, To: cg.Position,
-			})
-		}
-		if pg.Mode != cg.Mode {
-			events = append(events, model.GateModeChanged{
-				Base: base, GateID: id, From: pg.Mode, To: cg.Mode,
+		if pg.Position != cg.Position || pg.Mode != cg.Mode {
+			events = append(events, model.GateStatusChanged{
+				Base:             base,
+				GateID:           id,
+				Position:         cg.Position,
+				PreviousPosition: pg.Position,
+				Mode:             cg.Mode,
+				PreviousMode:     pg.Mode,
 			})
 		}
 	}

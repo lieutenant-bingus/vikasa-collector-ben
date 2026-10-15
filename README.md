@@ -44,9 +44,11 @@ warnings on the bus. Release builds are linux `amd64`/`arm64` with a
 hardened systemd unit — see
 [deploying a collector](docs/how-to/deploy-a-collector.md).
 
-What is missing is **adapters**. Two exist — `ntcip-asc` and `ntcip-dms` —
-and the other device kinds are modeled, diffed and wired with no device on
-the other end; see [starter tasks](docs/reference/starter-tasks.md).
+What is missing is **adapters**. Three exist — `ntcip-asc`, `ntcip-dms`, and
+`cameleon-acs` (reversible-lane gates over GE SRTP) — and the other device
+kinds are modeled, diffed and wired with no device on the other end; see
+[starter tasks](docs/reference/starter-tasks.md). The shipped
+`collector.yaml` includes an ACS device next to the signal controller.
 
 Events can still be dropped with a warning, and that is the designed
 behaviour rather than a gap: the emitter declines anything it cannot

@@ -88,6 +88,12 @@ func TestDecodeGateAlarms(t *testing.T) {
 	if len(fs) != 2 {
 		t.Fatalf("faults = %+v", fs)
 	}
+	// Bits 13 and 14 are spare. They must not become cmd-refused or invalid-inputs.
+	dropped := DecodeGateWord("WG-1", model.GateKindWarning, w|(1<<13)|(1<<14))
+	fs = gateFaults(dropped)
+	if len(fs) != 2 {
+		t.Fatalf("spare bits raised faults: %+v", fs)
+	}
 }
 
 func TestACSReadGoldenACS1(t *testing.T) {
@@ -174,8 +180,8 @@ func TestACSUnreachableIsHardError(t *testing.T) {
 
 type errClient struct{ err error }
 
-func (e *errClient) ReadWords(byte, int, int) ([]uint16, error) { return nil, e.err }
-func (e *errClient) Close() error                               { return nil }
+func (e *errClient) ReadWords(context.Context, byte, int, int) ([]uint16, error) { return nil, e.err }
+func (e *errClient) Close() error                                                { return nil }
 
 func TestParseACSBlockRejectsBadConfig(t *testing.T) {
 	_, err := parseACSBlock(map[string]any{})

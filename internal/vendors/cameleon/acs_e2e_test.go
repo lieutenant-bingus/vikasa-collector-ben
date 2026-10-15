@@ -21,7 +21,7 @@ import (
 // TestACSEventsReachJetStream runs the real collector spine against embedded
 // JetStream and a scripted ACS word reader (no network, no site addresses).
 //
-// Asserts collector-started, then a gate-position-changed CloudEvent after the
+// Asserts collector-started, then a gate-status-changed CloudEvent after the
 // scripted fixture flips WG-111 from closed to opening on the second poll.
 func TestACSEventsReachJetStream(t *testing.T) {
 	ns, err := server.NewServer(&server.Options{Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir()})
@@ -87,7 +87,7 @@ devices:
 	go func() { runErr <- app.Run(ctx, cfg, reg, app.Options{NATSURL: ns.ClientURL(), Version: "test"}) }()
 
 	gotStarted := false
-	gotGatePos := false
+	gotGateStatus := false
 	deadline := time.After(10 * time.Second)
 	for {
 		select {
@@ -99,8 +99,8 @@ devices:
 				time.Sleep(200 * time.Millisecond)
 				script.flip.Store(true)
 			}
-			if ceType == "openits.reversible-lane.gate-position-changed.v1" {
-				gotGatePos = true
+			if ceType == "openits.reversible-lane.gate-status-changed.v1" {
+				gotGateStatus = true
 				if src := m.Header.Get("ce-source"); src != "urn:openits:reversible-lane:us-ga:metro:d01:acs-1" {
 					t.Errorf("ce-source = %q, want reversible-lane URN", src)
 				}
@@ -111,9 +111,9 @@ devices:
 			}
 			t.Fatalf("app.Run: %v", err)
 		case <-deadline:
-			t.Fatalf("timed out; started=%v gate-position=%v polls=%d", gotStarted, gotGatePos, script.polls.Load())
+			t.Fatalf("timed out; started=%v gate-status=%v polls=%d", gotStarted, gotGateStatus, script.polls.Load())
 		}
-		if gotStarted && gotGatePos {
+		if gotStarted && gotGateStatus {
 			cancel()
 			<-runErr
 			return
@@ -122,15 +122,15 @@ devices:
 }
 
 // scriptedWords returns the ACS1 fixture, then flips WG-111 to opening on
-// later polls so the gate differ emits gate-position-changed onto the wire.
+// later polls so the gate differ emits gate-status-changed onto the wire.
 type scriptedWords struct {
 	mu    sync.Mutex
 	base  []uint16
 	polls atomic.Int64
-	flip atomic.Bool
+	flip  atomic.Bool
 }
 
-func (s *scriptedWords) ReadWords(_ byte, address1Based, count int) ([]uint16, error) {
+func (s *scriptedWords) ReadWords(_ context.Context, _ byte, address1Based, count int) ([]uint16, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.polls.Add(1)

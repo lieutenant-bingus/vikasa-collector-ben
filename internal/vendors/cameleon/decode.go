@@ -13,18 +13,16 @@ func DecodeGateWord(id string, kind model.GateKind, w uint16) model.GateReading 
 	modeBits := w & 0b11
 	posBits := (w >> 4) & 0b111
 	g := model.GateReading{
-		ID:            id,
-		Kind:          kind,
-		Mode:          gateModeFromBits(modeBits),
-		Position:      gatePositionFromBits(posBits),
-		LockOpen:      w&(1<<2) != 0,
-		LockClose:     w&(1<<3) != 0,
-		FailedClose:   w&(1<<10) != 0,
-		FailedOpen:    w&(1<<11) != 0,
-		Estop:         w&(1<<12) != 0,
-		CmdRefused:    w&(1<<13) != 0,
-		InvalidInputs: w&(1<<14) != 0,
-		Raw:           w,
+		ID:          id,
+		Kind:        kind,
+		Mode:        gateModeFromBits(modeBits),
+		Position:    gatePositionFromBits(posBits),
+		LockOpen:    w&(1<<2) != 0,
+		LockClose:   w&(1<<3) != 0,
+		FailedClose: w&(1<<10) != 0,
+		FailedOpen:  w&(1<<11) != 0,
+		Estop:       w&(1<<12) != 0,
+		Raw:         w,
 	}
 	return g
 }
@@ -77,12 +75,6 @@ func gateFaults(g model.GateReading) []model.Fault {
 	}
 	if g.Estop {
 		add("estop", "gate emergency stop", model.SeverityCritical)
-	}
-	if g.CmdRefused {
-		add("cmd-refused", "gate command refused", model.SeverityWarning)
-	}
-	if g.InvalidInputs {
-		add("invalid-inputs", "gate invalid inputs", model.SeverityWarning)
 	}
 	return out
 }

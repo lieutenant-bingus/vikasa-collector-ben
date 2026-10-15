@@ -24,8 +24,9 @@ import (
 // The sign holds its baseline until the first sign-status-report reaches
 // the bus — which only happens once the engine has loaded its state and is
 // diffing (ADR 0020 clause 2; a change during that hold is not evidence) —
-// then changes its face message and control mode, so message-changed and
-// mode-changed land. Logs every CloudEvent that reaches the bus.
+// then changes its face message and control mode. The message change
+// publishes message-changed. Control mode is not a sign-mode value, so it
+// does not publish mode-changed.
 func TestDMSEventsReachJetStream(t *testing.T) {
 	ns, err := server.NewServer(&server.Options{Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir()})
 	if err != nil {
@@ -87,7 +88,6 @@ devices:
 		"openits-collector.instance.started.v1": false,
 		"openits.dms.sign-status-report.v1":     false,
 		"openits.dms.message-changed.v1":        false,
-		"openits.dms.mode-changed.v1":           false,
 	}
 	deadline := time.After(10 * time.Second)
 	for {
@@ -129,7 +129,8 @@ func allTrue(m map[string]bool) bool {
 }
 
 // scriptedDMS returns the baseline until changed is set, then a new face
-// message and local control, so the transition differs fire.
+// message and local control. Control mode is not a sign-mode value, so it
+// does not publish mode-changed; the message change does.
 type scriptedDMS struct {
 	mu      sync.Mutex
 	changed atomic.Bool

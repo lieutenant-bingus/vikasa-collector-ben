@@ -66,9 +66,9 @@ func TestLiveAllACSCabinets(t *testing.T) {
 				t.Fatalf("gates = %d, want %d", len(gates), len(rawGates))
 			}
 			for _, g := range gates {
-				t.Logf("%s mode=%s pos=%s raw=0x%04X alarms=[fc=%v fo=%v estop=%v refused=%v invalid=%v]",
+				t.Logf("%s mode=%s pos=%s raw=0x%04X alarms=[fc=%v fo=%v estop=%v]",
 					g.ID, g.Mode, g.Position, g.Raw,
-					g.FailedClose, g.FailedOpen, g.Estop, g.CmdRefused, g.InvalidInputs)
+					g.FailedClose, g.FailedOpen, g.Estop)
 				if g.Mode == model.GateModeUnknown && g.Raw != 0 {
 					t.Errorf("%s: mode unknown with raw=0x%04X", g.ID, g.Raw)
 				}

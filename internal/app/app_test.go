@@ -108,12 +108,13 @@ devices:
 	defer cancel()
 	go func() { _ = Run(ctx, cfg, reg, Options{NATSURL: ns.ClientURL(), Version: "test"}) }()
 
-	// A signal controller's reachability is a catalog fact (ADR 0019 Scope):
-	// it goes out as signal-control's comm-health-event, not on the
-	// collector's own root, which carries only the collector's health.
+	// The first poll fails before any successful response, so comm-lost would
+	// have no last-contact. That down-transition is the collector-owned
+	// health event. The later recovery is a catalog comm-restored.
 	want := map[string]bool{
-		"openits-collector.instance.started.v1":       false,
-		"openits.signal-control.comm-health-event.v1": false,
+		"openits-collector.instance.started.v1":             false,
+		"openits-collector.health.device-status-changed.v1": false,
+		"openits.signal-control.comm-health-event.v1":       false,
 	}
 	deadline := time.After(8 * time.Second)
 	for {
@@ -132,9 +133,6 @@ devices:
 			// tenant path.
 			if !strings.Contains(parts[0], ".us-ga.metro.d01.") {
 				t.Fatalf("event on unexpected subject %q", parts[0])
-			}
-			if parts[1] == "openits-collector.health.device-status-changed.v1" {
-				t.Fatalf("a signal controller's reachability went out on the collector root (%s); it belongs on the catalog root", parts[0])
 			}
 			if _, tracked := want[parts[1]]; tracked {
 				want[parts[1]] = true
@@ -225,6 +223,42 @@ func TestUnclaimedDomainEventIsDroppedLoudly(t *testing.T) {
 	// The log must identify what was lost, or it is not actionable.
 	if !strings.Contains(got, "operational-status-report") || !strings.Contains(got, "asc-1") {
 		t.Errorf("drop log must name the event kind and device; got: %q", got)
+	}
+}
+
+// DMS and CCTV control-mode changes are still domain events, but they are not
+// operational modes, so the catalog emitter declines them. With the real
+// emitter chain wired they must be dropped loudly and counted.
+func TestControlModeEventsAreDroppedLoudly(t *testing.T) {
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+	var counters stats.Counters
+	cat, err := catalogEmitter("openits/v1", "cab-1-collector")
+	if err != nil {
+		t.Fatal(err)
+	}
+	emitters := []wire.Emitter{cat, health.NewHealthEmitter()}
+	at := time.Now().UTC()
+	for _, ev := range []model.Event{
+		model.DMSControlModeChanged{
+			Base: model.Base{DeviceID: "dms-1", DeviceKind: "dms", OccurredAt: at},
+			From: model.ControlCentral, To: model.ControlLocal,
+		},
+		model.CCTVControlModeChanged{
+			Base: model.Base{DeviceID: "cam-1", DeviceKind: "cctv", OccurredAt: at},
+			From: model.CCTVControlCentral, To: model.CCTVControlLocal,
+		},
+	} {
+		encodeAndEnqueue(log, nil, &counters, cloudevents.Tenant{Agency: "metro", Site: "cab-1"}, emitters, ev)
+	}
+	if n := counters.DroppedNoEmitter.Load(); n != 2 {
+		t.Errorf("DroppedNoEmitter = %d, want 2", n)
+	}
+	got := buf.String()
+	for _, part := range []string{"event dropped", "control-mode-changed", "dms-1", "cctv-control-mode-changed", "cam-1"} {
+		if !strings.Contains(got, part) {
+			t.Errorf("drop log missing %q; got %q", part, got)
+		}
 	}
 }
 

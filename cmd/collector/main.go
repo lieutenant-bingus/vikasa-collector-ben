@@ -94,6 +94,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return usageError{err}
 	}
+	// Adapters log through the default logger. Debug records, including the
+	// SRTP reply header, follow -log-level.
+	slog.SetDefault(log)
 	if err := manage.ValidateAddr(*statusAddr); err != nil {
 		return usageError{err}
 	}

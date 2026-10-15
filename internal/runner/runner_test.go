@@ -1,8 +1,10 @@
 package runner
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"sync"
 	"testing"
@@ -48,7 +50,12 @@ func collect(t *testing.T, script []func() (*model.Snapshot, error), needAtLeast
 	return collectWith(t, script, needAtLeast, nil)
 }
 
-func collectWith(t *testing.T, script []func() (*model.Snapshot, error), needAtLeast int, c *stats.Counters) []model.Event {
+func collectLogged(t *testing.T, script []func() (*model.Snapshot, error), needAtLeast int, c *stats.Counters, log *slog.Logger) []model.Event {
+	t.Helper()
+	return collectWith(t, script, needAtLeast, c, log)
+}
+
+func collectWith(t *testing.T, script []func() (*model.Snapshot, error), needAtLeast int, c *stats.Counters, log ...*slog.Logger) []model.Event {
 	t.Helper()
 	var mu sync.Mutex
 	var events []model.Event
@@ -65,8 +72,12 @@ func collectWith(t *testing.T, script []func() (*model.Snapshot, error), needAtL
 			}
 		}
 	}
+	var logger *slog.Logger
+	if len(log) > 0 {
+		logger = log[0]
+	}
 	r := New(&scriptedAdapter{script: script}, Config{DeviceID: "asc-1", Interval: 5 * time.Millisecond,
-		Engine: synth.NewEngine(synth.NewSignalDiffer()), Out: out, Counters: c})
+		Engine: synth.NewEngine(synth.NewSignalDiffer()), Out: out, Counters: c, Log: logger})
 	r.SetJitter(func(time.Duration) time.Duration { return 0 })
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -109,6 +120,39 @@ func TestFailureThenRecoveryEmitsHealthTransitions(t *testing.T) {
 	}
 	if !health[1].Reachable {
 		t.Fatalf("second transition should be reachable: %+v", health[1])
+	}
+}
+
+func TestCommLostCopiesLastSuccess(t *testing.T) {
+	events := collect(t, []func() (*model.Snapshot, error){okSnap, failRead}, 2)
+	var lost *model.DeviceStatusChanged
+	for _, ev := range events {
+		h, ok := ev.(model.DeviceStatusChanged)
+		if ok && !h.Reachable {
+			lost = &h
+		}
+	}
+	if lost == nil {
+		t.Fatal("no comm-lost event")
+	}
+	if lost.LastContact.IsZero() || lost.LastContact.After(lost.OccurredAt) {
+		t.Fatalf("LastContact = %v, OccurredAt = %v", lost.LastContact, lost.OccurredAt)
+	}
+}
+
+func TestNeverContactedDownIsLoggedAndCounted(t *testing.T) {
+	var buf bytes.Buffer
+	var counters stats.Counters
+	events := collectLogged(t, []func() (*model.Snapshot, error){failRead}, 1, &counters, slog.New(slog.NewTextHandler(&buf, nil)))
+	lost, ok := events[0].(model.DeviceStatusChanged)
+	if !ok || lost.Reachable || !lost.LastContact.IsZero() {
+		t.Fatalf("event = %#v", events[0])
+	}
+	if n := counters.CommLostWithoutContact.Load(); n != 1 {
+		t.Fatalf("CommLostWithoutContact = %d, want 1", n)
+	}
+	if !strings.Contains(buf.String(), "no last-contact") {
+		t.Fatalf("log = %q", buf.String())
 	}
 }
 

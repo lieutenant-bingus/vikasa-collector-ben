@@ -123,3 +123,25 @@ devices:
       snmp:
         address: 10.0.0.12:161 # host:port, required
         community: public # optional; defaults to "public"
+  # cameleon-acs polls a reversible-lane cabinet over GE SRTP (TCP 18245).
+  # dsw is the %R block read each poll. Each gate's dsw word must fall inside
+  # that block. cabinet words are optional.
+  - id: acs-main
+    vendor: cameleon
+    device_kind: acs
+    poll_interval: 1s
+    connection:
+      srtp:
+        address: 10.0.0.20:18245
+        timeout: 5s
+      dsw:
+        start: 90
+        length: 110
+      gates:
+        - { id: "WG-111", dsw: 101, kind: warning }
+        - { id: "BG-114", dsw: 104, kind: barrier }
+      cabinet:
+        lf_fault: 179
+        sp_fault: 180
+        door: 181
+        gate_estop: 182

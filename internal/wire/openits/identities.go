@@ -9,6 +9,7 @@ import (
 	pcpv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/perception/v1"
 	rlv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/reversible_lane/v1"
 	tsv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/traffic_sensor/v1"
+	typesv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/types/v1"
 
 	"github.com/Vikasa2M/vikasa-collector/sdk/model"
 )
@@ -174,11 +175,7 @@ func faultKindIdentity(c model.FaultCategory, deviceKind, faultID string) (strin
 		case strings.HasSuffix(faultID, "/failed-to-open"):
 			return rlTypes + "reversible-lane-fault-gate-failed-to-open", true
 		case strings.HasSuffix(faultID, "/estop") && strings.HasPrefix(faultID, "gate/"):
-			return rlTypes + "reversible-lane-fault-gate-estop", true
-		case strings.HasSuffix(faultID, "/cmd-refused"):
-			return rlTypes + "reversible-lane-fault-gate-cmd-refused", true
-		case strings.HasSuffix(faultID, "/invalid-inputs"):
-			return rlTypes + "reversible-lane-fault-gate-invalid-inputs", true
+			return rlTypes + "reversible-lane-fault-gate-emergency-stop", true
 		case faultID == "cabinet/lf-fault":
 			return rlTypes + "reversible-lane-fault-cabinet-lf", true
 		case faultID == "cabinet/sp-fault":
@@ -195,8 +192,26 @@ func faultKindIdentity(c model.FaultCategory, deviceKind, faultID string) (strin
 	}
 }
 
+// gateComponent names the gate a gate-scoped fault concerns. Cabinet faults
+// and any id that is not gate/<gate-id>/<suffix> return nil.
+func gateComponent(faultID string) *typesv1.ComponentRef {
+	const prefix = "gate/"
+	if !strings.HasPrefix(faultID, prefix) {
+		return nil
+	}
+	id, _, ok := strings.Cut(faultID[len(prefix):], "/")
+	if !ok || id == "" {
+		return nil
+	}
+	return &typesv1.ComponentRef{
+		ComponentClass: rlTypes + "rl-component-gate",
+		ComponentId:    id,
+	}
+}
+
 // gatePositionFor maps domain gate motion/rest state onto the wire enum.
 // Unknown is a real enum member (value 0), not a decline — the PLC reports it.
+// The rest state is open, not opened. The PLC bitfield has no intermediate.
 func gatePositionFor(p model.GatePosition) rlv1.GatePosition {
 	switch p {
 	case model.GatePositionClosing:
@@ -206,23 +221,25 @@ func gatePositionFor(p model.GatePosition) rlv1.GatePosition {
 	case model.GatePositionOpening:
 		return rlv1.GatePosition_GATE_POSITION_OPENING
 	case model.GatePositionOpened:
-		return rlv1.GatePosition_GATE_POSITION_OPENED
+		return rlv1.GatePosition_GATE_POSITION_OPEN
 	default:
 		return rlv1.GatePosition_GATE_POSITION_UNKNOWN
 	}
 }
 
-// gateOperatingModeFor maps domain gate mode onto the wire enum.
-func gateOperatingModeFor(m model.GateMode) rlv1.GateOperatingMode {
+// gateOperatingModeFor maps domain gate mode onto the identityref string.
+// Out-of-range bits were read and could not be classified, so they are
+// reversible-lane-gate-mode-unknown rather than an absent mode.
+func gateOperatingModeFor(m model.GateMode) string {
 	switch m {
 	case model.GateModeAuto:
-		return rlv1.GateOperatingMode_GATE_OPERATING_MODE_AUTO
+		return rlTypes + "reversible-lane-gate-mode-automatic"
 	case model.GateModeManual:
-		return rlv1.GateOperatingMode_GATE_OPERATING_MODE_MANUAL
+		return rlTypes + "reversible-lane-gate-mode-manual"
 	case model.GateModeOffline:
-		return rlv1.GateOperatingMode_GATE_OPERATING_MODE_OFFLINE
+		return rlTypes + "reversible-lane-gate-mode-offline"
 	default:
-		return rlv1.GateOperatingMode_GATE_OPERATING_MODE_UNKNOWN
+		return rlTypes + "reversible-lane-gate-mode-unknown"
 	}
 }
 
@@ -474,30 +491,29 @@ func memoryTypeFor(m model.MessageMemoryType) dmsv1.MessageMemoryType {
 	}
 }
 
-// errorTypeFor maps the domain MULTI error to the wire enum.
-//
-// SyntaxErrorNone is the awkward one. dmsv1.ErrorType has no "none" member and
-// its zero is SYNTAX, so a domain None would encode as a *syntax error* if
-// this were a cast — asserting a specific failure the sign never reported. It
-// maps to OTHER instead: the event only exists because activation failed, so
-// "failed, cause unreported" is true where "syntax error" is not. Same shape
-// of decision as the fault-category fallback.
-func errorTypeFor(e model.MultiSyntaxError) dmsv1.ErrorType {
+// errorTypeFor maps the domain MULTI error onto activation-error identities.
+// SyntaxErrorNone is "no error": the identity stays absent rather than
+// becoming activation-error-other. An unclassified non-zero cause is other.
+// SyntaxErrorTooLong maps to activation-error-text-too-big; that is the
+// size failure in the identity set.
+func errorTypeFor(e model.MultiSyntaxError) string {
 	switch e {
+	case model.SyntaxErrorNone:
+		return ""
 	case model.SyntaxErrorSyntax:
-		return dmsv1.ErrorType_ERROR_TYPE_SYNTAX
+		return dmsTypes + "activation-error-syntax"
 	case model.SyntaxErrorUnsupportedTag:
-		return dmsv1.ErrorType_ERROR_TYPE_UNSUPPORTED_TAG
+		return dmsTypes + "activation-error-unsupported-tag"
 	case model.SyntaxErrorFontNotFound:
-		return dmsv1.ErrorType_ERROR_TYPE_FONT_NOT_FOUND
+		return dmsTypes + "activation-error-font-not-defined"
 	case model.SyntaxErrorGraphicNotFound:
-		return dmsv1.ErrorType_ERROR_TYPE_GRAPHIC_NOT_FOUND
+		return dmsTypes + "activation-error-graphic-not-defined"
 	case model.SyntaxErrorTooLong:
-		return dmsv1.ErrorType_ERROR_TYPE_TOO_LONG
+		return dmsTypes + "activation-error-text-too-big"
 	case model.SyntaxErrorHardware:
-		return dmsv1.ErrorType_ERROR_TYPE_HARDWARE
+		return dmsTypes + "activation-error-hardware"
 	default:
-		return dmsv1.ErrorType_ERROR_TYPE_OTHER
+		return dmsTypes + "activation-error-other"
 	}
 }
 
@@ -517,66 +533,61 @@ const registryBase = "https://schemas.open-its.org/"
 // openits-common-*-events: those modules define the notifications, and
 // signal-control merely reuses them. It reads like a mistake and is not.
 //
-// Revisions are per-module, so they do NOT move in lockstep: dms-events is at
-// a later revision than the others because it changed and they did not.
-// Upstream deliberately refuses to cut no-op revisions just to keep a set of
-// constants aligned.
+// Revisions are per-module, so they do NOT move in lockstep. Each URL is
+// the latest schema-registry snapshot of the module that defines the
+// notification at the pinned models commit.
 //
 // Hard-coded because openits-models ships no Go catalog API. That is the
 // intended trade: a pin bump shows up as a reviewable diff of these constants
 // rather than as a silent behaviour change, and the goldens lock them.
 var dataSchemaFor = map[string]string{
-	"openits.signal-control.comm-health-event.v1": registryBase + "openits-common-comm-health-events/2026-09-02/",
+	"openits.signal-control.comm-health-event.v1": registryBase + "openits-common-comm-health-events/2026-10-16/",
 
-	"openits.signal-control.mode-changed.v1": registryBase + "openits-common-mode-events/2026-07-21/",
-	"openits.dms.mode-changed.v1":            registryBase + "openits-common-mode-events/2026-07-21/",
+	"openits.signal-control.mode-changed.v1": registryBase + "openits-common-mode-events/2026-10-13/",
+	"openits.dms.mode-changed.v1":            registryBase + "openits-common-mode-events/2026-10-13/",
 
-	"openits.signal-control.fault-raised.v1":  registryBase + "openits-common-fault-events/2026-07-21/",
-	"openits.signal-control.fault-cleared.v1": registryBase + "openits-common-fault-events/2026-07-21/",
-	"openits.dms.fault-raised.v1":             registryBase + "openits-common-fault-events/2026-07-21/",
-	"openits.dms.fault-cleared.v1":            registryBase + "openits-common-fault-events/2026-07-21/",
+	"openits.signal-control.fault-raised.v1":  registryBase + "openits-common-fault-events/2026-10-14/",
+	"openits.signal-control.fault-cleared.v1": registryBase + "openits-common-fault-events/2026-10-14/",
+	"openits.dms.fault-raised.v1":             registryBase + "openits-common-fault-events/2026-10-14/",
+	"openits.dms.fault-cleared.v1":            registryBase + "openits-common-fault-events/2026-10-14/",
 
 	// Same defining module for every service: fault-raised/cleared are
 	// declared once in openits-common-fault-events and reused, which is why
 	// six different services share one ce-dataschema.
-	"openits.cctv.fault-raised.v1":            registryBase + "openits-common-fault-events/2026-07-21/",
-	"openits.cctv.fault-cleared.v1":           registryBase + "openits-common-fault-events/2026-07-21/",
-	"openits.traffic-sensor.fault-raised.v1":  registryBase + "openits-common-fault-events/2026-07-21/",
-	"openits.traffic-sensor.fault-cleared.v1": registryBase + "openits-common-fault-events/2026-07-21/",
-	"openits.perception.fault-raised.v1":      registryBase + "openits-common-fault-events/2026-07-21/",
-	"openits.perception.fault-cleared.v1":     registryBase + "openits-common-fault-events/2026-07-21/",
+	"openits.cctv.fault-raised.v1":            registryBase + "openits-common-fault-events/2026-10-14/",
+	"openits.cctv.fault-cleared.v1":           registryBase + "openits-common-fault-events/2026-10-14/",
+	"openits.traffic-sensor.fault-raised.v1":  registryBase + "openits-common-fault-events/2026-10-14/",
+	"openits.traffic-sensor.fault-cleared.v1": registryBase + "openits-common-fault-events/2026-10-14/",
+	"openits.perception.fault-raised.v1":      registryBase + "openits-common-fault-events/2026-10-14/",
+	"openits.perception.fault-cleared.v1":     registryBase + "openits-common-fault-events/2026-10-14/",
 
-	"openits.signal-control.plan-applied.v1":              registryBase + "openits-signal-control-events/2026-07-21/",
-	"openits.signal-control.operational-status-report.v1": registryBase + "openits-signal-control-events/2026-07-21/",
-	"openits.signal-control.preemption-activated.v1":      registryBase + "openits-signal-control-events/2026-07-21/",
-	"openits.signal-control.preemption-cleared.v1":        registryBase + "openits-signal-control-events/2026-07-21/",
-	"openits.signal-control.detector-report.v1":           registryBase + "openits-signal-control-events/2026-07-21/",
+	"openits.signal-control.plan-applied.v1":              registryBase + "openits-signal-control-events/2026-10-13/",
+	"openits.signal-control.operational-status-report.v1": registryBase + "openits-signal-control-events/2026-10-13/",
+	"openits.signal-control.preemption-activated.v1":      registryBase + "openits-signal-control-events/2026-10-13/",
+	"openits.signal-control.preemption-cleared.v1":        registryBase + "openits-signal-control-events/2026-10-13/",
+	"openits.signal-control.detector-report.v1":           registryBase + "openits-signal-control-events/2026-10-13/",
 
-	// v0.4.0 moved openits-dms-events to 2026-08-27 (the phase leaf at
-	// 2026-08-23, then the two new notifications); the other event modules
-	// cut no revision between v0.3.0 and v0.4.0, so only these three moved.
-	"openits.dms.message-activation-failed.v1": registryBase + "openits-dms-events/2026-08-27/",
-	"openits.dms.message-changed.v1":           registryBase + "openits-dms-events/2026-08-27/",
-	"openits.dms.sign-status-report.v1":        registryBase + "openits-dms-events/2026-08-27/",
+	"openits.dms.message-activation-failed.v1": registryBase + "openits-dms-events/2026-10-13/",
+	"openits.dms.message-changed.v1":           registryBase + "openits-dms-events/2026-10-13/",
+	"openits.dms.sign-status-report.v1":        registryBase + "openits-dms-events/2026-10-13/",
 
-	"openits.traffic-sensor.traffic-interval-report.v1": registryBase + "openits-traffic-sensor-events/2026-07-21/",
+	"openits.traffic-sensor.traffic-interval-report.v1": registryBase + "openits-traffic-sensor-events/2026-10-13/",
 
-	"openits.perception.zone-incident-detected.v1": registryBase + "openits-perception-events/2026-08-15/",
-	"openits.perception.zone-incident-updated.v1":  registryBase + "openits-perception-events/2026-08-15/",
-	"openits.perception.zone-incident-cleared.v1":  registryBase + "openits-perception-events/2026-08-15/",
-	"openits.perception.zone-interval-report.v1":   registryBase + "openits-perception-events/2026-08-15/",
+	"openits.perception.zone-incident-detected.v1": registryBase + "openits-perception-events/2026-10-13/",
+	"openits.perception.zone-incident-updated.v1":  registryBase + "openits-perception-events/2026-10-13/",
+	"openits.perception.zone-incident-cleared.v1":  registryBase + "openits-perception-events/2026-10-13/",
+	"openits.perception.zone-interval-report.v1":   registryBase + "openits-perception-events/2026-10-13/",
 
 	// A different defining module, not a perception revision: v0.3.0 split
 	// the presence half of the interval into its own service, so this
 	// ce-type validates against openits-zone-occupancy-events rather than
 	// against the module its sibling event uses.
-	"openits.zone-occupancy.zone-occupancy-interval-report.v1": registryBase + "openits-zone-occupancy-events/2026-08-15/",
+	"openits.zone-occupancy.zone-occupancy-interval-report.v1": registryBase + "openits-zone-occupancy-events/2026-10-13/",
 
-	"openits.cctv.mode-changed.v1":       registryBase + "openits-common-mode-events/2026-07-21/",
-	"openits.cctv.tour-state-changed.v1": registryBase + "openits-cctv-events/2026-08-05/",
+	"openits.cctv.mode-changed.v1":       registryBase + "openits-common-mode-events/2026-10-13/",
+	"openits.cctv.tour-state-changed.v1": registryBase + "openits-cctv-events/2026-10-13/",
 
-	"openits.reversible-lane.fault-raised.v1":          registryBase + "openits-common-fault-events/2026-07-21/",
-	"openits.reversible-lane.fault-cleared.v1":         registryBase + "openits-common-fault-events/2026-07-21/",
-	"openits.reversible-lane.gate-position-changed.v1": registryBase + "openits-reversible-lane-events/2026-09-14/",
-	"openits.reversible-lane.gate-mode-changed.v1":     registryBase + "openits-reversible-lane-events/2026-09-14/",
+	"openits.reversible-lane.fault-raised.v1":        registryBase + "openits-common-fault-events/2026-10-14/",
+	"openits.reversible-lane.fault-cleared.v1":       registryBase + "openits-common-fault-events/2026-10-14/",
+	"openits.reversible-lane.gate-status-changed.v1": registryBase + "openits-reversible-lane-events/2026-10-15/",
 }

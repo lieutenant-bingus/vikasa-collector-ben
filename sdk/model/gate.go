@@ -94,12 +94,10 @@ type GateReading struct {
 	// LockOpen / LockClose are guide flags from bits 2–3; interpret cautiously.
 	LockOpen  bool
 	LockClose bool
-	// Named alarm bits 10–15 (Spare bit 15 is omitted).
-	FailedClose   bool
-	FailedOpen    bool
-	Estop         bool
-	CmdRefused    bool
-	InvalidInputs bool
+	// Named alarm bits 10–12. Bits 13–15 are spare and are not decoded.
+	FailedClose bool
+	FailedOpen  bool
+	Estop       bool
 	// Raw is the verbatim %R word for lossless provenance / fixtures.
 	Raw uint16
 }

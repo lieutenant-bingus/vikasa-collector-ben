@@ -35,6 +35,11 @@ type Counters struct {
 	// AdapterPanics counts Read panics the runner recovered (ADR 0019
 	// clause 12: a collector fault, not a device fault).
 	AdapterPanics atomic.Uint64
+	// CommLostWithoutContact counts down-transitions that cannot be a catalog
+	// comm-lost: this process has never received a valid response, so there is
+	// no last-contact. The runner publishes the collector-owned
+	// health.device-status-changed instead.
+	CommLostWithoutContact atomic.Uint64
 	// FacetsRejected counts facets the engine refused because their Go type
 	// was not their differ's: an adapter bug, surfaced instead of panicking.
 	FacetsRejected atomic.Uint64
@@ -46,31 +51,33 @@ type Counters struct {
 // Snapshot is a point-in-time copy of Counters, with the JSON names /status
 // and the heartbeat publish. The names are a contract with hub-side queries.
 type Snapshot struct {
-	EventsPublished      uint64 `json:"events_published"`
-	DroppedQueueFull     uint64 `json:"dropped_queue_full"`
-	DroppedUnpublishable uint64 `json:"dropped_unpublishable"`
-	DroppedAtShutdown    uint64 `json:"dropped_at_shutdown"`
-	DroppedNoEmitter     uint64 `json:"dropped_no_emitter"`
-	DroppedNoSource      uint64 `json:"dropped_no_source"`
-	EncodeErrors         uint64 `json:"encode_errors"`
-	AdapterPanics        uint64 `json:"adapter_panics"`
-	FacetsRejected       uint64 `json:"facets_rejected"`
-	LogsSuppressed       uint64 `json:"logs_suppressed"`
+	EventsPublished        uint64 `json:"events_published"`
+	DroppedQueueFull       uint64 `json:"dropped_queue_full"`
+	DroppedUnpublishable   uint64 `json:"dropped_unpublishable"`
+	DroppedAtShutdown      uint64 `json:"dropped_at_shutdown"`
+	DroppedNoEmitter       uint64 `json:"dropped_no_emitter"`
+	DroppedNoSource        uint64 `json:"dropped_no_source"`
+	EncodeErrors           uint64 `json:"encode_errors"`
+	AdapterPanics          uint64 `json:"adapter_panics"`
+	CommLostWithoutContact uint64 `json:"comm_lost_without_contact"`
+	FacetsRejected         uint64 `json:"facets_rejected"`
+	LogsSuppressed         uint64 `json:"logs_suppressed"`
 }
 
 // Snapshot reads every counter. Each value is individually exact; the set
 // is not one atomic instant, which no consumer of cumulative counters needs.
 func (c *Counters) Snapshot() Snapshot {
 	return Snapshot{
-		EventsPublished:      c.EventsPublished.Load(),
-		DroppedQueueFull:     c.DroppedQueueFull.Load(),
-		DroppedUnpublishable: c.DroppedUnpublishable.Load(),
-		DroppedAtShutdown:    c.DroppedAtShutdown.Load(),
-		DroppedNoEmitter:     c.DroppedNoEmitter.Load(),
-		DroppedNoSource:      c.DroppedNoSource.Load(),
-		EncodeErrors:         c.EncodeErrors.Load(),
-		AdapterPanics:        c.AdapterPanics.Load(),
-		FacetsRejected:       c.FacetsRejected.Load(),
-		LogsSuppressed:       c.LogsSuppressed.Load(),
+		EventsPublished:        c.EventsPublished.Load(),
+		DroppedQueueFull:       c.DroppedQueueFull.Load(),
+		DroppedUnpublishable:   c.DroppedUnpublishable.Load(),
+		DroppedAtShutdown:      c.DroppedAtShutdown.Load(),
+		DroppedNoEmitter:       c.DroppedNoEmitter.Load(),
+		DroppedNoSource:        c.DroppedNoSource.Load(),
+		EncodeErrors:           c.EncodeErrors.Load(),
+		AdapterPanics:          c.AdapterPanics.Load(),
+		CommLostWithoutContact: c.CommLostWithoutContact.Load(),
+		FacetsRejected:         c.FacetsRejected.Load(),
+		LogsSuppressed:         c.LogsSuppressed.Load(),
 	}
 }

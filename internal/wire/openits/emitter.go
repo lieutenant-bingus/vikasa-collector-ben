@@ -4,6 +4,8 @@
 package openits
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"sort"
 	"sync"
@@ -34,10 +36,31 @@ const ModelVersion = "openits/v1"
 
 // New returns the openits-models emitter. collectorID identifies this
 // collector as the OBSERVER of events it synthesizes from polling.
-func New(collectorID string) wire.Emitter { return &emitter{collectorID: collectorID} }
+func New(collectorID string) wire.Emitter {
+	return newWithEpoch(collectorID, newSequenceEpoch())
+}
+
+// newWithEpoch is New with a caller-chosen sequence-epoch. Goldens use it
+// so the pinned bytes do not depend on a random epoch.
+func newWithEpoch(collectorID, epoch string) *emitter {
+	return &emitter{collectorID: collectorID, sequenceEpoch: epoch}
+}
+
+func newSequenceEpoch() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return fmt.Sprintf("epoch-%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b[:])
+}
 
 type emitter struct {
 	collectorID string
+	// sequenceEpoch names this process's sequence stream. A collector
+	// restart mints a new one. YANG constrains it to an opaque string of
+	// length 1..64 with no internal structure; consumers compare it for
+	// equality only. It is excluded from ce-id.
+	sequenceEpoch string
 
 	// seq holds the mandatory per-source-device event counter. It lives here
 	// rather than in the runner because `sequence` is an event-header leaf —
@@ -94,11 +117,9 @@ var ceTypeFor = map[key]string{
 	{"fault-raised", "asc"}: "openits.signal-control.fault-raised.v1",
 	{"fault-raised", "dms"}: "openits.dms.fault-raised.v1",
 
-	// Both DMS mode axes share ONE ce-type. dms-mode-event-kind is documented
-	// as spanning dms-control-mode and the sign-mode display state alike, so
-	// the two are discriminated by which identity set prior/current are drawn
-	// from, not by separate ce-types.
-	{"control-mode-changed", "dms"}:  "openits.dms.mode-changed.v1",
+	// dms-mode-event-kind's mode-value-base is sign-mode. Control mode
+	// (dms-control-mode) does not derive from that base, so a control-mode
+	// change is not a mode-changed.
 	{"display-state-changed", "dms"}: "openits.dms.mode-changed.v1",
 
 	{"fault-cleared", "asc"}: "openits.signal-control.fault-cleared.v1",
@@ -117,8 +138,7 @@ var ceTypeFor = map[key]string{
 	{"fault-raised", "acs"}:  "openits.reversible-lane.fault-raised.v1",
 	{"fault-cleared", "acs"}: "openits.reversible-lane.fault-cleared.v1",
 
-	{"gate-position-changed", "acs"}: "openits.reversible-lane.gate-position-changed.v1",
-	{"gate-mode-changed", "acs"}:     "openits.reversible-lane.gate-mode-changed.v1",
+	{"gate-status-changed", "acs"}: "openits.reversible-lane.gate-status-changed.v1",
 
 	{"traffic-interval-report", "traffic-sensor"}: "openits.traffic-sensor.traffic-interval-report.v1",
 
@@ -133,8 +153,9 @@ var ceTypeFor = map[key]string{
 	// across two services.
 	{"zone-occupancy-interval-report", "perception"}: "openits.zone-occupancy.zone-occupancy-interval-report.v1",
 
-	{"cctv-control-mode-changed", "cctv"}: "openits.cctv.mode-changed.v1",
-	{"cctv-tour-state-changed", "cctv"}:   "openits.cctv.tour-state-changed.v1",
+	// cctv-mode-event-kind has no mode-value-base: cctv-control-mode is not
+	// an operational-mode, so those values cannot ride mode-changed.
+	{"cctv-tour-state-changed", "cctv"}: "openits.cctv.tour-state-changed.v1",
 
 	{"plan-changed", "asc"}:              "openits.signal-control.plan-applied.v1",
 	{"operational-status-report", "asc"}: "openits.signal-control.operational-status-report.v1",
@@ -156,8 +177,9 @@ var ceTypeFor = map[key]string{
 // ce-type unchecked and surface as an unroutable event at 3am instead of a
 // refusal to start.
 //
-// Deduping is required, not cosmetic: the two DMS mode axes deliberately share
-// one ce-type, so the routing table has more entries than there are ce-types.
+// Deduping is required, not cosmetic: several device kinds share one ce-type
+// (fault-raised, for example), so the routing table has more entries than
+// there are ce-types.
 func (e *emitter) CETypes() []string {
 	seen := make(map[string]bool, len(ceTypeFor))
 	out := make([]string, 0, len(ceTypeFor))
@@ -193,14 +215,6 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 		// unmappable From is left empty rather than blocking the event.
 		prior, _ := controllerModeIdentity(v.From)
 		msg = e.modeChanged(v.Base, scTypes+"sc-mode-event-kind", prior, current)
-	case model.DMSControlModeChanged:
-		current, ok := dmsControlModeIdentity(v.To)
-		if !ok {
-			return nil, false, nil
-		}
-		prior, _ := dmsControlModeIdentity(v.From)
-		msg = e.modeChanged(v.Base, dmsTypes+"dms-mode-event-kind", prior, current)
-
 	case model.DMSDisplayStateChanged:
 		current, ok := dmsDisplayStateIdentity(v.To)
 		if !ok {
@@ -214,17 +228,28 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 		if v.Reachable {
 			kind = commHealth + "comm-restored"
 		}
-		// Only kind, device, time, observer and sequence. The catalog's
-		// attempt counters belong to comm-attempt-window, and the YANG
-		// forbids them on comm-lost ("a contradictory instance"); the read
-		// error stays in the collector's log and /status, not on the wire.
-		msg = &commonv1.CommHealthEvent{
+		// last-contact is mandatory on comm-lost and is the last valid
+		// response. A zero time means this process has never heard from the
+		// device. Decline so the collector-owned health.device-status-changed
+		// emitter publishes the fallback instead of an invalid comm-lost.
+		if !v.Reachable && v.LastContact.IsZero() {
+			return nil, false, nil
+		}
+		// Attempt counters belong to comm-attempt-window, and the YANG
+		// forbids them on comm-lost. The read error stays in the log and
+		// /status. last-contact is forbidden on comm-restored.
+		ev := &commonv1.CommHealthEvent{
 			Kind:           kind,
 			SourceDeviceId: v.DeviceID,
 			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
-			ObservedBy:     e.collectorID,
+			ObservedBy:     e.observedBy(),
 			Sequence:       e.nextSequence(v.DeviceID),
+			SequenceEpoch:  e.sequenceEpoch,
 		}
+		if !v.Reachable && !v.LastContact.IsZero() {
+			ev.LastContact = timestamppb.New(v.LastContact.UTC())
+		}
+		msg = ev
 
 	case model.FaultRaised:
 		// Unlike modes, an unmappable category does NOT decline the event —
@@ -235,33 +260,40 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 		if !ok {
 			return nil, false, nil
 		}
-		msg = &commonv1.FaultRaised{
+		raised := &commonv1.FaultRaised{
 			Kind:           kind,
 			SourceDeviceId: v.DeviceID,
 			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
-			ObservedBy:     e.collectorID,
+			ObservedBy:     e.observedBy(),
 			Sequence:       e.nextSequence(v.DeviceID),
+			SequenceEpoch:  e.sequenceEpoch,
 			FaultId:        v.FaultID,
 			Severity:       severityFor(v.Severity),
-			Description:    v.Description,
+			FirstObserved:  timestamppb.New(v.OccurredAt.UTC()),
+			Component:      gateComponent(v.FaultID),
 		}
+		if v.Description != "" {
+			desc := v.Description
+			raised.Description = &desc
+		}
+		msg = raised
 	case model.FaultCleared:
-		kind, ok := faultKindIdentity(model.CategoryUnknown, v.DeviceKind, v.FaultID)
+		kind, ok := faultKindIdentity(v.Category, v.DeviceKind, v.FaultID)
 		if !ok {
 			return nil, false, nil
 		}
 		msg = &commonv1.FaultCleared{
-			// A clear carries no category of its own — the domain FaultCleared
-			// has only the id, because the differ identifies it by set
-			// difference. The service base identity is the honest `kind`:
-			// consumers correlate raise and clear on (source-device-id,
-			// fault-id), not on kind.
+			// kind matches the raise: the clear carries the fault's category
+			// and id, which is how faultKindIdentity selects the leaf.
 			Kind:           kind,
 			SourceDeviceId: v.DeviceID,
 			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
-			ObservedBy:     e.collectorID,
+			ObservedBy:     e.observedBy(),
 			Sequence:       e.nextSequence(v.DeviceID),
+			SequenceEpoch:  e.sequenceEpoch,
 			FaultId:        v.FaultID,
+			FirstObserved:  whenFirst(v.FirstObserved, v.OccurredAt),
+			Component:      gateComponent(v.FaultID),
 		}
 
 	case model.PlanChanged:
@@ -272,9 +304,10 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 			Kind:           scTypes + "sc-coordination-event-kind",
 			SourceDeviceId: v.DeviceID,
 			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
-			ObservedBy:     e.collectorID,
+			ObservedBy:     e.observedBy(),
 			Sequence:       e.nextSequence(v.DeviceID),
-			PlanId:         v.ToPlanID,
+			SequenceEpoch:  e.sequenceEpoch,
+			PlanId:         u32p(v.ToPlanID),
 		}
 
 	case model.OperationalStatusReport:
@@ -290,10 +323,11 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 			Kind:           scTypes + "sc-mode-event-kind",
 			SourceDeviceId: v.DeviceID,
 			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
-			ObservedBy:     e.collectorID,
+			ObservedBy:     e.observedBy(),
 			Sequence:       e.nextSequence(v.DeviceID),
-			Mode:           mode,
-			FlashActive:    v.InConflictFlash,
+			SequenceEpoch:  e.sequenceEpoch,
+			Mode:           strp(mode),
+			FlashActive:    boolp(v.InConflictFlash),
 		}
 
 	case model.PreemptionActivated:
@@ -304,9 +338,10 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 			Kind:           scTypes + "sc-preemption-event-kind",
 			SourceDeviceId: v.DeviceID,
 			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
-			ObservedBy:     e.collectorID,
+			ObservedBy:     e.observedBy(),
 			Sequence:       e.nextSequence(v.DeviceID),
-			SourceId:       v.Source,
+			SequenceEpoch:  e.sequenceEpoch,
+			SourceId:       strp(v.Source),
 		}
 
 	case model.PreemptionCleared:
@@ -314,40 +349,34 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 			Kind:           scTypes + "sc-preemption-event-kind",
 			SourceDeviceId: v.DeviceID,
 			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
-			ObservedBy:     e.collectorID,
+			ObservedBy:     e.observedBy(),
 			Sequence:       e.nextSequence(v.DeviceID),
+			SequenceEpoch:  e.sequenceEpoch,
 		}
 
 	case model.DetectorReport:
 		dets := make([]*scv1.DetectorReportDetector, 0, len(v.Readings))
 		for _, r := range v.Readings {
 			dets = append(dets, &scv1.DetectorReportDetector{
-				DetectorId: r.Channel,
-				Volume:     r.VolumeDelta,
-				Occupancy:  occupancyPercent(r.OccupancyTenths),
+				DetectorId: u32p(r.Channel),
+				Volume:     u32p(r.VolumeDelta),
+				Occupancy:  strp(occupancyPercent(r.OccupancyTenths)),
 			})
 		}
 		msg = &scv1.DetectorReport{
 			Kind:           scTypes + "sc-detector-event-kind",
 			SourceDeviceId: v.DeviceID,
 			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
-			ObservedBy:     e.collectorID,
+			ObservedBy:     e.observedBy(),
 			Sequence:       e.nextSequence(v.DeviceID),
+			SequenceEpoch:  e.sequenceEpoch,
 			IntervalStart:  timestamppb.New(v.IntervalStart.UTC()),
 			// The domain carries true elapsed time; the wire constrains the
 			// interval to whole seconds. Round ONCE, here at the edge, rather
 			// than pre-breaking the domain to match the wire.
-			IntervalDurationS: uint32((v.IntervalDuration + 500*time.Millisecond) / time.Second),
+			IntervalDurationS: u32p(uint32((v.IntervalDuration + 500*time.Millisecond) / time.Second)),
 			Detector:          dets,
 		}
-
-	case model.CCTVControlModeChanged:
-		current, ok := cctvControlModeIdentity(v.To)
-		if !ok {
-			return nil, false, nil
-		}
-		prior, _ := cctvControlModeIdentity(v.From)
-		msg = e.modeChanged(v.Base, cctvTypes+"cctv-mode-event-kind", prior, current)
 
 	case model.CCTVTourStateChanged:
 		to, ok := tourRunStateFor(v.To)
@@ -363,10 +392,11 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 			Kind:           cctvTypes + "cctv-tour-state-changed",
 			SourceDeviceId: v.DeviceID,
 			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
-			ObservedBy:     e.collectorID,
+			ObservedBy:     e.observedBy(),
 			Sequence:       e.nextSequence(v.DeviceID),
+			SequenceEpoch:  e.sequenceEpoch,
 			TourId:         v.TourID,
-			PreviousState:  from,
+			PreviousState:  tourp(from),
 			CurrentState:   to,
 		}
 
@@ -375,21 +405,23 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 			Kind:           perceptionTypes + "pcp-zone-incident-detected",
 			SourceDeviceId: v.DeviceID,
 			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
-			ObservedBy:     e.collectorID,
+			ObservedBy:     e.observedBy(),
 			Sequence:       e.nextSequence(v.DeviceID),
-			IncidentId:     v.IncidentID,
-			ZoneId:         v.ZoneID,
-			Type:           incidentTypeIdentity(v.Type),
-			Severity:       incidentSeverityFor(v.Severity),
-			ObjectClass:    objectClassIdentity(v.ObjectClass),
-			Confidence:     uint32(v.ConfidencePercent),
-			TrackId:        v.TrackID,
-			TrackEpoch:     v.TrackEpoch,
+			SequenceEpoch:  e.sequenceEpoch,
+			IncidentId:     strp(v.IncidentID),
+			ZoneId:         strp(v.ZoneID),
+			Type:           strp(incidentTypeIdentity(v.Type)),
+			Severity:       sevp(incidentSeverityFor(v.Severity)),
+			ObjectClass:    strp(objectClassIdentity(v.ObjectClass)),
+			Confidence:     u32p(uint32(v.ConfidencePercent)),
+			TrackId:        u32p(v.TrackID),
+			TrackEpoch:     u32p(v.TrackEpoch),
+			FirstObserved:  timestamppb.New(v.OccurredAt.UTC()),
 		}
 		// Zero is meaningful here — a stopped-vehicle incident IS zero km/h —
 		// so an unreported speed stays absent rather than rendering as stopped.
 		if v.SpeedReported {
-			d.SpeedKmh = hundredths(v.SpeedHundredthsKPH)
+			d.SpeedKmh = strp(hundredths(v.SpeedHundredthsKPH))
 		}
 		msg = d
 
@@ -398,15 +430,16 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 			Kind:           perceptionTypes + "pcp-zone-incident-updated",
 			SourceDeviceId: v.DeviceID,
 			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
-			ObservedBy:     e.collectorID,
+			ObservedBy:     e.observedBy(),
 			Sequence:       e.nextSequence(v.DeviceID),
-			IncidentId:     v.IncidentID,
-			ZoneId:         v.ZoneID,
-			Severity:       incidentSeverityFor(v.Severity),
-			Confidence:     uint32(v.ConfidencePercent),
+			SequenceEpoch:  e.sequenceEpoch,
+			IncidentId:     strp(v.IncidentID),
+			ZoneId:         strp(v.ZoneID),
+			Severity:       sevp(incidentSeverityFor(v.Severity)),
+			Confidence:     u32p(uint32(v.ConfidencePercent)),
 		}
 		if v.SpeedReported {
-			u.SpeedKmh = hundredths(v.SpeedHundredthsKPH)
+			u.SpeedKmh = strp(hundredths(v.SpeedHundredthsKPH))
 		}
 		msg = u
 
@@ -415,10 +448,11 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 			Kind:           perceptionTypes + "pcp-zone-incident-cleared",
 			SourceDeviceId: v.DeviceID,
 			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
-			ObservedBy:     e.collectorID,
+			ObservedBy:     e.observedBy(),
 			Sequence:       e.nextSequence(v.DeviceID),
-			IncidentId:     v.IncidentID,
-			ZoneId:         v.ZoneID,
+			SequenceEpoch:  e.sequenceEpoch,
+			IncidentId:     strp(v.IncidentID),
+			ZoneId:         strp(v.ZoneID),
 		}
 
 	case model.ZoneIntervalReport:
@@ -427,7 +461,7 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 			counts := make([]*pcpv1.ClassCount, 0, len(z.ClassCounts))
 			for _, cc := range z.ClassCounts {
 				counts = append(counts, &pcpv1.ClassCount{
-					Class: objectClassIdentity(cc.Class), Count: cc.Count,
+					Class: strp(objectClassIdentity(cc.Class)), Count: u32p(cc.Count),
 				})
 			}
 			// ObservedCount and OccupancyPercent are deliberately absent:
@@ -436,14 +470,14 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 			// also emits. The values are not dropped, they are published
 			// under the ce-type that now defines them.
 			zone := &pcpv1.ZoneIntervalReportZone{
-				ZoneId:            z.ZoneID,
-				CrossedVolume:     z.CrossedVolume,
+				ZoneId:            strp(z.ZoneID),
+				CrossedVolume:     u32p(z.CrossedVolume),
 				ClassCount:        counts,
 				IntervalStart:     timestamppb.New(v.IntervalStart.UTC()),
-				IntervalDurationS: uint32((v.IntervalDuration + 500*time.Millisecond) / time.Second),
+				IntervalDurationS: u32p(uint32((v.IntervalDuration + 500*time.Millisecond) / time.Second)),
 			}
 			if z.SpeedReported {
-				zone.AverageSpeedKmh = hundredths(z.SpeedAvgHundredthsKPH)
+				zone.AverageSpeedKmh = strp(hundredths(z.SpeedAvgHundredthsKPH))
 			}
 			zones = append(zones, zone)
 		}
@@ -451,8 +485,9 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 			Kind:           perceptionTypes + "pcp-zone-interval-report",
 			SourceDeviceId: v.DeviceID,
 			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
-			ObservedBy:     e.collectorID,
+			ObservedBy:     e.observedBy(),
 			Sequence:       e.nextSequence(v.DeviceID),
+			SequenceEpoch:  e.sequenceEpoch,
 			Zone:           zones,
 		}
 
@@ -465,7 +500,7 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 				// per-class confidence, and zero is the wire's "not stated"
 				// for a uint32 count of confidence, not a claim of none.
 				classes = append(classes, &zocv1.ObservedClass{
-					Class: objectClassIdentity(cc.Class), Count: cc.Count,
+					Class: strp(objectClassIdentity(cc.Class)), Count: u32p(cc.Count),
 				})
 			}
 			// PeakOccupancyCount is left unset for the same reason: no
@@ -473,20 +508,21 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 			// one from the mean would be a wrong value rather than a missing
 			// one.
 			zones = append(zones, &zocv1.Zone{
-				ZoneId:            z.ZoneID,
-				ObservedCount:     z.ObservedCount,
-				OccupancyPercent:  occupancyPercent(z.OccupancyTenths),
+				ZoneId:            strp(z.ZoneID),
+				ObservedCount:     u32p(z.ObservedCount),
+				OccupancyPercent:  strp(occupancyPercent(z.OccupancyTenths)),
 				ObservedClass:     classes,
 				IntervalStart:     timestamppb.New(v.IntervalStart.UTC()),
-				IntervalDurationS: uint32((v.IntervalDuration + 500*time.Millisecond) / time.Second),
+				IntervalDurationS: u32p(uint32((v.IntervalDuration + 500*time.Millisecond) / time.Second)),
 			})
 		}
 		msg = &zocv1.ZoneOccupancyIntervalReport{
 			Kind:           zoneOccTypes + "zoc-zone-occupancy-interval-report",
 			SourceDeviceId: v.DeviceID,
 			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
-			ObservedBy:     e.collectorID,
+			ObservedBy:     e.observedBy(),
 			Sequence:       e.nextSequence(v.DeviceID),
+			SequenceEpoch:  e.sequenceEpoch,
 			Zone:           zones,
 		}
 
@@ -496,26 +532,26 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 			classes := make([]*tsv1.TrafficIntervalReportLaneClassVolume, 0, len(l.ClassVolumes))
 			for _, cv := range l.ClassVolumes {
 				classes = append(classes, &tsv1.TrafficIntervalReportLaneClassVolume{
-					ClassId: cv.ClassID, Volume: cv.Volume,
+					ClassId: u32p(cv.ClassID), Volume: u32p(cv.Volume),
 				})
 			}
 			lane := &tsv1.TrafficIntervalReportLane{
-				LaneId:      l.LaneID,
-				Volume:      l.Volume,
-				Occupancy:   occupancyPercent(l.OccupancyTenths),
+				LaneId:      u32p(l.LaneID),
+				Volume:      u32p(l.Volume),
+				Occupancy:   strp(occupancyPercent(l.OccupancyTenths)),
 				ClassVolume: classes,
-				DataQuality: dataQualityFor(l.Quality),
+				DataQuality: qualp(dataQualityFor(l.Quality)),
 				// The interval belongs to the DEVICE, and the wire repeats it
 				// per lane. Both come from the report, not from poll timing.
 				IntervalStart:     timestamppb.New(v.IntervalStart.UTC()),
-				IntervalDurationS: uint32((v.IntervalDuration + 500*time.Millisecond) / time.Second),
+				IntervalDurationS: u32p(uint32((v.IntervalDuration + 500*time.Millisecond) / time.Second)),
 			}
 			// Left EMPTY when the sensor did not report speed. Rendering
 			// "0.00" would turn "we don't know" into "stopped traffic", and a
 			// consumer computing travel time cannot tell those apart after
 			// the fact.
 			if l.SpeedReported {
-				lane.SpeedAverageKmh = hundredths(l.SpeedAvgHundredthsKPH)
+				lane.SpeedAverageKmh = strp(hundredths(l.SpeedAvgHundredthsKPH))
 			}
 			lanes = append(lanes, lane)
 		}
@@ -523,47 +559,54 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 			Kind:           trafficSenTypes + "ts-traffic-interval-report",
 			SourceDeviceId: v.DeviceID,
 			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
-			ObservedBy:     e.collectorID,
+			ObservedBy:     e.observedBy(),
 			Sequence:       e.nextSequence(v.DeviceID),
+			SequenceEpoch:  e.sequenceEpoch,
 			Lane:           lanes,
 		}
 
 	case model.DMSMessageActivationFailed:
-		msg = &dmsv1.MessageActivationFailed{
+		errID := errorTypeFor(v.Error)
+		failed := &dmsv1.MessageActivationFailed{
 			Kind:                dmsTypes + "dms-message-activation-failed",
 			SourceDeviceId:      v.DeviceID,
 			OccurredAt:          timestamppb.New(v.OccurredAt.UTC()),
-			ObservedBy:          e.collectorID,
+			ObservedBy:          e.observedBy(),
 			Sequence:            e.nextSequence(v.DeviceID),
-			AttemptedMemoryType: memoryTypeFor(v.MemoryType),
-			AttemptedSlotNumber: v.Slot,
-			ErrorType:           errorTypeFor(v.Error),
-			ErrorPosition:       v.ErrorPosition,
+			SequenceEpoch:       e.sequenceEpoch,
+			AttemptedMemoryType: memp(memoryTypeFor(v.MemoryType)),
+			AttemptedSlotNumber: u32p(v.Slot),
+			ErrorType:           strp(errID),
 		}
+		if errID != "" {
+			failed.ErrorPosition = u32p(v.ErrorPosition)
+		}
+		msg = failed
 
 	case model.DMSMessageChanged:
 		mc := &dmsv1.MessageChanged{
 			Kind:           dmsTypes + "dms-message-changed",
 			SourceDeviceId: v.DeviceID,
 			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
-			ObservedBy:     e.collectorID,
+			ObservedBy:     e.observedBy(),
 			Sequence:       e.nextSequence(v.DeviceID),
-			MemoryType:     memoryTypeFor(v.ToMemoryType),
-			SlotNumber:     v.ToSlot,
-			MultiString:    v.ToText,
-			Crc:            v.ToCRC,
+			SequenceEpoch:  e.sequenceEpoch,
+			MemoryType:     memp(memoryTypeFor(v.ToMemoryType)),
+			SlotNumber:     u32p(v.ToSlot),
+			MultiString:    strp(v.ToText),
+			Crc:            u32p(v.ToCRC),
 			// FromCRC is DROPPED: the wire carries no prior-crc leaf. The
 			// prior message is identified to consumers by (bank, slot, text);
 			// an in-place rewrite still reports because the CURRENT crc moved.
-			PriorMemoryType:  memoryTypeFor(v.FromMemoryType),
-			PriorSlotNumber:  v.FromSlot,
-			PriorMultiString: v.FromText,
+			PriorMemoryType:  memp(memoryTypeFor(v.FromMemoryType)),
+			PriorSlotNumber:  u32p(v.FromSlot),
+			PriorMultiString: strp(v.FromText),
 		}
 		// activation-trigger is optional: a trigger with no upstream identity
 		// (unknown, reset, vendor-specific) leaves the leaf unset rather than
 		// declining the event or asserting a near-neighbour cause.
 		if trig, ok := activationTriggerIdentity(v.Trigger); ok {
-			mc.ActivationTrigger = trig
+			mc.ActivationTrigger = strp(trig)
 		}
 		msg = mc
 
@@ -573,69 +616,63 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 		// display-state stays unset (optional upstream) rather than being
 		// fetched across facets the differ cannot see.
 		//
-		// Per-sensor absence: a sensor the device did not answer for stays at
-		// the proto zero value. For the decimal64 temps that is honestly
-		// absent (empty string); for the numeric and boolean leaves proto3
-		// cannot distinguish a reported zero/false from an absent one — a
-		// wire limitation to keep in mind, not something the emitter can fix.
+		// Per-sensor absence: a sensor the device did not answer for stays
+		// unset. Optional proto presence now carries a reported false or
+		// zero, so those are encoded when the sensor answered.
 		r := &dmsv1.SignStatusReport{
 			Kind:           dmsTypes + "dms-sign-status-report",
 			SourceDeviceId: v.DeviceID,
 			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
-			ObservedBy:     e.collectorID,
+			ObservedBy:     e.observedBy(),
 			Sequence:       e.nextSequence(v.DeviceID),
+			SequenceEpoch:  e.sequenceEpoch,
 		}
 		if v.BrightnessReported {
-			r.BrightnessCurrent = uint32(v.BrightnessPercent)
+			r.BrightnessCurrent = u32p(uint32(v.BrightnessPercent))
 		}
 		if v.AmbientLightReported {
-			r.AmbientLightLevel = uint32(v.AmbientLightPercent)
+			r.AmbientLightLevel = u32p(uint32(v.AmbientLightPercent))
 		}
 		if v.IlluminanceReported {
-			r.AmbientIlluminanceLux = v.IlluminanceLux
+			r.AmbientIlluminanceLux = u32p(v.IlluminanceLux)
 		}
 		if v.CabinetTempReported {
-			r.CabinetTemperatureC = deciCelsius(v.CabinetTempDeciC)
+			r.CabinetTemperatureC = strp(deciCelsius(v.CabinetTempDeciC))
 		}
 		if v.FaceTempReported {
-			r.SignFaceTemperatureC = deciCelsius(v.FaceTempDeciC)
+			r.SignFaceTemperatureC = strp(deciCelsius(v.FaceTempDeciC))
 		}
 		if v.HumidityReported {
-			r.HumidityPercent = uint32(v.HumidityPercent)
+			r.HumidityPercent = u32p(uint32(v.HumidityPercent))
 		}
 		if v.DoorReported {
-			r.DoorOpen = v.DoorOpen
+			r.DoorOpen = boolp(v.DoorOpen)
 		}
 		if v.FanReported {
-			r.FanActive = v.FanActive
+			r.FanActive = boolp(v.FanActive)
 		}
 		if v.HeaterReported {
-			r.HeaterActive = v.HeaterActive
+			r.HeaterActive = boolp(v.HeaterActive)
 		}
 		msg = r
 
-	case model.GatePositionChanged:
-		msg = &rlv1.GatePositionChanged{
-			Kind:             rlTypes + "rl-gate-position-changed",
-			SourceDeviceId:   v.DeviceID,
-			OccurredAt:       timestamppb.New(v.OccurredAt.UTC()),
-			ObservedBy:       e.collectorID,
-			Sequence:         e.nextSequence(v.DeviceID),
-			GateId:           v.GateID,
-			PreviousPosition: gatePositionFor(v.From),
-			NewPosition:      gatePositionFor(v.To),
-		}
-
-	case model.GateModeChanged:
-		msg = &rlv1.GateModeChanged{
-			Kind:           rlTypes + "rl-gate-mode-changed",
+	case model.GateStatusChanged:
+		prevPos := gatePositionFor(v.PreviousPosition)
+		msg = &rlv1.GateStatusChanged{
+			Kind:           rlTypes + "rl-gate-status-changed",
 			SourceDeviceId: v.DeviceID,
 			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
-			ObservedBy:     e.collectorID,
+			ObservedBy:     e.observedBy(),
 			Sequence:       e.nextSequence(v.DeviceID),
-			GateId:         v.GateID,
-			PreviousMode:   gateOperatingModeFor(v.From),
-			NewMode:        gateOperatingModeFor(v.To),
+			SequenceEpoch:  e.sequenceEpoch,
+			// The state list names this instant observed-at (renamed from
+			// measured-at). The notification keeps the event-header name
+			// occurred-at; a twin copies it onto the gate reading.
+			GateId:                v.GateID,
+			Position:              gatePositionFor(v.Position),
+			PreviousPosition:      &prevPos,
+			OperatingMode:         strp(gateOperatingModeFor(v.Mode)),
+			PreviousOperatingMode: strp(gateOperatingModeFor(v.PreviousMode)),
 		}
 
 	default:
@@ -683,20 +720,53 @@ func severityFor(s model.FaultSeverity) commonv1.FaultSeverity {
 // onto it — controller mode, DMS control mode, DMS display state — differing
 // only in `kind` and which identity set prior/current are drawn from.
 func (e *emitter) modeChanged(b model.Base, kind, prior, current string) *commonv1.ModeChanged {
-	return &commonv1.ModeChanged{
+	msg := &commonv1.ModeChanged{
 		Kind:           kind,
 		SourceDeviceId: b.DeviceID,
 		OccurredAt:     timestamppb.New(b.OccurredAt.UTC()),
-		ObservedBy:     e.collectorID,
+		ObservedBy:     e.observedBy(),
 		Sequence:       e.nextSequence(b.DeviceID),
-		Prior:          prior,
-		Current:        current,
+		SequenceEpoch:  e.sequenceEpoch,
+		Mode:           current,
 	}
+	// previous-mode is optional. An unmappable prior stays absent.
+	if prior != "" {
+		msg.PreviousMode = strp(prior)
+	}
+	return msg
+}
+
+func (e *emitter) observedBy() *string { return strp(e.collectorID) }
+
+func strp(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+func u32p(v uint32) *uint32 { return &v }
+
+func boolp(v bool) *bool { return &v }
+
+func memp(m dmsv1.MessageMemoryType) *dmsv1.MessageMemoryType { return &m }
+
+func tourp(s cctvv1.TourRunState) *cctvv1.TourRunState { return &s }
+
+func sevp(s pcpv1.IncidentSeverity) *pcpv1.IncidentSeverity { return &s }
+
+func qualp(q tsv1.DataQuality) *tsv1.DataQuality { return &q }
+
+func whenFirst(explicit, occurred time.Time) *timestamppb.Timestamp {
+	if explicit.IsZero() {
+		explicit = occurred
+	}
+	return timestamppb.New(explicit.UTC())
 }
 
 // producerAssigned names the event-header leaves that describe the OBSERVATION
 // rather than the occurrence, and so must not feed the deterministic ce-id.
-var producerAssigned = []string{"sequence", "observed_by"}
+var producerAssigned = []string{"sequence", "sequence_epoch", "observed_by"}
 
 // identityBytes marshals msg with the producer-assigned leaves cleared.
 //

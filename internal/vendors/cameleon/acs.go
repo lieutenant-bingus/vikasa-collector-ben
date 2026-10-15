@@ -18,7 +18,7 @@ var acsDescriptor = adapter.Descriptor{
 // wordClient is the read surface the ACS adapter needs from SRTP.
 // Production dials lazily; tests inject a static block.
 type wordClient interface {
-	ReadWords(memType byte, address1Based, count int) ([]uint16, error)
+	ReadWords(ctx context.Context, memType byte, address1Based, count int) ([]uint16, error)
 	Close() error
 }
 
@@ -108,12 +108,11 @@ func (a *acs) dropClient() {
 }
 
 func (a *acs) Read(ctx context.Context) (*model.Snapshot, error) {
-	_ = ctx
 	client, err := a.ensureClient()
 	if err != nil {
 		return nil, fmt.Errorf("cameleon-acs %s: %w", a.deviceID, err)
 	}
-	words, err := client.ReadWords(gesrtp.MemR, a.dswStart, a.dswLen)
+	words, err := client.ReadWords(ctx, gesrtp.MemR, a.dswStart, a.dswLen)
 	if err != nil {
 		a.dropClient()
 		return nil, fmt.Errorf("cameleon-acs %s: %w", a.deviceID, err)

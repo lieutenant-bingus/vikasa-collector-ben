@@ -116,6 +116,11 @@ const (
 	// Assessing one means moving it to owedServiceAlreadyWired or recording
 	// why polling cannot see it.
 	signalControlNotAssessed unmappedReason = "signal control: not yet assessed per event"
+
+	// modeBaseUnbound: the family's mode-changed kind has no mode-value-base
+	// that these values derive from, so previous-mode and mode cannot be
+	// bound. The domain event still exists; it is not a mode-changed.
+	modeBaseUnbound unmappedReason = "mode values do not derive from the family's mode-value-base"
 )
 
 // unmapped lists every ce-type the pinned catalog declares and this emitter
@@ -159,6 +164,7 @@ var unmapped = map[string]unmappedReason{
 	"openits.cctv.lockout-denied.v1":      describesACommand,
 	"openits.cctv.ptz-move-commanded.v1":  describesACommand,
 	"openits.cctv.ptz-preset-recalled.v1": describesACommand,
+	"openits.cctv.mode-changed.v1":        modeBaseUnbound,
 	// traffic-sensor
 	"openits.traffic-sensor.queue-state-changed.v1":          owedServiceAlreadyWired,
 	"openits.traffic-sensor.traffic-sensor-status-report.v1": owedServiceAlreadyWired,
