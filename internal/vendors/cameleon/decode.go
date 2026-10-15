@@ -95,29 +95,29 @@ func gateFaults(g model.GateReading) []model.Fault {
 	return out
 }
 
-// cabinetFaults maps non-zero cabinet DI words to Fault entries.
-// Treat non-zero as active (Cameleon DSW pattern from the ACS handoff).
+// cabinetFaults maps cabinet DI words to Fault entries. Only bit 0 is the
+// input; bits 1–15 are spare and must not raise a fault.
 func cabinetFaults(lf, sp, door, estop uint16) []model.Fault {
 	var out []model.Fault
-	if lf != 0 {
+	if lf&1 != 0 {
 		out = append(out, model.Fault{
 			ID: "cabinet/lf-fault", Severity: model.SeverityMajor,
 			Category: model.CategoryCabinet, Description: "ACS LF fault active",
 		})
 	}
-	if sp != 0 {
+	if sp&1 != 0 {
 		out = append(out, model.Fault{
 			ID: "cabinet/sp-fault", Severity: model.SeverityMajor,
 			Category: model.CategoryCabinet, Description: "ACS SP fault active",
 		})
 	}
-	if door != 0 {
+	if door&1 != 0 {
 		out = append(out, model.Fault{
 			ID: "cabinet/door", Severity: model.SeverityWarning,
 			Category: model.CategoryCabinet, Description: "ACS cabinet door switch active",
 		})
 	}
-	if estop != 0 {
+	if estop&1 != 0 {
 		out = append(out, model.Fault{
 			ID: "cabinet/gate-estop", Severity: model.SeverityCritical,
 			Category: model.CategoryCabinet, Description: "ACS cabinet-wide gate E-STOP active",

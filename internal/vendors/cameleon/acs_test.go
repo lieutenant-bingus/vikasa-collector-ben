@@ -221,6 +221,41 @@ func TestACSReadGoldenACS1(t *testing.T) {
 	}
 }
 
+func TestCabinetSpareBitsDoNotRaise(t *testing.T) {
+	words := append([]uint16(nil), acs1DSWR90...)
+	words[179-90] = 0x0002
+	words[180-90] = 0x0002
+	words[181-90] = 0x0002
+	words[182-90] = 0x0002
+	a := NewACS("acs-1", &staticWords{start: 90, words: words}, 90, 110,
+		[]gateCfg{{id: "WG-111", kind: model.GateKindWarning, dsw: 101}},
+		cabinetCfg{lfFault: 179, spFault: 180, door: 181, gateEstop: 182})
+	snap, err := a.Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	fs, ok := snap.Facet(model.KindFaultSet)
+	if !ok {
+		t.Fatal("missing fault-set")
+	}
+	if n := len(fs.(model.FaultSet).Faults); n != 0 {
+		t.Fatalf("spare bits raised %d faults: %+v", n, fs)
+	}
+	words[182-90] = 0x0003 // bit 0 plus a spare bit
+	snap, err = a.Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	fs, _ = snap.Facet(model.KindFaultSet)
+	got := map[string]bool{}
+	for _, f := range fs.(model.FaultSet).Faults {
+		got[f.ID] = true
+	}
+	if !got["cabinet/gate-estop"] || len(got) != 1 {
+		t.Fatalf("faults = %+v", got)
+	}
+}
+
 func TestACSReadRaisesGateAndCabinetFaults(t *testing.T) {
 	words := append([]uint16(nil), acs1DSWR90...)
 	// %R101 (idx 11): set failed-open + estop on top of 0x0025
