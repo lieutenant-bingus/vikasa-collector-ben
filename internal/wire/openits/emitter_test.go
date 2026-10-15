@@ -768,7 +768,7 @@ func TestFaultKindIdentity_ACSMapsByFaultID(t *testing.T) {
 	for faultID, want := range map[string]string{
 		"gate/WG-111/failed-to-close": "openits-reversible-lane-types:reversible-lane-fault-gate-failed-to-close",
 		"gate/BG-114/estop":           "openits-reversible-lane-types:reversible-lane-fault-gate-emergency-stop",
-		"gate/WG-111/cmd-refused":     "openits-reversible-lane-types:reversible-lane-fault-event-kind",
+		"gate/WG-111/command-refused": "openits-reversible-lane-types:reversible-lane-fault-event-kind",
 		"gate/WG-111/invalid-inputs":  "openits-reversible-lane-types:reversible-lane-fault-event-kind",
 		"cabinet/lf-fault":            "openits-reversible-lane-types:reversible-lane-fault-cabinet-lf",
 		"cabinet/gate-estop":          "openits-reversible-lane-types:reversible-lane-fault-cabinet-estop",
@@ -816,6 +816,29 @@ func TestEncode_GateFaultNamesComponent(t *testing.T) {
 	comp = cleared.GetComponent()
 	if comp.GetComponentClass() != "openits-reversible-lane-types:rl-component-gate" || comp.GetComponentId() != "WG-111" {
 		t.Fatalf("clear component = %+v", comp)
+	}
+
+	// The catalog has no leaf for command-refused or invalid-inputs. They
+	// publish on the service base identity with the gate component, which is
+	// a successful encode, not an error.
+	for _, id := range []string{"gate/WG-111/command-refused", "gate/WG-111/invalid-inputs"} {
+		raised, ceType := decodeFaultRaised(t, model.FaultRaised{
+			Base: base("acs-1", "acs"), FaultID: id,
+			Severity: model.SeverityMajor, Category: model.CategoryCabinet,
+		})
+		if ceType != "openits.reversible-lane.fault-raised.v1" {
+			t.Errorf("%s ce-type = %q", id, ceType)
+		}
+		if raised.GetKind() != "openits-reversible-lane-types:reversible-lane-fault-event-kind" {
+			t.Errorf("%s kind = %q", id, raised.GetKind())
+		}
+		comp := raised.GetComponent()
+		if comp.GetComponentClass() != "openits-reversible-lane-types:rl-component-gate" || comp.GetComponentId() != "WG-111" {
+			t.Errorf("%s component = %+v", id, comp)
+		}
+		if gateComponent(id) == nil {
+			t.Errorf("gateComponent(%s) = nil", id)
+		}
 	}
 
 	cabinet, _ := decodeFaultRaised(t, model.FaultRaised{

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Vikasa2M/vikasa-collector/internal/synth"
 	"github.com/Vikasa2M/vikasa-collector/internal/vendors/cameleon/gesrtp"
 	"github.com/Vikasa2M/vikasa-collector/sdk/adapter"
 	"github.com/Vikasa2M/vikasa-collector/sdk/model"
@@ -111,11 +112,69 @@ func TestDecodeGateAlarms(t *testing.T) {
 	if len(fs) != 2 {
 		t.Fatalf("faults = %+v", fs)
 	}
-	// Bits 13 and 14 are spare. They must not become cmd-refused or invalid-inputs.
-	dropped := DecodeGateWord("WG-1", model.GateKindWarning, w|(1<<13)|(1<<14))
-	fs = gateFaults(dropped)
-	if len(fs) != 2 {
-		t.Fatalf("spare bits raised faults: %+v", fs)
+	// Bits 7–9 and 15 are not alarms. Bits 13 and 14 are.
+	withSpare := DecodeGateWord("WG-1", model.GateKindWarning, w|(1<<7)|(1<<8)|(1<<9)|(1<<15))
+	if len(gateFaults(withSpare)) != 2 {
+		t.Fatalf("non-alarm bits raised faults: %+v", gateFaults(withSpare))
+	}
+	both := DecodeGateWord("WG-1", model.GateKindWarning, w|(1<<13)|(1<<14))
+	if !both.CommandRefused || !both.InvalidInputs {
+		t.Fatalf("bits 13/14 = %+v", both)
+	}
+	fs = gateFaults(both)
+	got := map[string]model.FaultSeverity{}
+	for _, f := range fs {
+		got[f.ID] = f.Severity
+	}
+	if got["gate/WG-1/command-refused"] != model.SeverityWarning {
+		t.Fatalf("command-refused = %v", got)
+	}
+	if got["gate/WG-1/invalid-inputs"] != model.SeverityMajor {
+		t.Fatalf("invalid-inputs = %v", got)
+	}
+	if len(fs) != 4 {
+		t.Fatalf("faults = %+v", fs)
+	}
+}
+
+func TestGateAlarmBitsRaiseAndClearThroughDiffer(t *testing.T) {
+	gates := []gateCfg{{id: "WG-111", kind: model.GateKindWarning, dsw: 101}}
+	quiet := append([]uint16(nil), acs1DSWR90...)
+	loud := append([]uint16(nil), quiet...)
+	loud[101-90] = 0x0025 | (1 << 13) | (1 << 14)
+	read := func(words []uint16) *model.Snapshot {
+		t.Helper()
+		a := NewACS("acs-1", &staticWords{start: 90, words: words}, 90, 110, gates, cabinetCfg{})
+		snap, err := a.Read(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		snap.DeviceKind = "acs"
+		return snap
+	}
+	e := synth.NewEngine(synth.NewFaultDiffer())
+	var raised []string
+	for _, ev := range e.Apply(read(loud)) {
+		fr, ok := ev.(model.FaultRaised)
+		if !ok {
+			t.Fatalf("first poll event %T", ev)
+		}
+		raised = append(raised, fr.FaultID)
+	}
+	want := []string{"gate/WG-111/command-refused", "gate/WG-111/invalid-inputs"}
+	if !reflect.DeepEqual(raised, want) {
+		t.Fatalf("raises = %v, want %v", raised, want)
+	}
+	var cleared []string
+	for _, ev := range e.Apply(read(quiet)) {
+		fc, ok := ev.(model.FaultCleared)
+		if !ok {
+			t.Fatalf("clear poll event %T", ev)
+		}
+		cleared = append(cleared, fc.FaultID)
+	}
+	if !reflect.DeepEqual(cleared, want) {
+		t.Fatalf("clears = %v, want %v", cleared, want)
 	}
 }
 

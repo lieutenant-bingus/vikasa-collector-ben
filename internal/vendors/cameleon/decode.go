@@ -22,7 +22,11 @@ func DecodeGateWord(id string, kind model.GateKind, w uint16) model.GateReading 
 		FailedClose: w&(1<<10) != 0,
 		FailedOpen:  w&(1<<11) != 0,
 		Estop:       w&(1<<12) != 0,
-		Raw:         w,
+		// Bit 13 ALM_CMD_Refused, bit 14 ALM_InvalidInputs. Bit 15 is spare.
+		// Bits 7–8 are PLC open/close requests and bit 9 is spare; not alarms.
+		CommandRefused: w&(1<<13) != 0,
+		InvalidInputs:  w&(1<<14) != 0,
+		Raw:            w,
 	}
 	return g
 }
@@ -81,6 +85,12 @@ func gateFaults(g model.GateReading) []model.Fault {
 	}
 	if g.Estop {
 		add("estop", "gate emergency stop", model.SeverityCritical)
+	}
+	if g.CommandRefused {
+		add("command-refused", "gate command refused by PLC interlock", model.SeverityWarning)
+	}
+	if g.InvalidInputs {
+		add("invalid-inputs", "gate device offline or invalid PLC cabinet ID", model.SeverityMajor)
 	}
 	return out
 }

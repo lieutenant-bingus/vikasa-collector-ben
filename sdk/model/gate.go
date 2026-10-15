@@ -88,9 +88,10 @@ func (p GatePosition) String() string {
 // here so a consumer of the bank facet can see position and alarms together
 // without joining events.
 //
-// Zero-value semantics: an all-zero GateReading is a valid decode of raw
-// word 0 (mode unknown, position unknown, no alarms). It is never "absent" —
-// absence of a gate means the adapter omitted that ID from Gates.
+// Zero-value semantics: an all-zero GateReading is "not read" (mode unknown,
+// position unknown, no alarms). It is never "absent" — absence of a gate
+// means the adapter omitted that ID from Gates. Decoding raw word 0 is a
+// different value: Table 5 mode 0 is Offline.
 type GateReading struct {
 	ID       string
 	Kind     GateKind
@@ -99,10 +100,13 @@ type GateReading struct {
 	// LockOpen / LockClose are guide flags from bits 2–3; interpret cautiously.
 	LockOpen  bool
 	LockClose bool
-	// Named alarm bits 10–12. Bits 13–15 are spare and are not decoded.
-	FailedClose bool
-	FailedOpen  bool
-	Estop       bool
+	// Alarm bits 10–14. Bit 15 is spare and is not decoded. Bits 7–9
+	// (open/close request and a spare) are not alarms.
+	FailedClose    bool
+	FailedOpen     bool
+	Estop          bool
+	CommandRefused bool
+	InvalidInputs  bool
 	// Raw is the verbatim %R word for lossless provenance / fixtures.
 	Raw uint16
 }
