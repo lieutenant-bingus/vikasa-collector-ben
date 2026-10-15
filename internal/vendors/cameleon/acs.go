@@ -124,25 +124,34 @@ func (a *acs) Read(ctx context.Context) (*model.Snapshot, error) {
 
 	snap := &model.Snapshot{DeviceID: a.deviceID, SampledAt: a.now().UTC()}
 
+	// A facet that cannot be fully decoded is left out of Facets and named
+	// in Errors (ADR 0013): absence of evidence is never a state change.
+	// One bad word must not discard the facets that did decode.
 	gates := make([]model.GateReading, 0, len(a.gates))
 	var faults []model.Fault
+	var faultErr error
+	gatesOK := true
 	for _, g := range a.gates {
 		w, err := wordAt(words, a.dswStart, g.dsw)
 		if err != nil {
 			snap.Errors = append(snap.Errors, model.FacetError{
 				Kind: model.KindGateBank, Err: err.Error(),
 			})
-			return snap, nil
+			gatesOK = false
+			faultErr = err
+			break
 		}
 		gr := DecodeGateWord(g.id, g.kind, w)
 		gates = append(gates, gr)
 		faults = append(faults, gateFaults(gr)...)
 	}
-	sortGates(gates)
-	snap.Facets = append(snap.Facets, model.GateBank{Gates: gates})
+	if gatesOK {
+		sortGates(gates)
+		snap.Facets = append(snap.Facets, model.GateBank{Gates: gates})
+	}
 
-	if a.cabinet.lfFault != 0 || a.cabinet.spFault != 0 ||
-		a.cabinet.door != 0 || a.cabinet.gateEstop != 0 {
+	if faultErr == nil && (a.cabinet.lfFault != 0 || a.cabinet.spFault != 0 ||
+		a.cabinet.door != 0 || a.cabinet.gateEstop != 0) {
 		lf, sp, door, estop := uint16(0), uint16(0), uint16(0), uint16(0)
 		var cerr error
 		if a.cabinet.lfFault != 0 {
@@ -158,12 +167,20 @@ func (a *acs) Read(ctx context.Context) (*model.Snapshot, error) {
 			estop, cerr = wordAt(words, a.dswStart, a.cabinet.gateEstop)
 		}
 		if cerr != nil {
-			snap.Errors = append(snap.Errors, model.FacetError{
-				Kind: model.KindFaultSet, Err: cerr.Error(),
-			})
+			faultErr = cerr
 		} else {
 			faults = append(faults, cabinetFaults(lf, sp, door, estop)...)
 		}
+	}
+
+	// The fault set is one facet built from gate alarm bits and cabinet
+	// words together. If either half is unreadable the set is incomplete, and
+	// publishing the partial list would look like the missing faults cleared.
+	if faultErr != nil {
+		snap.Errors = append(snap.Errors, model.FacetError{
+			Kind: model.KindFaultSet, Err: faultErr.Error(),
+		})
+		return snap, nil
 	}
 
 	sortFaults(faults)

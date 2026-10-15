@@ -154,10 +154,8 @@ func (c *Client) ReadMemory(ctx context.Context, memType byte, address0Based int
 	case MemIBit, MemQBit, MemTBit, MemMBit:
 		unitBytes = 2
 	}
-	chunk := maxInlineUnits
-	if unitBytes == 2 {
-		chunk = maxInlineUnits // 6 words = 12 bytes
-	} else {
+	chunk := maxInlineUnits // 6 words = 12 bytes
+	if unitBytes != 2 {
 		chunk = 12 // 12 discrete bytes
 	}
 
@@ -210,22 +208,18 @@ func (c *Client) readMemoryOnce(ctx context.Context, memType byte, address0Based
 		return nil, fmt.Errorf("read write: %w", err)
 	}
 
-	first := make([]byte, 2048)
-	n, err := conn.Read(first)
-	if err != nil {
+	// TCP is a byte stream: read the whole 56-byte header, not whatever one
+	// Read happens to return. Anything after the header (0x94 payload) is
+	// read below.
+	first := make([]byte, 56)
+	if _, err := io.ReadFull(conn, first); err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return nil, fmt.Errorf("read response: %w", err)
+		return nil, fmt.Errorf("short response: %w", err)
 	}
-	shown := n
-	if shown > 56 {
-		shown = 56
-	}
-	slog.Debug("srtp reply", "n", n, "hdr", hex.EncodeToString(first[:shown]))
-	if n < 56 {
-		return nil, fmt.Errorf("short response: %d bytes", n)
-	}
+	n := len(first)
+	slog.Debug("srtp reply", "n", n, "hdr", hex.EncodeToString(first[:n]))
 	if first[2] != seq {
 		return nil, fmt.Errorf("response sequence 0x%02x, want 0x%02x", first[2], seq)
 	}
