@@ -24,7 +24,7 @@ import (
 // Asserts collector-started, then a gate-position-changed CloudEvent after the
 // scripted fixture flips WG-111 from closed to opening on the second poll.
 func TestACSEventsReachJetStream(t *testing.T) {
-	ns, err := server.NewServer(&{Port: server.Options{Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir()})
+	ns, err := server.NewServer(&server.Options{Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,8 +94,10 @@ devices:
 		case m := <-seen:
 			ceType := m.Header.Get("ce-type")
 			t.Logf("subject=%s ce-type=%s ce-source=%s", m.Subject, ceType, m.Header.Get("ce-source"))
-			if ceType == "openits-collector.health.collector-started.v1" {
+			if ceType == "openits-collector.instance.started.v1" {
 				gotStarted = true
+				time.Sleep(200 * time.Millisecond)
+				script.flip.Store(true)
 			}
 			if ceType == "openits.reversible-lane.gate-position-changed.v1" {
 				gotGatePos = true
@@ -125,14 +127,15 @@ type scriptedWords struct {
 	mu    sync.Mutex
 	base  []uint16
 	polls atomic.Int64
+	flip atomic.Bool
 }
 
 func (s *scriptedWords) ReadWords(_ byte, address1Based, count int) ([]uint16, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	n := s.polls.Add(1)
+	s.polls.Add(1)
 	words := append([]uint16(nil), s.base...)
-	if n >= 2 {
+	if s.flip.Load() {
 		// %R101: auto + opening (status=3)
 		words[101-90] = 0x0031 // mode auto (1), status opening (3<<4)
 	}
