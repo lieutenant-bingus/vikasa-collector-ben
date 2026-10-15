@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -52,11 +53,11 @@ type Client struct {
 }
 
 // Dial connects to host:port, completes the SRTP init handshake, and returns a client.
-func Dial(addr string, timeout time.Duration) (*Client, error) {
+func Dial(ctx context.Context, addr string, timeout time.Duration) (*Client, error) {
 	if timeout <= 0 {
 		timeout = 3 * time.Second
 	}
-	conn, err := net.DialTimeout("tcp", addr, timeout)
+	conn, err := (&net.Dialer{Timeout: timeout}).DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("dial: %w", err)
 	}
@@ -280,7 +281,7 @@ func (c *Client) readMemoryOnce(ctx context.Context, memType byte, address0Based
 					if ctx.Err() != nil {
 						return nil, ctx.Err()
 					}
-					if err == io.EOF && len(data) > 0 {
+					if errors.Is(err, io.EOF) && len(data) > 0 {
 						break
 					}
 					return nil, fmt.Errorf("read data packet: %w", err)

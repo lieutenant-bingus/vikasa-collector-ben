@@ -101,7 +101,7 @@ func (a *acs) Close() error {
 	return err
 }
 
-func (a *acs) ensureClient() (wordClient, error) {
+func (a *acs) ensureClient(ctx context.Context) (wordClient, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.client != nil {
@@ -110,7 +110,7 @@ func (a *acs) ensureClient() (wordClient, error) {
 	if a.dialAddr == "" {
 		return nil, fmt.Errorf("no SRTP client and no dial address")
 	}
-	c, err := gesrtp.Dial(a.dialAddr, a.timeout)
+	c, err := gesrtp.Dial(ctx, a.dialAddr, a.timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +129,7 @@ func (a *acs) dropClient() {
 }
 
 func (a *acs) Read(ctx context.Context) (*model.Snapshot, error) {
-	client, err := a.ensureClient()
+	client, err := a.ensureClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("cameleon-acs %s: %w", a.deviceID, err)
 	}

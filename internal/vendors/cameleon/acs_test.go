@@ -19,7 +19,7 @@ func TestLiveACSRead(t *testing.T) {
 	if addr == "" {
 		t.Skip("set ACS_SRTP_ADDR=host:18245 to poll a real ACS over SRTP")
 	}
-	client, err := gesrtp.Dial(addr, 8*time.Second)
+	client, err := gesrtp.Dial(context.Background(), addr, 8*time.Second)
 	if err != nil {
 		t.Fatalf("dial %s: %v", addr, err)
 	}

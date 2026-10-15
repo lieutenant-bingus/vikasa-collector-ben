@@ -280,7 +280,7 @@ func wordsFromRecording(frames []frame) (map[int]uint16, error) {
 
 func readACS(t *testing.T, addr string) (*model.Snapshot, *model.GateBank, model.FaultSet) {
 	t.Helper()
-	client, err := gesrtp.Dial(addr, 2*time.Second)
+	client, err := gesrtp.Dial(context.Background(), addr, 2*time.Second)
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}

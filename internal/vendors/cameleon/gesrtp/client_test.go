@@ -21,7 +21,8 @@ type fakeSRTP struct {
 
 func startFake(t *testing.T, reply func(req []byte) []byte) *fakeSRTP {
 	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	var lc net.ListenConfig
+	ln, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +37,7 @@ func (f *fakeSRTP) serve(t *testing.T) {
 	if err != nil {
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	init := make([]byte, 56)
 	if _, err := io.ReadFull(conn, init); err != nil {
 		return
@@ -133,11 +134,11 @@ func TestReplay110WordRead(t *testing.T) {
 			return make([]byte, 56)
 		}
 	})
-	c, err := Dial(f.addr, time.Second)
+	c, err := Dial(context.Background(), f.addr, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	got, err := c.ReadWords(context.Background(), MemR, 1, 110)
 	if err != nil {
 		t.Fatal(err)
@@ -158,11 +159,11 @@ func TestReplay110WordRead(t *testing.T) {
 
 func TestReadWordsAgainstFakeServer(t *testing.T) {
 	f := startFake(t, okReply([]uint16{0x1111, 0x2222}))
-	c, err := Dial(f.addr, time.Second)
+	c, err := Dial(context.Background(), f.addr, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	got, err := c.ReadWords(context.Background(), MemR, 1, 2)
 	if err != nil {
 		t.Fatal(err)
@@ -176,11 +177,11 @@ func TestShortInlineReplyErrors(t *testing.T) {
 	// 56-byte header holds 12 inline bytes. Asking for 8 words needs 16, so
 	// the old path zero-padded. readMemoryOnce is the chunker that sees it.
 	f := startFake(t, okReply([]uint16{1}))
-	c, err := Dial(f.addr, time.Second)
+	c, err := Dial(context.Background(), f.addr, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	_, err = c.readMemoryOnce(context.Background(), MemR, 0, 8)
 	if err == nil {
 		t.Fatal("short inline reply returned success")
@@ -193,11 +194,11 @@ func TestResponseSequenceMismatch(t *testing.T) {
 		msg[2] = req[2] + 1
 		return msg
 	})
-	c, err := Dial(f.addr, time.Second)
+	c, err := Dial(context.Background(), f.addr, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	_, err = c.ReadWords(context.Background(), MemR, 1, 2)
 	if err == nil {
 		t.Fatal("mismatched sequence returned success")
@@ -210,11 +211,11 @@ func TestUnexpectedReplyTypeErrors(t *testing.T) {
 		msg[31] = 0x00
 		return msg
 	})
-	c, err := Dial(f.addr, time.Second)
+	c, err := Dial(context.Background(), f.addr, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	_, err = c.ReadWords(context.Background(), MemR, 1, 2)
 	if err == nil {
 		t.Fatal("reply type 0x00 returned success")
@@ -227,11 +228,11 @@ func TestResponseStatusErrors(t *testing.T) {
 		msg[42] = 0x07
 		return msg
 	})
-	c, err := Dial(f.addr, time.Second)
+	c, err := Dial(context.Background(), f.addr, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	_, err = c.ReadWords(context.Background(), MemR, 1, 2)
 	if err == nil {
 		t.Fatal("nonzero status returned success")
@@ -241,11 +242,11 @@ func TestResponseStatusErrors(t *testing.T) {
 func TestReadRespectsContext(t *testing.T) {
 	f := startFake(t, okReply([]uint16{1, 2}))
 	f.hold = make(chan struct{})
-	c, err := Dial(f.addr, 5*time.Second)
+	c, err := Dial(context.Background(), f.addr, 5*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	ctx, cancel := context.WithCancel(context.Background())
 	errc := make(chan error, 1)
 	go func() {
@@ -267,7 +268,7 @@ func TestReadRespectsContext(t *testing.T) {
 func TestCloseDuringReadDoesNotRace(t *testing.T) {
 	f := startFake(t, okReply([]uint16{1, 2}))
 	f.hold = make(chan struct{})
-	c, err := Dial(f.addr, time.Second)
+	c, err := Dial(context.Background(), f.addr, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}

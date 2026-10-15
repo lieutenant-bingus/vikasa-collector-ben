@@ -1,6 +1,7 @@
 package openits
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -235,7 +236,7 @@ func validatePayload(schemas, ceType string, data []byte) string {
 
 func schemaDir(t *testing.T) string {
 	t.Helper()
-	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/Vikasa2M/openits-models").Output()
+	out, err := exec.CommandContext(context.Background(), "go", "list", "-m", "-f", "{{.Dir}}", "github.com/Vikasa2M/openits-models").Output()
 	if err != nil {
 		t.Fatal(err)
 	}

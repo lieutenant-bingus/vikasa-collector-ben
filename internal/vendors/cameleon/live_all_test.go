@@ -35,7 +35,6 @@ func TestLiveAllACSCabinets(t *testing.T) {
 
 	var reachable, unreachable int
 	for _, d := range cfg.Devices {
-		d := d
 		t.Run(d.ID, func(t *testing.T) {
 			a, err := reg.Build(d.Vendor, d.DeviceKind, d.ID, d.Connection)
 			if err != nil {
