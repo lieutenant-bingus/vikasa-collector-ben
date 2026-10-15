@@ -194,11 +194,11 @@ func run(stopAfter time.Duration) error {
 	if err != nil {
 		return fmt.Errorf("temp store dir: %w", err)
 	}
-	defer os.RemoveAll(storeDir)
+	defer func() { _ = os.RemoveAll(storeDir) }()
 
 	// Port -1 asks the server for any free port, so two `make dev` runs do
 	// not fight over 4222 and neither collides with a real local broker.
-	ns, err := server.NewServer(&server.Options{Port: -1, JetStream: true, StoreDir: storeDir})
+	ns, err := server.NewServer(&server.Options{Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: storeDir})
 	if err != nil {
 		return fmt.Errorf("start embedded nats: %w", err)
 	}
@@ -223,7 +223,7 @@ func run(stopAfter time.Duration) error {
 	if err != nil {
 		return fmt.Errorf("temp config dir: %w", err)
 	}
-	defer os.RemoveAll(cfgDir)
+	defer func() { _ = os.RemoveAll(cfgDir) }()
 	cfgPath := filepath.Join(cfgDir, "collector.yaml")
 	if err := os.WriteFile(cfgPath, []byte(devConfig), 0o600); err != nil {
 		return fmt.Errorf("write dev config: %w", err)
@@ -254,7 +254,7 @@ func run(stopAfter time.Duration) error {
 
 	fmt.Println("running the real app.Run against a synthetic device — Ctrl-C to stop")
 	fmt.Println()
-	if err := app.Run(ctx, cfg, reg, ns.ClientURL(), "dev"); err != nil {
+	if err := app.Run(ctx, cfg, reg, app.Options{NATSURL: ns.ClientURL(), Version: "dev", Logger: slog.Default()}); err != nil {
 		return err
 	}
 	return nil

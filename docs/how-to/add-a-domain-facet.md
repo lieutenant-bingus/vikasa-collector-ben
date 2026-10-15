@@ -81,7 +81,7 @@ add one:
 ## Differ (`internal/synth/<domain>.go`)
 
 A differ implements `synth.Differ`
-(`Kind() model.Kind` and `Diff(prev, curr model.Facet, base model.Base) []model.Event`,
+(`Facet() model.Facet` — the zero value of the one facet type it diffs, from which the engine takes its kind — and `Diff(prev, curr model.Facet, base model.Base) []model.Event`,
 `internal/synth/synth.go`) and gets registered as one of the
 `synth.NewEngine(...)` arguments in `internal/app/app.go` — see that
 constructor call for the full list of differs the collector currently
@@ -146,11 +146,11 @@ go test ./... -race
 gofmt -l .
 ```
 
-`make check` runs `go vet`, the full test suite, and
-`scripts/lint-boundary.sh` — the same gate CI runs. A facet or differ
+`make check` runs `go vet`, golangci-lint, the full test suite under the race
+detector, and `scripts/lint-boundary.sh` — the same gate CI runs. A facet or differ
 change never needs to touch `internal/wire` or import openits-models, so
 if the boundary lint flags your change, that's a sign the concept belongs
-somewhere else in the layering, not a lint false positive. `go test ./... -race`
+somewhere else in the layering, not a lint false positive. The race detector
 matters here specifically because `synth.Engine.Apply` is called from the
 poll loop, which runs one goroutine per device concurrently — see
 [`docs/explanation/testing-strategy.md`'s `-race` section](../explanation/testing-strategy.md#-race-because-polling-and-publishing-are-concurrent).

@@ -1,6 +1,12 @@
 # ADR 0019: Collector self-health is a periodic heartbeat on a per-instance subject
 
-**Status:** Proposed (2026-08-23)
+**Status:** Accepted (2026-10-12; proposed 2026-08-23). Amended 2026-10-14:
+device reachability moves to the catalog's `<service>.comm-health-event` *per
+device kind*, where the pinned catalog has that channel. A kind whose service
+has none yet — DMS today, which shipped an adapter after this record assumed
+none would — keeps `openits-collector.health.device-status-changed.v1` as a
+fallback rather than losing reachability, and the fallback shrinks as
+upstream fans comm-health out (see "One upstream gap" below).
 **Amends:** [ADR 0007](0007-collector-owned-health-schema.md) — adds to the
 collector-owned health schema it established, and changes how device-less
 events render their subject.

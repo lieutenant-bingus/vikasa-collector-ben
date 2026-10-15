@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"maps"
 	"time"
 
 	"github.com/Vikasa2M/vikasa-collector/sdk/adapter"
@@ -144,9 +145,7 @@ func (a *dms) mergeOptionalHumidity(ctx context.Context, vals *snmp.Values) {
 	if vals.Ints == nil {
 		vals.Ints = make(map[string]int64)
 	}
-	for k, v := range hum.Ints {
-		vals.Ints[k] = v
-	}
+	maps.Copy(vals.Ints, hum.Ints)
 }
 
 func (a *dms) readDMSStatus(snap *model.Snapshot, vals snmp.Values) {

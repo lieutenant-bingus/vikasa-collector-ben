@@ -12,9 +12,10 @@ than restating it.
 
 ## Any change
 
-- `make check` (vet + tests + boundary lint) passes.
-- `go test ./... -race` passes. Poll loops are concurrent; a race here is a
-  real bug, not flakiness.
+- `make check` passes: vet, golangci-lint (gofmt included), tidy and
+  checksum verification, the test suite under the race detector, and the
+  boundary and docs lints. Poll loops are concurrent; a race here is a real
+  bug, not flakiness.
 
 ## A new differ
 
@@ -57,19 +58,14 @@ starting point (see the gap note below on why not `signal_test.go`). Cover:
   (`internal/synth/signal_test.go`), `TestDMSEventsCarryDeviceKind`
   (`internal/synth/dms_test.go`).
 
-**Known gap, not a precedent.** Only 4 of the collector's 8 registered
-differs currently have a dedicated failed-read test proving the
-absence-of-evidence rule holds for them (signal, fault, detector, DMS —
-see the invariants row linked above for the exact test names). CCTV,
-traffic-interval, zone-incident, and zone-interval do not. A PR touching
-one of those four differs is expected to add the missing test as part of
-that change, not to treat its current absence as acceptable. Separately,
-the signal differ — the one differ that feeds the collector's only shipped
-adapter — has no axis-independence test in the shape described above
-(`internal/synth/signal_test.go`'s `TestTransitionsEmitChangeEvents`
-changes three axes simultaneously and only checks one event is *present*,
-never that the others are *absent*). Do not copy that file's pattern for a
-new differ; copy `dms_test.go`'s.
+**Shapes to copy.** `internal/synth/dms_test.go` for the axis matrix, and
+`internal/synth/failed_read_test.go` for the failed-read case: drive a real
+`Engine` through good poll → failed poll → recovery, and pick a recovery
+that would emit something different if the engine had forgotten its state.
+`internal/synth/signal_test.go`'s `TestTransitionsEmitChangeEvents` moves
+three axes at once and only checks presence — `TestSignalAxesChangeIndependently`
+beside it is the pattern, not that one.
+
 
 ## A new adapter
 

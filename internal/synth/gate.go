@@ -17,7 +17,7 @@ func NewGateDiffer() Differ { return gateDiffer{} }
 
 type gateDiffer struct{}
 
-func (gateDiffer) Kind() model.Kind { return model.KindGateBank }
+func (gateDiffer) Facet() model.Facet { return model.GateBank{} }
 
 func (gateDiffer) Diff(prev, curr model.Facet, base model.Base) []model.Event {
 	c := curr.(model.GateBank)

@@ -41,8 +41,8 @@ func TestShutdownDoesNotSlanderTheDevice(t *testing.T) {
 	}
 
 	dev := &slowASC{started: make(chan struct{}, 1)}
-	r := New(dev, "asc-1", 5*time.Millisecond, time.Second,
-		synth.NewEngine(synth.NewSignalDiffer()), out)
+	r := New(dev, Config{DeviceID: "asc-1", Interval: 5 * time.Millisecond, Timeout: time.Second,
+		Engine: synth.NewEngine(synth.NewSignalDiffer()), Out: out})
 	r.SetJitter(func(time.Duration) time.Duration { return 0 })
 
 	ctx, cancel := context.WithCancel(context.Background())

@@ -501,6 +501,10 @@ func errorTypeFor(e model.MultiSyntaxError) dmsv1.ErrorType {
 	}
 }
 
+// commHealth prefixes identities defined by openits-common-comm-health-events
+// (comm-lost, comm-restored), which every service's comm-health-event shares.
+const commHealth = "openits-common-comm-health-events:"
+
 // registryBase is the schema-registry root the profile's ce-dataschema URLs
 // resolve against.
 const registryBase = "https://schemas.open-its.org/"
@@ -522,6 +526,8 @@ const registryBase = "https://schemas.open-its.org/"
 // intended trade: a pin bump shows up as a reviewable diff of these constants
 // rather than as a silent behaviour change, and the goldens lock them.
 var dataSchemaFor = map[string]string{
+	"openits.signal-control.comm-health-event.v1": registryBase + "openits-common-comm-health-events/2026-09-02/",
+
 	"openits.signal-control.mode-changed.v1": registryBase + "openits-common-mode-events/2026-07-21/",
 	"openits.dms.mode-changed.v1":            registryBase + "openits-common-mode-events/2026-07-21/",
 

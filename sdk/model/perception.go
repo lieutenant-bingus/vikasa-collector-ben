@@ -11,6 +11,8 @@ const KindZoneIncidents Kind = "zone-incidents"
 // reporting IncidentUnknown rather than inventing a category.
 type IncidentType uint8
 
+// IncidentType values. The zero value, IncidentUnknown, means the sensor
+// reported a type with no category here.
 const (
 	IncidentUnknown IncidentType = iota
 	IncidentStoppedVehicle
@@ -49,6 +51,8 @@ func (t IncidentType) String() string {
 // ObjectClass is what the sensor classified the object as.
 type ObjectClass uint8
 
+// ObjectClass values. The zero value, ObjectUnknown, means the sensor did not
+// classify the object.
 const (
 	ObjectUnknown ObjectClass = iota
 	ObjectPassengerVehicle
@@ -91,6 +95,8 @@ func (c ObjectClass) String() string {
 // emitter: see the mapping, where the wire cannot express it.
 type IncidentSeverity uint8
 
+// IncidentSeverity values, in increasing severity. The zero value,
+// SeverityUnreported, means the sensor did not assess severity.
 const (
 	SeverityUnreported IncidentSeverity = iota
 	IncidentMinor

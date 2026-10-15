@@ -23,7 +23,7 @@ func TestDefaultTemplateGolden(t *testing.T) {
 		"openits.signal-control.fault-raised.v1":              "openits.us-tx.metro-atlanta.d07.signal-control.dev-1.fault-raised",
 		"openits.signal-control.operational-status-report.v1": "openits.us-tx.metro-atlanta.d07.signal-control.dev-1.operational-status-report",
 		"openits-collector.health.device-status-changed.v1":   "openits-collector.us-tx.metro-atlanta.d07.health.dev-1.device-status-changed",
-		"openits-collector.health.collector-started.v1":       "openits-collector.us-tx.metro-atlanta.d07.health.dev-1.collector-started",
+		"openits-collector.instance.started.v1":               "openits-collector.us-tx.metro-atlanta.d07.instance.dev-1.started",
 	}
 	for ceType, want := range cases {
 		got, err := tmpl.Render(ceType, "dev-1")
@@ -212,7 +212,7 @@ func TestBindingDerivation(t *testing.T) {
 // The guard moved from New() to Bindings(): the namespace is now itself a
 // per-event token, so "does the leftmost token vary" can only be answered
 // after it has been substituted. Both are still boot-time — Bindings is
-// called by publish.Connect during startup — so a bad grammar is still a
+// called by publish.Start during startup — so a bad grammar is still a
 // refusal to start rather than an unroutable event later.
 func TestBindingsRejectTemplatesWithNoStaticPrefix(t *testing.T) {
 	cases := []struct {
@@ -245,7 +245,7 @@ func TestValidateCETypes(t *testing.T) {
 		t.Fatal(err)
 	}
 	ok := []string{
-		"openits-collector.health.collector-started.v1",
+		"openits-collector.instance.started.v1",
 		"openits.signal-control.fault-raised.v1",
 	}
 	if err := tmpl.ValidateCETypes(ok, nil); err != nil {
@@ -288,7 +288,7 @@ func TestWithinBinding(t *testing.T) {
 	}{
 		{
 			name:    "wildcard binding accepts a real subject",
-			subj:    "openits.metro.cab-1.health.collector-started.v1",
+			subj:    "openits.metro.cab-1.instance.started.v1",
 			binding: "openits.metro.cab-1.>",
 			want:    true,
 		},
@@ -349,17 +349,17 @@ func TestDefaultTemplateIsTheSevenTokenProfileGrammar(t *testing.T) {
 	}
 }
 
-func TestRenderDeviceLessEventUsesCollector(t *testing.T) {
-	// Collector-level events (the boot event) have no device. {device_id} was
-	// previously rejected outright BECAUSE of them; rendering the literal
-	// "collector" is what lets the token graduate, so every event the
-	// collector can emit has a legal subject.
+func TestRenderDeviceLessEventUsesSite(t *testing.T) {
+	// Collector-level events have no device. ADR 0019 clause 2: {device_id}
+	// renders as the site — one collector per cabinet makes site the
+	// collector's identity, and ce-source already uses it as the id segment
+	// for exactly these events, so subject and envelope name one thing.
 	tmpl, _ := New(Config{}, Identity{Region: "us-tx", Agency: "txdot", AgencyUnit: "d07", Site: "cab-1"})
-	got, err := tmpl.Render("openits-collector.health.collector-started.v1", "")
+	got, err := tmpl.Render("openits-collector.instance.heartbeat.v1", "")
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
-	want := "openits-collector.us-tx.txdot.d07.health.collector.collector-started"
+	want := "openits-collector.us-tx.txdot.d07.instance.cab-1.heartbeat"
 	if got != want {
 		t.Errorf("Render = %q, want %q", got, want)
 	}
@@ -372,7 +372,7 @@ func TestBindingTruncatesAtTheFirstPerEventToken(t *testing.T) {
 	tmpl, _ := New(Config{}, Identity{Region: "us-tx", Agency: "txdot", AgencyUnit: "d07", Site: "cab-1"})
 	got, err := tmpl.Bindings([]string{
 		"openits.signal-control.fault-raised.v1",
-		"openits-collector.health.collector-started.v1",
+		"openits-collector.instance.started.v1",
 	})
 	if err != nil {
 		t.Fatalf("Bindings: %v", err)
@@ -422,8 +422,8 @@ func TestRenderRootsOnTheCETypeNamespace(t *testing.T) {
 	for _, tc := range []struct{ ceType, deviceID, want string }{
 		{"openits.signal-control.fault-raised.v1", "i35-exit-214",
 			"openits.us-tx.txdot.d07.signal-control.i35-exit-214.fault-raised"},
-		{"openits-collector.health.collector-started.v1", "",
-			"openits-collector.us-tx.txdot.d07.health.collector.collector-started"},
+		{"openits-collector.instance.started.v1", "",
+			"openits-collector.us-tx.txdot.d07.instance.cab-1.started"},
 		{"openits-collector.health.device-status-changed.v1", "asc-1",
 			"openits-collector.us-tx.txdot.d07.health.asc-1.device-status-changed"},
 	} {
@@ -448,7 +448,7 @@ func TestBindingsAreOnePerNamespace(t *testing.T) {
 	got, err := tmpl.Bindings([]string{
 		"openits.signal-control.fault-raised.v1",
 		"openits.dms.mode-changed.v1", // same namespace: must not duplicate
-		"openits-collector.health.collector-started.v1",
+		"openits-collector.instance.started.v1",
 	})
 	if err != nil {
 		t.Fatalf("Bindings: %v", err)

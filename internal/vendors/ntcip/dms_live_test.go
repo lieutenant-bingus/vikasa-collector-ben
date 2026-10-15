@@ -28,7 +28,7 @@ func TestLiveDMSRead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial %s: %v", addr, err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

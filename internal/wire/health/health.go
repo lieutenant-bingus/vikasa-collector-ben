@@ -16,16 +16,20 @@ func NewHealthEmitter() wire.Emitter { return emitter{} }
 
 type emitter struct{}
 
-// ceTypeDeviceStatusChanged and ceTypeCollectorStarted are the collector-owned
-// health ce-types (ADR 0007).
+// The collector-owned ce-types (ADR 0007). device-status-changed is still
+// here until device reachability moves to the catalog (ADR 0019 Scope);
+// the instance.* family is the collector's own health.
 const (
 	ceTypeDeviceStatusChanged = "openits-collector.health.device-status-changed.v1"
-	ceTypeCollectorStarted    = "openits-collector.health.collector-started.v1"
+	ceTypeStarted             = "openits-collector.instance.started.v1"
+	ceTypeStopping            = "openits-collector.instance.stopping.v1"
+	ceTypeHeartbeat           = "openits-collector.instance.heartbeat.v1"
+	ceTypeLog                 = "openits-collector.instance.log.v1"
 )
 
 func (emitter) CETypes() []string {
 	// Sorted: boot validation and goldens both iterate this.
-	return []string{ceTypeCollectorStarted, ceTypeDeviceStatusChanged}
+	return []string{ceTypeDeviceStatusChanged, ceTypeHeartbeat, ceTypeLog, ceTypeStarted, ceTypeStopping}
 }
 
 type deviceStatusBody struct {
@@ -36,11 +40,6 @@ type deviceStatusBody struct {
 	ConsecutiveFailures int       `json:"consecutive_failures"`
 }
 
-type collectorStartedBody struct {
-	OccurredAt time.Time `json:"occurred_at"`
-	Version    string    `json:"version"`
-}
-
 func (emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 	switch e := ev.(type) {
 	case model.DeviceStatusChanged:
@@ -48,9 +47,26 @@ func (emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 			DeviceID: e.DeviceID, OccurredAt: e.OccurredAt.UTC(),
 			Reachable: e.Reachable, Reason: e.Reason, ConsecutiveFailures: e.ConsecutiveFailures,
 		})
-	case model.CollectorStarted:
-		return encodeJSON(ceTypeCollectorStarted, collectorStartedBody{
-			OccurredAt: e.OccurredAt.UTC(), Version: e.Version,
+	case Started:
+		return encodeJSON(ceTypeStarted, identity(e.Base, e.Instance))
+	case Stopping:
+		return encodeJSON(ceTypeStopping, stoppingBody{
+			identityBody: identity(e.Base, e.Instance), UptimeSeconds: int64(e.Uptime / time.Second),
+		})
+	case Log:
+		attrs := e.Attrs
+		if attrs == nil {
+			attrs = map[string]string{} // always an object on the wire, never null
+		}
+		return encodeJSON(ceTypeLog, logBody{
+			identityBody: identity(e.Base, e.Instance), Level: e.Level, Message: e.Message, Attrs: attrs,
+		})
+	case Heartbeat:
+		return encodeJSON(ceTypeHeartbeat, heartbeatBody{
+			identityBody: identity(e.Base, e.Instance), UptimeSeconds: int64(e.Uptime / time.Second),
+			CPUSecondsTotal: e.Resource.CPUSecondsTotal, MemoryBytes: e.Resource.MemoryBytes,
+			HeapObjectsBytes: e.Resource.HeapObjectsBytes, Goroutines: e.Resource.Goroutines,
+			Snapshot: e.Counters,
 		})
 	default:
 		return nil, false, nil

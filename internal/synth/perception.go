@@ -18,7 +18,7 @@ func NewZoneIncidentDiffer() Differ { return zoneIncidentDiffer{} }
 
 type zoneIncidentDiffer struct{}
 
-func (zoneIncidentDiffer) Kind() model.Kind { return model.KindZoneIncidents }
+func (zoneIncidentDiffer) Facet() model.Facet { return model.ZoneIncidents{} }
 
 func (zoneIncidentDiffer) Diff(prev, curr model.Facet, base model.Base) []model.Event {
 	c := curr.(model.ZoneIncidents)
@@ -118,7 +118,7 @@ func NewZoneIntervalDiffer() Differ { return zoneIntervalDiffer{} }
 
 type zoneIntervalDiffer struct{}
 
-func (zoneIntervalDiffer) Kind() model.Kind { return model.KindZoneIntervals }
+func (zoneIntervalDiffer) Facet() model.Facet { return model.ZoneIntervals{} }
 
 func (zoneIntervalDiffer) Diff(prev, curr model.Facet, base model.Base) []model.Event {
 	c := curr.(model.ZoneIntervals)

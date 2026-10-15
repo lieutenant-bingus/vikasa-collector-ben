@@ -12,7 +12,7 @@ func NewFaultDiffer() Differ { return faultDiffer{} }
 
 type faultDiffer struct{}
 
-func (faultDiffer) Kind() model.Kind { return model.KindFaultSet }
+func (faultDiffer) Facet() model.Facet { return model.FaultSet{} }
 
 func (faultDiffer) Diff(prev, curr model.Facet, base model.Base) []model.Event {
 	currFaults := index(curr.(model.FaultSet))

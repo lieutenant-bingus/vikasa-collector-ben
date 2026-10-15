@@ -151,17 +151,16 @@ per-service fallback) — is
 this document only points a new mapping decision at it rather than
 re-deriving the rule.
 
-## A known gap: no catalog-conformance check
+## The catalog-conformance check
 
-Nothing in step 5 above checks your new mapping against the pinned
-openits-models catalog itself — `TestGoldensCoverEveryCEType` only checks
-that the emitter's own goldens keep up with its own routing table, which
-is a narrower claim than it looks. `internal/wire/health` has a real
-conformance test against an external document; `internal/wire/openits`
-does not, and this is a tracked gap rather than an oversight this document
-is the first to notice — see
-[`docs/README.md`'s known-gaps entry for it](../README.md#the-code-does-not-meet-a-bar-the-docs-correctly-state)
-for the full account.
+`internal/wire/openits/catalog_test.go` compares the emitter against the
+pinned openits-models catalog in both directions. When you map a ce-type,
+delete its line from the `unmapped` allowlist in that file —
+`TestUnmappedAllowlistIsCurrent` fails until you do, because an allowlisted
+type that is now mapped is a stale claim. A ce-type you emit that the pinned
+release does not declare fails `TestEmittedCETypesAreInPinnedCatalog`; the
+fix is never to invent one (see
+[the "not reshaped" rule](../reference/invariants.md#openits-models-is-not-reshaped-to-suit-the-collector)).
 
 ## Verify
 
@@ -171,10 +170,10 @@ go test ./... -race
 gofmt -l .
 ```
 
-`make check` runs `go vet`, the full suite, and
-`scripts/lint-boundary.sh` — the same gate that fails the build if
+`make check` runs `go vet`, golangci-lint, the full suite under the race
+detector, and `scripts/lint-boundary.sh` — the same gate that fails the build if
 anything outside `internal/wire` reaches for an openits-models type.
-`go test ./... -race` matters here because emitters are called
+The race detector matters here because emitters are called
 concurrently, one goroutine per polled device — `TestEncode_SequenceIsSafeUnderConcurrentDevices`
 (`internal/wire/openits/emitter_test.go`) exists specifically to exercise
 that. `gofmt -l .` should print nothing.

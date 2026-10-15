@@ -300,37 +300,21 @@ func parseSNMPBlock(conn map[string]any) (snmp.DialConfig, error) {
 }
 ```
 
-Now edit `cmd/collector/main.go`. Only two lines change from the file
+Now edit `cmd/collector/adapters.go`. Only two lines change from the file
 you cloned: one new import (`.../internal/vendors/acme`) and one new call
 in `RegisterAdapters` (`acme.RegisterTo(r)`) — the one place in the whole
-binary that decides which vendors it ships with. Everything else in the
-file, including `func main()` below, is unchanged. To make that
-unmistakable rather than something you have to work out, here is the
-complete file with those two lines in place — replace
-`cmd/collector/main.go` with this:
+binary that decides which vendors it ships with. The file holds nothing
+else, so here it is complete with those two lines in place — replace
+`cmd/collector/adapters.go` with this:
 
 ```go
-// Command collector is the OpenITS cabinet edge collector: polls local
-// devices via registered vendor adapters and publishes CloudEvents to the
-// cabinet-local NATS JetStream.
 package main
 
 import (
-	"context"
-	"flag"
-	"fmt"
-	"os"
-	"os/signal"
-	"syscall"
-
-	"github.com/Vikasa2M/vikasa-collector/internal/app"
-	"github.com/Vikasa2M/vikasa-collector/internal/config"
 	"github.com/Vikasa2M/vikasa-collector/internal/vendors/acme"
 	"github.com/Vikasa2M/vikasa-collector/internal/vendors/ntcip"
 	"github.com/Vikasa2M/vikasa-collector/sdk/adapter"
 )
-
-var version = "dev" // set via -ldflags "-X main.version=..."
 
 // RegisterAdapters wires every compiled-in adapter into the registry. This is
 // the one place the binary decides which vendors it ships with; contributing an
@@ -338,38 +322,6 @@ var version = "dev" // set via -ldflags "-X main.version=..."
 func RegisterAdapters(r *adapter.Registry) {
 	ntcip.RegisterTo(r)
 	acme.RegisterTo(r)
-}
-
-func main() {
-	cfgPath := flag.String("config", "", "path to collector.yaml (required)")
-	natsURL := flag.String("nats", "nats://127.0.0.1:4222", "local NATS URL")
-	showVersion := flag.Bool("version", false, "print version and exit")
-	flag.Parse()
-
-	if *showVersion {
-		fmt.Println(version)
-		return
-	}
-	if *cfgPath == "" {
-		fmt.Fprintln(os.Stderr, "-config is required")
-		os.Exit(2)
-	}
-
-	reg := adapter.NewRegistry()
-	RegisterAdapters(reg)
-
-	cfg, err := config.Load(*cfgPath, reg)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-	if err := app.Run(ctx, cfg, reg, *natsURL, version); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
 }
 ```
 
@@ -535,7 +487,7 @@ per step 2, it doesn't need one. So this test builds its own tiny
 (step 2) does for its own fake adapter: register `acme-asc` directly against
 a factory that calls `NewASC` with `snmptest.Static`, skipping the network
 entirely. `RegisterTo` still exists, is still wired into
-`cmd/collector/main.go`, and is still what a real deployment uses — this
+`cmd/collector/adapters.go`, and is still what a real deployment uses — this
 test just isn't a real deployment.
 
 Create `internal/vendors/acme/e2e_test.go`:
@@ -623,7 +575,7 @@ devices:
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	go func() { _ = app.Run(ctx, cfg, reg, ns.ClientURL(), "test") }()
+	go func() { _ = app.Run(ctx, cfg, reg, app.Options{NATSURL: ns.ClientURL(), Version: "test"}) }()
 
 	const want = "openits.signal-control.operational-status-report.v1"
 	deadline := time.After(8 * time.Second)
@@ -657,7 +609,7 @@ you want the full derivation), but the subjects and ce-types are not:
 
 ```
 === RUN   TestWatchEventReachJetStream
-    e2e_test.go:91: subject=openits-collector.us-ga.metro.d01.health.collector.collector-started ce-type=openits-collector.health.collector-started.v1 ce-source=urn:openits:collector:us-ga:metro:d01:cab-1 ce-id=01M09A1W6PPFSW7TVJKDHRMYYD
+    e2e_test.go:91: subject=openits-collector.us-ga.metro.d01.instance.cab-1.started ce-type=openits-collector.instance.started.v1 ce-source=urn:openits:collector:us-ga:metro:d01:cab-1 ce-id=01M09A1W6PPFSW7TVJKDHRMYYD
     e2e_test.go:91: subject=openits.us-ga.metro.d01.signal-control.asc-1.operational-status-report ce-type=openits.signal-control.operational-status-report.v1 ce-source=urn:openits:controller:us-ga:metro:d01:asc-1 ce-id=01M09A1W74NWZEGW4RMVKGNBW5
 --- PASS: TestWatchEventReachJetStream (0.02s)
 PASS
@@ -665,7 +617,7 @@ ok  	github.com/Vikasa2M/vikasa-collector/internal/vendors/acme	0.023s
 ```
 
 Two events, in order: the collector's own boot event first
-(`collector-started`, on the `openits-collector.*` namespace — collector
+(`instance.started`, on the `openits-collector.*` namespace — collector
 health always publishes there, never mixed with device telemetry), then the
 event your adapter caused: `operational-status-report`, on
 `openits.us-ga.metro.d01.signal-control.asc-1.operational-status-report`.

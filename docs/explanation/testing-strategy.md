@@ -180,38 +180,32 @@ documented payload shape must match the bytes actually emitted. This is a
 genuine bidirectional check — it fails on drift in either direction, not
 just one.
 
-### The catalog-conformance claim that does not hold
+### The catalog-conformance check
 
 ADR 0008 states the bar for the *catalog* emitter (`internal/wire/openits`):
 every ce-type it can produce must exist in the **pinned openits-models
-release's own** `asyncapi.yaml` — so a drift between what the collector
-claims to emit and what the upstream catalog actually defines is a CI
-failure, not a production surprise discovered later.
+release's own** `asyncapi.yaml`, so a drift between what the collector
+claims to emit and what the upstream catalog defines is a CI failure, not a
+production surprise.
 
-No such check exists for `internal/wire/openits` today. It is tempting to
-read `TestGoldensCoverEveryCEType` (above) as satisfying this — it has the
-right shape, an exhaustiveness assertion over ce-types — but read closely,
-it iterates `New("x").CETypes()` and checks that set against the emitter's
-own `goldenCases`, which is itself built from the emitter's own `ceTypeFor`
-routing table. It checks the emitter's mapping table against itself. A
-ce-type the pinned openits-models release declares but this emitter never
-mapped is invisible to every check in this repo — that gap would only
-surface as a runtime silent-drop or a human noticing.
+`internal/wire/openits/catalog_test.go` is that check. It locates the pinned
+release in the module cache (`go list -m`, so go.mod alone picks the
+version), reads its `bindings/nats/asyncapi.yaml`, and asserts both
+directions: `TestEmittedCETypesAreInPinnedCatalog` fails on a ce-type the
+emitter produces that the release does not declare, and
+`TestEveryCatalogCETypeIsMappedOrAllowlisted` fails on a declared ce-type the
+emitter neither maps nor lists in `unmapped` with a reason.
+`TestUnmappedAllowlistIsCurrent` keeps that allowlist honest: an entry that
+is now mapped, or that the release no longer declares, fails as stale.
 
-`internal/wire/health/conformance_test.go` is the shape a real catalog check
-would take — an emitter's `CETypes()` checked against an external document
-in both directions — it just checks against this repo's own local
-`asyncapi.yaml` (which documents only the collector-owned
-`openits-collector.*` namespace) rather than the pinned models release's
-catalog. Building the `internal/wire/openits` equivalent, reading the pinned
-release's `bindings/nats/asyncapi.yaml` from the module cache, is tracked
-work — see
-[known gaps and successor work](../README.md#the-code-does-not-meet-a-bar-the-docs-correctly-state).
+Do not read `TestGoldensCoverEveryCEType` (above) as part of this. It checks
+the emitter's goldens against the emitter's own routing table — that every
+mapped ce-type has a fixture — and says nothing about the catalog.
 
 ## `-race`: because polling and publishing are concurrent
 
-`go test ./... -race` runs the same suite with Go's race detector attached,
-and CI runs it as a separate, required pass alongside `make check`. This
+`make check` runs the suite with Go's race detector attached — there is no
+separate non-race pass, because a race-enabled run proves strictly more. This
 matters here specifically because poll loops and the publisher are not
 incidentally concurrent — each configured device polls on its own timer in
 its own goroutine, and the publisher drains a shared event channel while
@@ -292,7 +286,7 @@ never fail on real decay would read as coverage without being coverage.
 | Golden tests | Encoding is stable; a change is visible as a diff | Whether the pinned mapping is semantically correct |
 | Fixture replay | The adapter parses what it was handed | Whether what it was handed resembles a real device |
 | Differ tests | State transitions are correct, including the absence rule | Only for the facets that have a failed-read case (4 of 8) |
-| Conformance tests | Published shape matches an external contract | Only the contract the test actually loads — see the catalog-conformance gap above |
+| Conformance tests | Published shape matches an external contract | Only the contract the test actually loads — the openits check reads the pinned release's `asyncapi.yaml`, not openits-models' prose or JSON Schemas |
 | `-race` | No race occurred on the interleavings this run actually exercised | Races on paths not run, or interleavings that didn't happen to occur — it is dynamic, not exhaustive |
 | Doc guards | A specific structural claim still matches the code | Whether the claim is relevant, or the surrounding prose is accurate |
 

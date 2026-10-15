@@ -20,7 +20,7 @@ cover. Have them open.
 **What your PR should touch, and nothing else:**
 
 - `internal/vendors/<vendor>/<kind>.go` and its test — new files
-- one line in `RegisterAdapters` (`cmd/collector/main.go`)
+- one line in `RegisterAdapters` (`cmd/collector/adapters.go`)
 - optionally an example entry in `collector.yaml`
 
 Knowing this up front saves the most review time of anything on this page.
@@ -157,20 +157,14 @@ watched the code actually do it.
 
 ## Set capability bits to match what you implemented
 
-`Descriptor.Caps` is a bitset (`Capability`, `sdk/adapter/adapter.go`):
-`CapState` for `StateReader`, `CapEvents` for `EventReader`, `CapCommand`
-for the still-dormant `Commander` seam. Set only the bits your adapter
-actually satisfies — `ascDescriptor`'s `Caps: adapter.CapState` in both
-`ntcip-asc` and the tutorial's `acme-asc` is the pattern, because both
-adapters implement `StateReader` and nothing else. Claiming a capability
-your type doesn't implement will not compile (the registration signature
-requires the interface), but claiming a capability your adapter doesn't
-*mean* to support — e.g. leaving `CapCommand` set on a read-only adapter
-copy-pasted from another one — is a review-time mistake, not a
-compile-time one, so check it explicitly before opening the PR. See
-[`pluggability.md`'s "Capability: what an adapter can do" section](../explanation/pluggability.md#capability-what-an-adapter-can-do)
-for the full contract, including a gap worth knowing about before you
-claim `CapEvents`.
+`Descriptor.Caps` is a bitset (`Capability`, `sdk/adapter/adapter.go`) with
+one bit today: `CapState`, for `StateReader`. Set it — `ascDescriptor`'s
+`Caps: adapter.CapState` in both `ntcip-asc` and the tutorial's `acme-asc`
+is the pattern. If your device produces discrete events rather than state
+(a log fetcher, say), the SDK has no interface for it yet, by design: see
+[ADR 0021](../adr/0021-sdk-interfaces-ship-with-their-first-implementer.md)
+and raise it before writing the adapter, since that adapter will also
+define the interface and its runner path.
 
 ## Register the adapter
 
@@ -179,7 +173,7 @@ Two pieces, both covered in depth by
 a `RegisterTo(r *adapter.Registry)` function in your new
 `internal/vendors/<vendor>/register.go` that calls `r.Register` with your
 `Descriptor` and a factory closure, and one added line in
-`RegisterAdapters` (`cmd/collector/main.go`). `internal/app` takes no part
+`RegisterAdapters` (`cmd/collector/adapters.go`). `internal/app` takes no part
 in this — it only ever receives an already-populated `*adapter.Registry`.
 
 Lay the package out the way `ntcip` actually is: `internal/vendors/<vendor>/<kind>.go`
@@ -250,11 +244,12 @@ go test ./... -race
 gofmt -l .
 ```
 
-`make check` runs `go vet`, the full test suite, and `scripts/lint-boundary.sh`
+`make check` runs `go vet`, golangci-lint, the full test suite under the race
+detector, and `scripts/lint-boundary.sh`
 — the same gate CI runs and the one that will reject an adapter reaching for
 an openits-models type directly (see
 [the "Adapters and `sdk/` never import openits-models" row](../reference/invariants.md#adapters-and-sdk-never-import-openits-models)
-in `invariants.md`). `go test ./... -race` is required separately because
+in `invariants.md`). The suite runs under `-race` because
 the collector's poll loop and publisher run as concurrent goroutines — see
 [`testing-strategy.md`'s `-race` section](../explanation/testing-strategy.md#-race-because-polling-and-publishing-are-concurrent)
 for what a green run does and doesn't prove. `gofmt -l .` should print nothing;

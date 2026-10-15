@@ -4,8 +4,8 @@
 
 ## Checklist
 
-- [ ] `make check` passes (vet + tests + boundary lint)
-- [ ] `go test ./... -race` passes
+- [ ] `make check` passes (vet, golangci-lint, tidy, race-enabled tests,
+      boundary and docs lints)
 - [ ] Adapters return only `sdk/model` types and don't reach for
       openits-models — see [the boundary
       rule](../docs/reference/invariants.md#adapters-and-sdk-never-import-openits-models)

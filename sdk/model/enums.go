@@ -4,6 +4,8 @@ package model
 // live in wire versions; this one never changes because upstream renames.
 type ControllerMode uint8
 
+// ControllerMode values. The zero value, ModeUnknown, means the controller
+// did not report a mode.
 const (
 	ModeUnknown ControllerMode = iota
 	ModeNormal
@@ -33,6 +35,8 @@ func (m ControllerMode) String() string {
 // renumbers, which is the whole point of ADR 0002.
 type FaultSeverity uint8
 
+// FaultSeverity values, in increasing severity. There is no unknown: the zero
+// value is SeverityInfo, as the catalog's FAULT_SEVERITY_INFO is 0.
 const (
 	SeverityInfo FaultSeverity = iota
 	SeverityWarning
@@ -65,6 +69,8 @@ func (s FaultSeverity) String() string {
 // single emitter's decision (ADR 0002) rather than a collection blocker.
 type FaultCategory uint8
 
+// FaultCategory values. The zero value, CategoryUnknown, means the fault did
+// not map to a known category.
 const (
 	CategoryUnknown FaultCategory = iota
 	CategoryConflict
@@ -111,6 +117,8 @@ func (c FaultCategory) String() string {
 // distinction explicitly rather than inherit it from a struct default.
 type DataQuality uint8
 
+// DataQuality values. The zero value, QualityUnknown, means the device did
+// not report quality.
 const (
 	QualityUnknown DataQuality = iota
 	QualityValid

@@ -14,7 +14,7 @@ func TestSourceFor_BuildsTheProfileURN(t *testing.T) {
 			"urn:openits:controller:us-tx:txdot:d07:i35-exit-214"},
 		"dms becomes sign": {"dms", "i35-mm214-nb",
 			"urn:openits:sign:us-tx:txdot:d07:i35-mm214-nb"},
-		// Collector-level events (collector-started) have no device. The
+		// Collector-level events (instance.*) have no device. The
 		// collector itself is the entity.
 		"no device becomes collector": {"", "",
 			"urn:openits:collector:us-tx:txdot:d07:cabinet-042"},

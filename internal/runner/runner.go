@@ -9,10 +9,13 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"math/rand"
+	"log/slog"
+	"math/rand/v2"
 	"time"
 
+	"github.com/Vikasa2M/vikasa-collector/internal/stats"
 	"github.com/Vikasa2M/vikasa-collector/internal/synth"
 	"github.com/Vikasa2M/vikasa-collector/sdk/adapter"
 	"github.com/Vikasa2M/vikasa-collector/sdk/model"
@@ -32,23 +35,76 @@ type Runner struct {
 	jitter func(time.Duration) time.Duration
 
 	consecutiveFailures int
+
+	// pending receives the result of a Read that outlived its poll. While it
+	// is non-nil that Read is still running, and no new one is started:
+	// adapters may assume they are never read concurrently.
+	pending chan readResult
+
+	counters *stats.Counters
+	devices  *stats.Devices
+	log      *slog.Logger
 }
 
-// New builds a Runner. timeout==0 defaults to interval.
-func New(dev adapter.StateReader, deviceID string, interval, timeout time.Duration,
-	engine *synth.Engine, out func([]model.Event)) *Runner {
-	if timeout <= 0 {
-		timeout = interval
+// adapterFault is a failed poll caused by the adapter's code, not the
+// device: a panic, or a nil snapshot with no error. The device was never
+// contacted (ADR 0019 clause 12).
+type adapterFault struct{ reason string }
+
+func (f adapterFault) Error() string { return f.reason }
+
+type readResult struct {
+	snap *model.Snapshot
+	err  error
+}
+
+// Config is what a Runner needs beyond the adapter itself.
+type Config struct {
+	DeviceID string
+	// Interval between polls. Non-positive panics, as time.NewTicker does:
+	// config.Load rejects one at boot, so it is a programming error here.
+	Interval time.Duration
+	// Timeout bounds one poll; zero means Interval.
+	Timeout time.Duration
+	Engine  *synth.Engine
+	// Out receives the events each poll produces. It must not block.
+	Out func([]model.Event)
+	// Counters receives the runner's counts (adapter panics); nil keeps
+	// them private.
+	Counters *stats.Counters
+	// Devices receives every poll outcome, for /status and readiness; nil
+	// keeps them private.
+	Devices *stats.Devices
+	// Log receives adapter faults; nil means slog.Default().
+	Log *slog.Logger
+}
+
+// New builds a Runner for one device.
+func New(dev adapter.StateReader, c Config) *Runner {
+	if c.Interval <= 0 {
+		panic(fmt.Sprintf("runner.New: non-positive poll interval %v for device %s", c.Interval, c.DeviceID))
+	}
+	if c.Timeout <= 0 {
+		c.Timeout = c.Interval
+	}
+	if c.Counters == nil {
+		c.Counters = new(stats.Counters)
+	}
+	if c.Devices == nil {
+		c.Devices = stats.NewDevices([]string{c.DeviceID})
+	}
+	if c.Log == nil {
+		c.Log = slog.Default()
 	}
 	return &Runner{
-		dev: dev, deviceID: deviceID,
+		dev: dev, deviceID: c.DeviceID,
 		// From the adapter's own Descriptor: an adapter cannot forget to report
 		// its kind, or report one that disagrees with its registration.
 		deviceKind: dev.Descriptor().DeviceKind,
-		interval:   interval, timeout: timeout,
-		engine: engine, out: out,
+		interval:   c.Interval, timeout: c.Timeout,
+		engine: c.Engine, out: c.Out, counters: c.Counters, devices: c.Devices, log: c.Log,
 		now:    time.Now,
-		jitter: func(d time.Duration) time.Duration { return time.Duration(rand.Int63n(int64(d))) },
+		jitter: rand.N[time.Duration],
 	}
 }
 
@@ -81,8 +137,18 @@ func (r *Runner) pollOnce(ctx context.Context) {
 	pctx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
 
-	snap, err := r.readGuarded(pctx)
+	snap, err := r.read(pctx)
+	var fault adapterFault
 	switch {
+	case errors.As(err, &fault):
+		// A collector fault, not a device fault: counted and logged, and the
+		// device's reachability is left exactly as it was. Reporting it
+		// unreachable would publish a false catalog fact — a bad adapter
+		// release would look like a wave of dead devices.
+		r.counters.AdapterPanics.Add(1)
+		r.log.Warn("adapter fault; the device was not contacted, so its reachability is unchanged",
+			"device", r.deviceID, "adapter", r.dev.Descriptor().Key(), "fault", fault.reason)
+		return
 	case err != nil:
 		// A poll cut short by our own shutdown is not the device's fault.
 		// Reporting it as unreachable would fabricate a device-down event on
@@ -91,6 +157,7 @@ func (r *Runner) pollOnce(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
+		r.devices.PollFailed(r.deviceID, r.now().UTC(), err)
 		r.consecutiveFailures++
 		if r.consecutiveFailures == 1 {
 			r.out([]model.Event{model.DeviceStatusChanged{
@@ -99,6 +166,7 @@ func (r *Runner) pollOnce(ctx context.Context) {
 			}})
 		}
 	default:
+		r.devices.PollOK(r.deviceID, r.now().UTC())
 		if r.consecutiveFailures > 0 {
 			r.out([]model.Event{model.DeviceStatusChanged{
 				Base:      model.Base{DeviceID: r.deviceID, DeviceKind: r.deviceKind, OccurredAt: r.now().UTC()},
@@ -113,6 +181,35 @@ func (r *Runner) pollOnce(ctx context.Context) {
 	}
 }
 
+// read bounds an adapter Read by pctx even when the adapter ignores it. A
+// Read still running when pctx ends is abandoned rather than waited on —
+// so a hung adapter is a failed poll, and shutdown never waits on one —
+// and the next poll fails fast until it finally returns. Its eventual
+// result is discarded: by then it is stale, and absence of evidence is
+// not a state change.
+func (r *Runner) read(pctx context.Context) (*model.Snapshot, error) {
+	if r.pending != nil {
+		select {
+		case <-r.pending:
+			r.pending = nil
+		default:
+			return nil, errors.New("previous read is still running")
+		}
+	}
+	ch := make(chan readResult, 1) // buffered: an abandoned Read never blocks on send
+	go func() {
+		snap, err := r.readGuarded(pctx)
+		ch <- readResult{snap, err}
+	}()
+	select {
+	case res := <-ch:
+		return res.snap, res.err
+	case <-pctx.Done():
+		r.pending = ch
+		return nil, fmt.Errorf("read did not return within %v: %w", r.timeout, pctx.Err())
+	}
+}
+
 // readGuarded turns an adapter panic into a failed poll: adapters are
 // third-party code and must never take the loop down. It also turns a
 // (nil, nil) return — a broken adapter contract, since a poll with no error
@@ -121,12 +218,12 @@ func (r *Runner) pollOnce(ctx context.Context) {
 func (r *Runner) readGuarded(ctx context.Context) (snap *model.Snapshot, err error) {
 	defer func() {
 		if p := recover(); p != nil {
-			snap, err = nil, fmt.Errorf("adapter panic: %v", p)
+			snap, err = nil, adapterFault{fmt.Sprintf("adapter panic: %v", p)}
 		}
 	}()
 	snap, err = r.dev.Read(ctx)
 	if snap == nil && err == nil {
-		err = fmt.Errorf("adapter returned a nil snapshot and no error")
+		err = adapterFault{"adapter returned a nil snapshot and no error"}
 	}
 	return snap, err
 }

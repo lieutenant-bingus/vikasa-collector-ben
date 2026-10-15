@@ -29,6 +29,9 @@ import (
 // contentType is the profile's per-event protobuf encoding.
 const contentType = "application/protobuf"
 
+// ModelVersion is the collector.yaml model_version that selects this emitter.
+const ModelVersion = "openits/v1"
+
 // New returns the openits-models emitter. collectorID identifies this
 // collector as the OBSERVER of events it synthesizes from polling.
 func New(collectorID string) wire.Emitter { return &emitter{collectorID: collectorID} }
@@ -82,6 +85,12 @@ type key struct{ event, deviceKind string }
 // ceTypeFor is the complete domain→ce-type routing table.
 var ceTypeFor = map[key]string{
 	{"mode-changed", "asc"}: "openits.signal-control.mode-changed.v1",
+	// Device reachability is a catalog fact (ADR 0019 Scope). Only
+	// signal-control has a comm-health channel in the pinned catalog; other
+	// kinds are declined here and fall back to the collector-owned
+	// health.device-status-changed until upstream fans it out.
+	{"device-status-changed", "asc"}: "openits.signal-control.comm-health-event.v1",
+
 	{"fault-raised", "asc"}: "openits.signal-control.fault-raised.v1",
 	{"fault-raised", "dms"}: "openits.dms.fault-raised.v1",
 
@@ -199,6 +208,23 @@ func (e *emitter) Encode(ev model.Event) (*wire.Encoded, bool, error) {
 		}
 		prior, _ := dmsDisplayStateIdentity(v.From)
 		msg = e.modeChanged(v.Base, dmsTypes+"dms-mode-event-kind", prior, current)
+
+	case model.DeviceStatusChanged:
+		kind := commHealth + "comm-lost"
+		if v.Reachable {
+			kind = commHealth + "comm-restored"
+		}
+		// Only kind, device, time, observer and sequence. The catalog's
+		// attempt counters belong to comm-attempt-window, and the YANG
+		// forbids them on comm-lost ("a contradictory instance"); the read
+		// error stays in the collector's log and /status, not on the wire.
+		msg = &commonv1.CommHealthEvent{
+			Kind:           kind,
+			SourceDeviceId: v.DeviceID,
+			OccurredAt:     timestamppb.New(v.OccurredAt.UTC()),
+			ObservedBy:     e.collectorID,
+			Sequence:       e.nextSequence(v.DeviceID),
+		}
 
 	case model.FaultRaised:
 		// Unlike modes, an unmappable category does NOT decline the event —

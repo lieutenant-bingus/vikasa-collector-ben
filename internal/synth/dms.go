@@ -18,7 +18,7 @@ func NewDMSDiffer() Differ { return dmsDiffer{} }
 
 type dmsDiffer struct{}
 
-func (dmsDiffer) Kind() model.Kind { return model.KindDMSStatus }
+func (dmsDiffer) Facet() model.Facet { return model.DMSStatus{} }
 
 func (dmsDiffer) Diff(prev, curr model.Facet, base model.Base) []model.Event {
 	c := curr.(model.DMSStatus)

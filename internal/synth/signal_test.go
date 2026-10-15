@@ -1,6 +1,7 @@
 package synth
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -99,6 +100,35 @@ func TestEngineCopiesDeviceKindOntoEvents(t *testing.T) {
 	for _, ev := range evs {
 		if got := ev.EventDeviceKind(); got != "asc" {
 			t.Errorf("%s: EventDeviceKind() = %q, want %q", ev.EventKind(), got, "asc")
+		}
+	}
+}
+
+// Each axis — mode, plan, preemption — moves alone and must produce exactly
+// its own transition beside the every-poll status report.
+// TestTransitionsEmitChangeEvents moves all three at once and only checks
+// presence, so it cannot catch one axis leaking an event into another.
+func TestSignalAxesChangeIndependently(t *testing.T) {
+	e := NewEngine(NewSignalDiffer())
+	st := model.SignalStatus{Mode: model.ModeNormal, ActivePlanID: 3}
+	e.Apply(snapAt(t0, st))
+
+	steps := []struct {
+		name   string
+		change func(*model.SignalStatus)
+		want   string
+	}{
+		{"mode only", func(s *model.SignalStatus) { s.Mode = model.ModeFlash }, "mode-changed"},
+		{"plan only", func(s *model.SignalStatus) { s.ActivePlanID = 4 }, "plan-changed"},
+		{"preemption on", func(s *model.SignalStatus) { s.PreemptionActive, s.PreemptionSource = true, "rail" }, "preemption-activated"},
+		{"preemption off", func(s *model.SignalStatus) { s.PreemptionActive, s.PreemptionSource = false, "" }, "preemption-cleared"},
+	}
+	for i, step := range steps {
+		step.change(&st)
+		got := kinds(e.Apply(snapAt(t0.Add(time.Duration(i+1)*time.Second), st)))
+		want := []string{"operational-status-report", step.want}
+		if !slices.Equal(got, want) {
+			t.Errorf("%s: events = %v, want exactly %v", step.name, got, want)
 		}
 	}
 }

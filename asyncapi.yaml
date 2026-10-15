@@ -5,7 +5,9 @@
 # the wire model is in flux, so they can never be held hostage to upstream
 # schema churn. openits-models publishes its own asyncapi.yaml for the catalog
 # events the wire emitters relay; this file covers only the collector-owned
-# namespace `openits-collector.health.*`.
+# root `openits-collector.*` — the collector instance's own health
+# (`instance.*`, ADR 0019), plus device reachability (`health.*`) for device
+# kinds whose service has no comm-health-event in the pinned catalog.
 #
 # Unlike the catalog's bare addresses, addresses here are tenant-parameterized:
 # the CE `type` is the schema identity, while the NATS subject roots the
@@ -67,9 +69,9 @@ channels:
       openits-collector.health.device-status-changed.v1:
         $ref: '#/components/messages/openits-collector.health.device-status-changed.v1'
 
-  openits-collector.health.collector-started.v1:
-    address: openits-collector.{region}.{agency}.{agency_unit}.health.collector.collector-started
-    title: health — collector-started
+  openits-collector.instance.started.v1:
+    address: openits-collector.{region}.{agency}.{agency_unit}.instance.{site}.started
+    title: instance — started
     parameters:
       region:
         description: Tenant region token; must match ^[a-z0-9][a-z0-9-]*$.
@@ -77,30 +79,112 @@ channels:
         description: Tenant agency token; must match ^[a-z0-9][a-z0-9-]*$.
       agency_unit:
         description: Tenant agency-unit token; must match ^[a-z0-9][a-z0-9-]*$.
+      site:
+        description: |
+          The collector's site, standing in for the device id: these events
+          are about the collector itself, and ce-source names the same site
+          (ADR 0019 clause 2).
     messages:
-      openits-collector.health.collector-started.v1:
-        $ref: '#/components/messages/openits-collector.health.collector-started.v1'
+      openits-collector.instance.started.v1:
+        $ref: '#/components/messages/openits-collector.instance.started.v1'
+
+  openits-collector.instance.stopping.v1:
+    address: openits-collector.{region}.{agency}.{agency_unit}.instance.{site}.stopping
+    title: instance — stopping
+    parameters:
+      region:
+        description: Tenant region token; must match ^[a-z0-9][a-z0-9-]*$.
+      agency:
+        description: Tenant agency token; must match ^[a-z0-9][a-z0-9-]*$.
+      agency_unit:
+        description: Tenant agency-unit token; must match ^[a-z0-9][a-z0-9-]*$.
+      site:
+        description: |
+          The collector's site, standing in for the device id: these events
+          are about the collector itself, and ce-source names the same site
+          (ADR 0019 clause 2).
+    messages:
+      openits-collector.instance.stopping.v1:
+        $ref: '#/components/messages/openits-collector.instance.stopping.v1'
+
+  openits-collector.instance.heartbeat.v1:
+    address: openits-collector.{region}.{agency}.{agency_unit}.instance.{site}.heartbeat
+    title: instance — heartbeat
+    parameters:
+      region:
+        description: Tenant region token; must match ^[a-z0-9][a-z0-9-]*$.
+      agency:
+        description: Tenant agency token; must match ^[a-z0-9][a-z0-9-]*$.
+      agency_unit:
+        description: Tenant agency-unit token; must match ^[a-z0-9][a-z0-9-]*$.
+      site:
+        description: |
+          The collector's site, standing in for the device id: these events
+          are about the collector itself, and ce-source names the same site
+          (ADR 0019 clause 2).
+    messages:
+      openits-collector.instance.heartbeat.v1:
+        $ref: '#/components/messages/openits-collector.instance.heartbeat.v1'
+
+  openits-collector.instance.log.v1:
+    address: openits-collector.{region}.{agency}.{agency_unit}.instance.{site}.log
+    title: instance — log
+    parameters:
+      region:
+        description: Tenant region token; must match ^[a-z0-9][a-z0-9-]*$.
+      agency:
+        description: Tenant agency token; must match ^[a-z0-9][a-z0-9-]*$.
+      agency_unit:
+        description: Tenant agency-unit token; must match ^[a-z0-9][a-z0-9-]*$.
+      site:
+        description: |
+          The collector's site, standing in for the device id: these events
+          are about the collector itself, and ce-source names the same site
+          (ADR 0019 clause 2).
+    messages:
+      openits-collector.instance.log.v1:
+        $ref: '#/components/messages/openits-collector.instance.log.v1'
 
 operations:
   publishDeviceStatusChanged:
     action: send
     channel:
       $ref: '#/channels/openits-collector.health.device-status-changed.v1'
-  publishCollectorStarted:
+  publishInstanceStarted:
     action: send
     channel:
-      $ref: '#/channels/openits-collector.health.collector-started.v1'
+      $ref: '#/channels/openits-collector.instance.started.v1'
+  publishInstanceStopping:
+    action: send
+    channel:
+      $ref: '#/channels/openits-collector.instance.stopping.v1'
+  publishInstanceHeartbeat:
+    action: send
+    channel:
+      $ref: '#/channels/openits-collector.instance.heartbeat.v1'
+  publishInstanceLog:
+    action: send
+    channel:
+      $ref: '#/channels/openits-collector.instance.log.v1'
 
 components:
   messages:
     openits-collector.health.device-status-changed.v1:
       contentType: application/json
-      summary: A device's reachability changed (up→down or down→up).
+      summary: A device's reachability changed (up→down or down→up), for a device kind with no catalog comm-health channel.
       description: |
+        A fallback (ADR 0019, as amended). A device's reachability is a catalog
+        fact and goes out as <service>.comm-health-event (comm-lost /
+        comm-restored) wherever the pinned catalog has that channel —
+        signal-control today. This collector-owned event carries it only for
+        device kinds whose service does not yet (DMS today), so it is not lost.
+
         Emitted only on transitions, never per failed poll: the first failure
         after success reports unreachable, and the first success after failure
         reports reachable. A poll cut short by collector shutdown is not a
-        device failure and does not appear here.
+        device failure and does not appear here, and neither is an adapter
+        panic or a nil snapshot: those are collector faults, counted as
+        adapter_panics on the heartbeat (ADR 0019 clause 12).
       headers:
         $ref: '#/components/schemas/cloudEventHeaders'
       payload:
@@ -124,27 +208,189 @@ components:
             type: integer
             description: Failed polls in the current run; 1 on the down transition, 0 on recovery.
 
-    openits-collector.health.collector-started.v1:
+    openits-collector.instance.started.v1:
       contentType: application/json
       summary: The collector booted.
       description: |
-        Emitted once at startup, before any device is polled. The CE source is
-        urn:openits:collector:<region>:<agency>:<agency_unit>:<site> — the
-        collector is the subject of its own event, so SourceFor substitutes
-        the tenant's site for the id it has no device to supply.
+        Emitted once at startup, before any device is polled. Low-rate and kept
+        with full history at the hub: it is the restart record a last-value
+        heartbeat table cannot keep (ADR 0019 clause 8).
       headers:
         $ref: '#/components/schemas/cloudEventHeaders'
       payload:
         type: object
-        required: [occurred_at, version]
+        required: [occurred_at, collector_id, version, config_revision, boot_id]
         properties:
           occurred_at:
             type: string
             format: date-time
-            description: RFC3339 UTC instant the collector started.
+            description: RFC3339 UTC instant the collector observed this, never the arrival time (ADR 0019 clause 6).
+          collector_id:
+            type: string
+            description: The configured collector_id; ce-source carries the site (ADR 0019 clause 7).
           version:
             type: string
-            description: Collector build version; "dev" for unstamped builds.
+            description: Collector build version.
+          config_revision:
+            type: string
+            description: First 12 hex characters of the SHA-256 of the config file's bytes (ADR 0019 clause 13).
+          boot_id:
+            type: string
+            description: Random per process; a new boot_id means the cumulative counters restarted from zero.
+
+    openits-collector.instance.stopping.v1:
+      contentType: application/json
+      summary: The collector is shutting down cleanly.
+      description: |
+        Best-effort: a killed process cannot send it, so a started with no
+        preceding stopping is an unclean restart (ADR 0019 clause 8).
+      headers:
+        $ref: '#/components/schemas/cloudEventHeaders'
+      payload:
+        type: object
+        required: [occurred_at, collector_id, version, config_revision, boot_id, uptime_s]
+        properties:
+          occurred_at:
+            type: string
+            format: date-time
+            description: RFC3339 UTC instant the collector observed this, never the arrival time (ADR 0019 clause 6).
+          collector_id:
+            type: string
+            description: The configured collector_id; ce-source carries the site (ADR 0019 clause 7).
+          version:
+            type: string
+            description: Collector build version.
+          config_revision:
+            type: string
+            description: First 12 hex characters of the SHA-256 of the config file's bytes (ADR 0019 clause 13).
+          boot_id:
+            type: string
+            description: Random per process; a new boot_id means the cumulative counters restarted from zero.
+          uptime_s:
+            type: integer
+            description: Seconds since this process started.
+
+    openits-collector.instance.heartbeat.v1:
+      contentType: application/json
+      summary: The collector's periodic self-report.
+      description: |
+        Every heartbeat_interval (default 300s), offset by a stable per-collector
+        jitter. Describes the collector as a process and carries no device
+        state. Every counter is cumulative since boot, so under last-value
+        retention the newest beat alone carries full totals; a consumer
+        reads liveness from occurred_at together with the leaf connection,
+        never from arrival time (ADR 0019 clauses 4, 6, 9).
+      headers:
+        $ref: '#/components/schemas/cloudEventHeaders'
+      payload:
+        type: object
+        required: [occurred_at, collector_id, version, config_revision, boot_id, uptime_s, cpu_seconds_total, memory_bytes, heap_objects_bytes, goroutines, events_published, dropped_queue_full, dropped_unpublishable, dropped_at_shutdown, dropped_no_emitter, dropped_no_source, encode_errors, adapter_panics, facets_rejected, logs_suppressed]
+        properties:
+          occurred_at:
+            type: string
+            format: date-time
+            description: RFC3339 UTC instant the collector observed this, never the arrival time (ADR 0019 clause 6).
+          collector_id:
+            type: string
+            description: The configured collector_id; ce-source carries the site (ADR 0019 clause 7).
+          version:
+            type: string
+            description: Collector build version.
+          config_revision:
+            type: string
+            description: First 12 hex characters of the SHA-256 of the config file's bytes (ADR 0019 clause 13).
+          boot_id:
+            type: string
+            description: Random per process; a new boot_id means the cumulative counters restarted from zero.
+          uptime_s:
+            type: integer
+            description: Seconds since this process started.
+          cpu_seconds_total:
+            type: number
+            description: Cumulative CPU seconds (runtime/metrics; refreshed at each GC cycle). The hub differentiates.
+          memory_bytes:
+            type: integer
+            description: Total memory mapped by the Go runtime.
+          heap_objects_bytes:
+            type: integer
+            description: Bytes held by live and unswept heap objects.
+          goroutines:
+            type: integer
+            description: Live goroutines.
+          events_published:
+            type: integer
+            description: Cumulative since boot. Events the broker acknowledged.
+          dropped_queue_full:
+            type: integer
+            description: Cumulative since boot. Oldest queued events evicted because the publish queue was full (ADR 0020).
+          dropped_unpublishable:
+            type: integer
+            description: Cumulative since boot. Events the broker will never accept (for example, over its maximum payload).
+          dropped_at_shutdown:
+            type: integer
+            description: Cumulative since boot. Events still queued when the shutdown drain window closed.
+          dropped_no_emitter:
+            type: integer
+            description: Cumulative since boot. Domain events no wire emitter claimed.
+          dropped_no_source:
+            type: integer
+            description: Cumulative since boot. Events with no ce-source entity kind for their device kind.
+          encode_errors:
+            type: integer
+            description: Cumulative since boot. Emitter failures encoding a claimed event.
+          adapter_panics:
+            type: integer
+            description: Cumulative since boot. Adapter Read panics the runner recovered (ADR 0019 clause 12).
+          facets_rejected:
+            type: integer
+            description: Cumulative since boot. Facets refused because their Go type was not their differ's.
+          logs_suppressed:
+            type: integer
+            description: Cumulative since boot. Warn-and-above log records not shipped as instance.log events because the per-interval limit was reached (ADR 0019 clause 10).
+
+    openits-collector.instance.log.v1:
+      contentType: application/json
+      summary: A warn-and-above record from the collector's own log.
+      description: |
+        Counters say something is wrong; logs say what (ADR 0019 clause 10).
+        Shipped at or above log_ship_level (default warn), at most a fixed
+        number per heartbeat interval; the excess is counted in the
+        heartbeat's logs_suppressed rather than shipped. Best-effort: if the
+        publish path is what is broken, its own log records cannot be
+        published either, and the cumulative counters remain the record.
+      headers:
+        $ref: '#/components/schemas/cloudEventHeaders'
+      payload:
+        type: object
+        required: [occurred_at, collector_id, version, config_revision, boot_id, level, message, attrs]
+        properties:
+          occurred_at:
+            type: string
+            format: date-time
+            description: RFC3339 UTC instant the collector observed this, never the arrival time (ADR 0019 clause 6).
+          collector_id:
+            type: string
+            description: The configured collector_id; ce-source carries the site (ADR 0019 clause 7).
+          version:
+            type: string
+            description: Collector build version.
+          config_revision:
+            type: string
+            description: First 12 hex characters of the SHA-256 of the config file's bytes (ADR 0019 clause 13).
+          boot_id:
+            type: string
+            description: Random per process; a new boot_id means the cumulative counters restarted from zero.
+          level:
+            type: string
+            description: slog level name (WARN, ERROR).
+          message:
+            type: string
+            description: The log message.
+          attrs:
+            type: object
+            additionalProperties:
+              type: string
+            description: The record's structured attributes, groups flattened to dotted keys, values as the local log renders them.
 
   schemas:
     cloudEventHeaders:

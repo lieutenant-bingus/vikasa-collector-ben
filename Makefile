@@ -1,13 +1,50 @@
-.PHONY: build test vet dev lint-boundary lint-boundary-selftest lint-boundary-replace-selftest lint-boundary-tag-selftest lint-docs check
+.PHONY: build cross release-snapshot test vet lint vuln tidy-check dev lint-boundary lint-boundary-selftest lint-boundary-replace-selftest lint-boundary-tag-selftest lint-docs check
+
+# Developer tools live in their own module (tools/go.mod) so their dependency
+# graphs never touch the collector's. Versions are pinned there, not here.
+TOOL := go tool -modfile=tools/go.mod
 
 build:
 	go build ./...
 
+# The cabinet targets (fleet spec H1): Pi-class ARM and small x86 industrial PCs.
+cross:
+	GOOS=linux GOARCH=arm64 go build -o /dev/null ./cmd/collector
+	GOOS=linux GOARCH=amd64 go build -o /dev/null ./cmd/collector
+
+# Build the release artifacts locally (dist/), exactly as a release would,
+# without publishing. Needs goreleaser v2 on PATH; CI pins v2.18.2. Not a Go
+# tool dependency: goreleaser requires a newer Go than this module's
+# toolchain, and its own prebuilt binary is the supported install.
+release-snapshot:
+	goreleaser release --snapshot --clean
+
+# One run, race-enabled: poll loops and the publisher are concurrent by
+# nature, so a non-race run proves less and costs a second pass. -shuffle
+# surfaces order-dependent tests; -count=1 defeats the test cache so CI and
+# local runs mean the same thing.
 test:
-	go test ./...
+	go test -race -shuffle=on -count=1 -timeout=5m ./...
 
 vet:
 	go vet ./...
+
+lint:
+	$(TOOL) golangci-lint run ./...
+
+# Reachability-aware: reports only vulnerabilities in code the collector can
+# actually call. Not part of `check`, because a newly published advisory
+# should not turn every unrelated PR red; CI runs it as its own job and
+# weekly.
+vuln:
+	$(TOOL) govulncheck ./...
+
+# go.mod/go.sum must already be tidy and must match the checksum database,
+# for both modules.
+tidy-check:
+	go mod tidy -diff
+	go mod verify
+	cd tools && go mod tidy -diff
 
 lint-boundary:
 	./scripts/lint-boundary.sh
@@ -108,4 +145,4 @@ dev:
 lint-docs:
 	./scripts/lint-docs.sh
 
-check: vet test lint-boundary lint-boundary-selftest lint-boundary-replace-selftest lint-boundary-tag-selftest lint-docs
+check: vet lint tidy-check test lint-boundary lint-boundary-selftest lint-boundary-replace-selftest lint-boundary-tag-selftest lint-docs

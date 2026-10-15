@@ -39,7 +39,7 @@ type observed struct {
 func runCollectorAndCollect(t *testing.T, window time.Duration) []observed {
 	t.Helper()
 
-	ns, err := server.NewServer(&server.Options{Port: -1, JetStream: true, StoreDir: t.TempDir()})
+	ns, err := server.NewServer(&server.Options{Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ devices:
 
 	ctx, cancel := context.WithTimeout(context.Background(), window)
 	defer cancel()
-	if err := Run(ctx, cfg, reg, ns.ClientURL(), "test"); err != nil {
+	if err := Run(ctx, cfg, reg, Options{NATSURL: ns.ClientURL(), Version: "test"}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if err := nc.Flush(); err != nil {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"testing"
 
@@ -100,9 +101,7 @@ func faultsIn(t *testing.T, snap *model.Snapshot) []model.Fault {
 
 func TestASCNoAlarmBitsMeansEmptyFaultSet(t *testing.T) {
 	fx := map[string]int64{}
-	for k, v := range healthyFixture {
-		fx[k] = v
-	}
+	maps.Copy(fx, healthyFixture)
 	fx[oidAlarm] = 0
 	snap, err := NewASC("asc-1", &snmptest.Static{Values: fx}).Read(context.Background())
 	if err != nil {
@@ -117,9 +116,7 @@ func TestASCFullyHealthyReadProducesNoFacetErrors(t *testing.T) {
 	// A genuinely healthy controller: all mandatory OIDs answered, including alarm.
 	// Must yield both facets with zero errors.
 	fx := map[string]int64{}
-	for k, v := range healthyFixture {
-		fx[k] = v
-	}
+	maps.Copy(fx, healthyFixture)
 	fx[oidAlarm] = 0
 
 	snap, err := NewASC("asc-1", &snmptest.Static{Values: fx}).Read(context.Background())
@@ -155,9 +152,7 @@ func TestASCFullyHealthyReadProducesNoFacetErrors(t *testing.T) {
 
 func TestASCAlarmBitmapDecodeGolden(t *testing.T) {
 	fx := map[string]int64{}
-	for k, v := range healthyFixture {
-		fx[k] = v
-	}
+	maps.Copy(fx, healthyFixture)
 	// bits 1 (mmu-fault) and 3 (power-loss), plus bit 12 which is undefined.
 	fx[oidAlarm] = (1 << 1) | (1 << 3) | (1 << 12)
 
@@ -223,9 +218,7 @@ const (
 
 func withDetectors(base map[string]int64, maxCh int64, chans map[int]struct{ vol, occHalfPct int64 }) map[string]int64 {
 	fx := map[string]int64{}
-	for k, v := range base {
-		fx[k] = v
-	}
+	maps.Copy(fx, base)
 	fx[oidAlarm] = 0
 	fx[oidMaxDetectors] = maxCh
 	for ch, d := range chans {
@@ -339,9 +332,7 @@ func TestASCNoDetectorsIsEmptyFacetNotError(t *testing.T) {
 // reporting the facet failed: the bound is an optimisation, not the data.
 func TestASCMissingMaxDetectorsFallsBackTo32(t *testing.T) {
 	fx := map[string]int64{}
-	for k, v := range healthyFixture {
-		fx[k] = v
-	}
+	maps.Copy(fx, healthyFixture)
 	fx[oidAlarm] = 0
 	fx[fmt.Sprintf("%s.%d", volPrefix, 30)] = 7
 	fx[fmt.Sprintf("%s.%d", occPrefix, 30)] = 2
@@ -366,9 +357,7 @@ func TestASCOutOfRangeMaxDetectorsFallsBackTo32(t *testing.T) {
 	for name, maxCh := range map[string]int64{"too-large": 256, "negative": -1} {
 		t.Run(name, func(t *testing.T) {
 			fx := map[string]int64{}
-			for k, v := range healthyFixture {
-				fx[k] = v
-			}
+			maps.Copy(fx, healthyFixture)
 			fx[oidAlarm] = 0
 			fx[oidMaxDetectors] = maxCh
 			fx[fmt.Sprintf("%s.%d", volPrefix, 30)] = 7
@@ -389,9 +378,7 @@ func TestASCOutOfRangeMaxDetectorsFallsBackTo32(t *testing.T) {
 // FaultSet, read from the first Get, must still publish.
 func TestASCDetectorTableGetFailureIsFacetError(t *testing.T) {
 	fx := map[string]int64{}
-	for k, v := range healthyFixture {
-		fx[k] = v
-	}
+	maps.Copy(fx, healthyFixture)
 	fx[oidAlarm] = 0
 	fx[oidMaxDetectors] = 4
 

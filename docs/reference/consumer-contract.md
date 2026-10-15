@@ -38,16 +38,23 @@ why they are not one stream.
 
 This is the part most likely to be assumed rather than read. The collector
 makes a **bounded** effort to deliver, and events can be lost in four
-distinct ways. All four are visible in logs; none is currently counted
-(there is no metrics subsystem — see
-[the gap list](../README.md#known-gaps-and-successor-work)).
+distinct ways. The first three are logged and counted in the collector's own
+counters (`internal/stats`; served on the local `/status` endpoint, and
+carried by the ADR 0019 heartbeat once it is built). The fourth cannot be: a collector without its stored
+state does not know what it missed.
 
-1. **Publish exhausts its retries.** `Publisher.Publish`
-   (`internal/publish/publish.go`) makes three attempts with a fixed 250 ms
-   backoff. If all three fail, `internal/app/app.go` logs
-   `"publish failed"` at error level and moves on. There is no queue and no
-   later retry — deliberately, because unbounded in-process buffering on a
-   cabinet with no operator is a worse failure than a dropped event.
+1. **The publisher cannot hold it.** A broker that is down or restarting
+   costs latency, not events: the publisher
+   (`internal/publish/publish.go`) queues in memory and retries with backoff
+   until the broker is back ([ADR 0020](../adr/0020-broker-absence-is-latency.md)).
+   But the queue is bounded, so three cases still lose an event, each
+   counted (`Publisher.Stats`) and logged:
+   - the queue is full, and the **oldest** queued event is evicted to make
+     room — so during a long outage you keep the most recent events and
+     lose the earliest ones;
+   - the broker will never accept it (for example, larger than its maximum
+     payload), so it is dropped at once rather than blocking the queue;
+   - it is still queued when shutdown's drain window closes.
 2. **No emitter claims the event.** A domain event with no ce-type mapping is
    logged as `"event dropped: no emitter for domain event"` and discarded.
 3. **The emitter declines to encode it.** Where a domain value has no honest
@@ -55,8 +62,10 @@ distinct ways. All four are visible in logs; none is currently counted
    near-neighbour — see
    [the drop rule](../explanation/wire-boundary.md#the-drop-rule-decline-rather-than-approximate).
    A visible drop beats a wrong value on the bus.
-4. **The device's state changed while the collector was down.** See the
-   restart section below.
+4. **The collector restarted without its stored state.** A restart normally
+   recovers what changed while it was down (see the restart section below),
+   but not after a first boot, a reflash or a lost write, and never for
+   detector counts.
 
 **The consequence to design around: absence of an event is not evidence that
 nothing happened.** If your logic needs to know a device's current state, poll
@@ -94,27 +103,53 @@ whatever the collector stores locally: no local state survives a reflash, a
 swapped storage device, or a first boot, and after any of those the collector
 will re-raise — correctly, because it genuinely does not know.
 
+## Device reachability
+
+A device going unreachable, or coming back, is published on the **catalog**
+root as `openits.<service>.comm-health-event.v1` with `kind`
+`openits-common-comm-health-events:comm-lost` or `…:comm-restored`, wherever
+the pinned openits-models release gives that service the channel —
+signal-control today. For device kinds whose service does not have it yet
+(DMS today), the same transition goes out as the collector-owned
+`openits-collector.health.device-status-changed.v1` instead, so it is never
+lost; that fallback shrinks as upstream adds the channel
+([ADR 0019](../adr/0019-collector-self-health.md), as amended).
+
+Both are transitions only — the first failed read after a success, the first
+success after a failure. An adapter crash or contract violation is **not** a
+device fault and produces neither: the device was never contacted. It is
+counted as `adapter_panics` on the collector's heartbeat instead.
+
 ## Restart behaviour
 
-**Today the collector's memory of previous state is in-process only.** On
-restart it diffs against nothing, and two things follow:
+**The collector remembers previous state across a restart**
+([ADR 0017](../adr/0017-durable-synth-state.md)). Every facet the engine
+diffs against is written through to a key-value bucket
+(`VIKASA_SYNTH_STATE`) on the cabinet's own JetStream, and a restarted
+collector loads it before it diffs anything (`internal/durable`). So:
 
-- **Every standing fault re-raises.** `internal/synth/fault.go` structurally
-  cannot do otherwise with no previous set: every currently-raised fault is,
-  as far as it can tell, a fault that just appeared. A cabinet with four
-  standing faults re-announces four raises on every restart — including every
-  rollout restart.
-- **Transitions during the restart window are lost.** A signal that changed
-  mode while the collector was down comes back with no previous state and
-  emits no `mode-changed` at all. The state is correct on the next report
-  that carries it; the *transition* is gone.
+- **A standing fault is not re-raised.** It was known before the restart and
+  is known after it.
+- **A transition that happened while the collector was down is emitted
+  once,** on the first diff after the restart — with that poll's time as
+  `occurred-at`, since the collector cannot know when, inside the gap, it
+  actually happened.
+- **Until the state has loaded, the collector reports device health but no
+  domain events** (ADR 0020). If the broker is not up at boot, that hold
+  lasts until it is; there is no fallback to diffing from empty.
 
-The first manufactures an event that did not happen at that moment; the
-second swallows one that did. [ADR 0017](../adr/0017-durable-synth-state.md)
-decides the fix — writing previous state through to a JetStream KV bucket in
-the cabinet's own NATS and seeding it at boot — and **it is not implemented
-yet**. Until it is, the behaviour above is what a consumer sees. It is
-tracked in [the gap list](../README.md#known-gaps-and-successor-work).
+What it cannot cover, and why the idempotency requirement above stays:
+
+- **No stored state** — the first boot, a reflash, a replaced storage
+  device, or a deleted bucket. The collector starts from first observations,
+  and every standing fault is raised, correctly: it genuinely does not know.
+- **State not yet written when the process died.** Writes are asynchronous
+  and coalesced; a crash (not a clean shutdown, which flushes) can lose the
+  last change, so the next boot may report it again.
+- **Detector counts.** They change on every poll, so they are deliberately
+  not stored (that would be a flash write per poll); the first poll after a
+  restart is a first observation and emits no detector report, so one
+  interval's volume delta is missing.
 
 ## Ordering
 
@@ -153,7 +188,7 @@ urn:openits:<entity-kind>:<region>:<agency>:<agency_unit>:<id>
 
 `<entity-kind>` is the profile's vocabulary, not the collector's device-kind
 string — an `asc` device appears as `controller`, a `dms` as `sign`. On
-collector-level events (`collector-started`) there is no device, so the
+the collector's own events (`openits-collector.instance.*`) there is no device, so the
 entity kind is `collector` and the id segment is the deployment's configured
 `site`.
 

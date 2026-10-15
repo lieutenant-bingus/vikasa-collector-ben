@@ -72,7 +72,7 @@ func entityKindFor(deviceKind string) (string, bool) {
 		// entity kind follows that service family, not the vendor chassis.
 		return "reversible-lane", true
 	case "":
-		// Collector-level events (collector-started) have no device; the
+		// Collector-level events (instance.*) have no device; the
 		// collector itself is the entity.
 		return "collector", true
 	default:

@@ -48,6 +48,14 @@ var goldenCases = []struct {
 		identHex:   "0a056173632d3112276f70656e6974732d7369676e616c2d636f6e74726f6c2d74797065733a6d6f64652d666c6173681a266f70656e6974732d7369676e616c2d636f6e74726f6c2d74797065733a6d6f64652d667265652a0608c0e182d3069a062f6f70656e6974732d7369676e616c2d636f6e74726f6c2d74797065733a73632d6d6f64652d6576656e742d6b696e64",
 	},
 	{
+		name:       "signal-control comm-health-event (comm-lost)",
+		ev:         model.DeviceStatusChanged{Base: gbase("asc-1", "asc"), Reachable: false, Reason: "read timeout", ConsecutiveFailures: 1},
+		ceType:     "openits.signal-control.comm-health-event.v1",
+		dataSchema: "https://schemas.open-its.org/openits-common-comm-health-events/2026-09-02/",
+		dataHex:    "0a056173632d31120608c0e182d3064a10636162696e65742d706f6c6c65722d3158019a062b6f70656e6974732d636f6d6d6f6e2d636f6d6d2d6865616c74682d6576656e74733a636f6d6d2d6c6f7374",
+		identHex:   "0a056173632d31120608c0e182d3069a062b6f70656e6974732d636f6d6d6f6e2d636f6d6d2d6865616c74682d6576656e74733a636f6d6d2d6c6f7374",
+	},
+	{
 		name: "signal-control fault-raised",
 		ev: model.FaultRaised{Base: gbase("asc-1", "asc"), FaultID: "mmu-fault",
 			Severity: model.SeverityCritical, Category: model.CategoryConflict, Description: "conflict"},
@@ -505,6 +513,8 @@ func emptyMessageFor(ceType string) proto.Message {
 		return &commonv1.FaultRaised{}
 	case strings.HasSuffix(ceType, ".fault-cleared.v1"):
 		return &commonv1.FaultCleared{}
+	case strings.HasSuffix(ceType, ".comm-health-event.v1"):
+		return &commonv1.CommHealthEvent{}
 	}
 	switch ceType {
 	case "openits.dms.message-changed.v1":

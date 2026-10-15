@@ -10,6 +10,8 @@ const KindDMSStatus Kind = "dms-status"
 // conflating them would lose information the sign genuinely provides.
 type DMSControlMode uint8
 
+// DMSControlMode values. The zero value, ControlUnknown, means the sign did
+// not report its control mode.
 const (
 	ControlUnknown         DMSControlMode = iota
 	ControlLocal                          // a technician at the sign; central commands are not honoured
@@ -42,6 +44,8 @@ func (m DMSControlMode) String() string {
 // DMSDisplayState is what the sign is doing with its display.
 type DMSDisplayState uint8
 
+// DMSDisplayState values. The zero value, DisplayUnknown, means the display
+// state was not reported.
 const (
 	DisplayUnknown DMSDisplayState = iota
 	DisplayOff
@@ -68,6 +72,8 @@ func (s DMSDisplayState) String() string {
 // MessageMemoryType is which memory bank the active message lives in.
 type MessageMemoryType uint8
 
+// MessageMemoryType values. The zero value, MemoryUnknown, means the memory
+// bank was not reported.
 const (
 	MemoryUnknown MessageMemoryType = iota
 	MemoryPermanent
@@ -97,6 +103,8 @@ func (m MessageMemoryType) String() string {
 // MessageStatus is the health of the active message slot.
 type MessageStatus uint8
 
+// MessageStatus values. The zero value, StatusUnknown, means the slot status
+// was not reported.
 const (
 	StatusUnknown MessageStatus = iota
 	StatusNotUsed
@@ -132,6 +140,8 @@ func (s MessageStatus) String() string {
 // table — and is cheaper than fabricating errors at the collection boundary.
 type MultiSyntaxError uint8
 
+// MultiSyntaxError values. The zero value, SyntaxErrorNone, deliberately
+// means "no error": a message that parsed cleanly needs no field set.
 const (
 	SyntaxErrorNone MultiSyntaxError = iota
 	SyntaxErrorSyntax
@@ -184,6 +194,9 @@ func (e MultiSyntaxError) String() string {
 // source object must not read as "an operator commanded this."
 type DMSActivationTrigger uint8
 
+// DMSActivationTrigger values. The zero value, TriggerUnknown, means the
+// activation source was not reported, which must not read as an operator
+// command.
 const (
 	TriggerUnknown       DMSActivationTrigger = iota
 	TriggerCommand                            // an operator / central / external command activated it

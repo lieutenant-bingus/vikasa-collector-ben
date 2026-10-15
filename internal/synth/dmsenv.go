@@ -16,7 +16,7 @@ func NewDMSEnvironmentDiffer() Differ { return dmsEnvDiffer{} }
 
 type dmsEnvDiffer struct{}
 
-func (dmsEnvDiffer) Kind() model.Kind { return model.KindDMSEnvironment }
+func (dmsEnvDiffer) Facet() model.Facet { return model.DMSEnvironment{} }
 
 func (dmsEnvDiffer) Diff(prev, curr model.Facet, base model.Base) []model.Event {
 	c := curr.(model.DMSEnvironment)

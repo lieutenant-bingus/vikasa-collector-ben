@@ -43,10 +43,8 @@ collector_id: cabinet-042-collector
 # One catalog version per collector instance (ADR 0005); version coexistence
 # happens across the fleet, never inside one process.
 #
-# NOTE: the openits-models emitter is wired, but this value does not yet select
-# between versions — there is only one emitter package while the models pin is
-# lockstep (ADR 0010). It is validated as non-empty so the config contract is
-# already the one version coexistence will need.
+# This build implements exactly one: openits/v1. Any other value refuses to
+# start (ADR 0014) rather than silently selecting the only emitter there is.
 model_version: openits/v1
 
 # Subject grammar is yours (ADR 0009). Omit this block entirely and you get the
@@ -102,6 +100,16 @@ model_version: openits/v1
 #
 # subject:
 #   template: "{namespace}.{region}.{agency}.{agency_unit}.{service}.{device_id}.{event}"
+
+# How often the collector reports its own health on
+# openits-collector.instance.heartbeat.v1 (ADR 0019). Optional; 300s default,
+# 10s minimum. About 6.5 MB per cabinet per month at the default.
+# heartbeat_interval: 300s
+
+# The collector's own warn-and-above log records are also published as
+# openits-collector.instance.log.v1, at most 20 per heartbeat interval, so a
+# cabinet nobody can visit still says what went wrong. Optional; default warn.
+# log_ship_level: warn
 
 devices:
   # vendor + device_kind select the adapter: registry key "<vendor>-<device_kind>".

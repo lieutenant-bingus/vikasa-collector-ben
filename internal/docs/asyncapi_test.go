@@ -55,10 +55,10 @@ var testIdentity = subject.Identity{
 	Region: "us-ga", Agency: "metro-atlanta", AgencyUnit: "d01", Site: "cabinet-042",
 }
 
-// deviceIDFor mirrors what the publisher passes: health events about the
-// collector itself carry no device.
+// deviceIDFor mirrors what the publisher passes: the collector's own
+// instance events carry no device.
 func deviceIDFor(ceType string) string {
-	if strings.Contains(ceType, "collector-started") {
+	if strings.Contains(ceType, ".instance.") {
 		return ""
 	}
 	return "asc-1"

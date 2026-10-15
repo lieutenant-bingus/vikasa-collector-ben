@@ -3,6 +3,7 @@ package ntcip
 import (
 	"context"
 	"errors"
+	"maps"
 	"reflect"
 	"testing"
 
@@ -117,9 +118,7 @@ func TestDMSUnansweredControlModeIsFacetError(t *testing.T) {
 
 func TestDMSUnansweredCurrentBufferIsFacetError(t *testing.T) {
 	octets := map[string][]byte{}
-	for k, v := range healthyDMSOctets {
-		octets[k] = v
-	}
+	maps.Copy(octets, healthyDMSOctets)
 	delete(octets, oidDMSCurrentBufferMULTI)
 
 	snap, err := NewDMS("dms-1", &snmptest.Static{
@@ -138,9 +137,7 @@ func TestDMSUnansweredCurrentBufferIsFacetError(t *testing.T) {
 
 func TestDMSMalformedMessageIDCodeIsFacetError(t *testing.T) {
 	octets := map[string][]byte{}
-	for k, v := range healthyDMSOctets {
-		octets[k] = v
-	}
+	maps.Copy(octets, healthyDMSOctets)
 	octets[oidDMSMsgTableSource] = []byte{3, 0}
 
 	snap, err := NewDMS("dms-1", &snmptest.Static{
@@ -202,9 +199,7 @@ func TestDMSBlankMemoryTypeIsDisplayBlank(t *testing.T) {
 
 func TestDMSOutOfRangeControlModeIsUnknown(t *testing.T) {
 	fx := map[string]int64{}
-	for k, v := range healthyDMSInts {
-		fx[k] = v
-	}
+	maps.Copy(fx, healthyDMSInts)
 	fx[oidDMSControlMode] = 99
 	snap, err := NewDMS("dms-1", &snmptest.Static{Values: fx, Octets: healthyDMSOctets}).Read(context.Background())
 	if err != nil {
@@ -218,9 +213,7 @@ func TestDMSOutOfRangeControlModeIsUnknown(t *testing.T) {
 
 func TestDMSUnmappedSyntaxErrorIsOther(t *testing.T) {
 	fx := map[string]int64{}
-	for k, v := range healthyDMSInts {
-		fx[k] = v
-	}
+	maps.Copy(fx, healthyDMSInts)
 	fx[oidDMSActivateMsgErr] = 3
 	fx[oidDMSMultiSyntaxErr] = 99
 	snap, err := NewDMS("dms-1", &snmptest.Static{Values: fx, Octets: healthyDMSOctets}).Read(context.Background())
@@ -243,7 +236,7 @@ func TestDMSDescriptorCaps(t *testing.T) {
 	if d.Vendor != "ntcip" || d.DeviceKind != "dms" {
 		t.Fatalf("Descriptor = %+v", d)
 	}
-	if !d.Caps.Has(adapter.CapState) || d.Caps.Has(adapter.CapEvents) || d.Caps.Has(adapter.CapCommand) {
+	if d.Caps != adapter.CapState {
 		t.Fatalf("Caps = %v; want CapState only", d.Caps)
 	}
 }
@@ -380,9 +373,7 @@ func TestDMSEmptyHumidityTableStillEmitsEnvironment(t *testing.T) {
 
 func TestDMSHumidityDecodeSyntheticFixture(t *testing.T) {
 	fx := map[string]int64{}
-	for k, v := range healthyDMSInts {
-		fx[k] = v
-	}
+	maps.Copy(fx, healthyDMSInts)
 	fx[oidDMSHumidityNumRows] = 1
 	fx[oidDMSHumidity1] = 45
 
@@ -404,9 +395,7 @@ func TestDMSHumidityDecodeSyntheticFixture(t *testing.T) {
 
 func TestDMSTemperatureSentinelIsUnreported(t *testing.T) {
 	fx := map[string]int64{}
-	for k, v := range healthyDMSInts {
-		fx[k] = v
-	}
+	maps.Copy(fx, healthyDMSInts)
 	fx[oidDMSTempFace] = 32767
 
 	snap, err := NewDMS("dms-1", &snmptest.Static{

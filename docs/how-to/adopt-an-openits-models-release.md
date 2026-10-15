@@ -61,12 +61,12 @@ only when a fleet genuinely needs two models releases in one binary. Edit
    [`map-an-event-to-the-wire.md`'s "Ground truth: probe, don't read"
    section](map-an-event-to-the-wire.md#ground-truth-probe-dont-read) —
    resolve the *new* version in a scratch module and run it, don't just
-   read the diff. Diff the release's `bindings/nats/asyncapi.yaml`
-   ce-type set against the emitter's current `CETypes()`
-   (`internal/wire/openits/emitter.go`) so you know which ce-types are
-   newly available and which existing mappings the release could have
-   moved underneath — enum renumbering and `identityref` spelling changes
-   don't show up as a Go compile error.
+   read the diff. Enum renumbering and `identityref` spelling changes
+   don't show up as a Go compile error, so existing mappings need the
+   probe as much as new ones. The ce-type *set* diff is mechanical: after
+   moving the pin, `internal/wire/openits/catalog_test.go` fails on every
+   newly declared ce-type the emitter neither maps nor allowlists, and on
+   every allowlisted one the release dropped.
 3. **Move the pin.**
 
    ```bash
@@ -102,8 +102,11 @@ only when a fleet genuinely needs two models releases in one binary. Edit
    not just the routing entry.
 6. **If the fleet genuinely needs two models releases compiled at once**
    (ADR 0002's S2 scenario, arriving for real), copy the emitter to
-   `internal/wire/<newversion>` instead of editing in place, and update
-   the `model_version` default only when the fleet is ready to move — two
+   `internal/wire/<newversion>` instead of editing in place: give it its
+   own `ModelVersion`, add that to `wire.SupportedModelVersions`, and add
+   its case to `internal/app`'s `catalogEmitter` (a test fails until all
+   three agree). Update the `model_version` default only when the fleet is
+   ready to move — two
    packages coexisting is the normal state during a migration, not
    something to rush past. This is rare during lockstep; most bumps are
    step 3 above, in place.

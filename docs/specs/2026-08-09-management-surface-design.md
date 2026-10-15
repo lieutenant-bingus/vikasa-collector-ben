@@ -16,7 +16,7 @@ Three directions, deliberately asymmetric:
 
 | Direction | Mechanism | Exists today |
 |---|---|---|
-| **Local** — supervisor and on-site technician | HTTP on loopback | no |
+| **Local** — supervisor and on-site technician | HTTP on loopback | yes, §1 (`internal/manage`), less `sd_notify` and expected-version drift |
 | **Outbound** — fleet observability | events on the bus | partly |
 | **Inbound** — desired state | config file, no control channel | n/a |
 
@@ -89,8 +89,9 @@ Collector-owned schema (ADR 0007), so none of this waits on an upstream
 release. All of it rides `openits-collector.*`, which ADR 0011 already put on
 its own subject root and its own stream.
 
-**Exists:** `CollectorStarted` (carries version), `DeviceStatusChanged`
-(reachability transitions).
+**Exists:** the ADR 0019 instance events — `started`, `stopping`, and a
+periodic `heartbeat` carrying identity, resource use and the cumulative
+counters — plus `DeviceStatusChanged` (reachability transitions).
 
 **To add:**
 
@@ -167,6 +168,11 @@ the leaf stays connected, so `$SYS` says *cabinet up* while health says
 *collector silent*, which is "remote fix" rather than "truck roll."
 
 ## 5. Open problem: publish loss while the broker is down
+
+**RESOLVED** by [ADR 0020](../adr/0020-broker-absence-is-latency.md): a
+bounded in-memory queue with backoff, oldest-first drops when full, and every
+drop counted in `/status` and the ADR 0019 heartbeat. The analysis below is
+kept as the record of the options weighed.
 
 Found while working through the broker/readiness interaction, and not yet
 solved.

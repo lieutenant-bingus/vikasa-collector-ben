@@ -9,6 +9,7 @@ package subject
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -67,12 +68,6 @@ type Identity struct {
 	Site       string
 }
 
-// deviceLessID is what {device_id} renders for events with no device. The
-// collector is the subject of its own boot event, so naming it "collector"
-// keeps the token count constant rather than producing a short subject that
-// falls outside the binding.
-const deviceLessID = "collector"
-
 // token is one dot-separated element: either a literal or a single placeholder.
 type token struct {
 	literal     string // rendered value for literals and resolved constants
@@ -83,6 +78,12 @@ type token struct {
 type Template struct {
 	tokens []token
 	raw    string
+	// site is what {device_id} renders for an event with no device — the
+	// collector's own events. One collector per cabinet makes site the
+	// collector's identity, and ce-source already uses it as the id segment
+	// for these events (ADR 0019 clause 2). It also keeps the token count
+	// constant, so these subjects stay inside the binding.
+	site string
 }
 
 // New validates cfg and returns a Template. Every failure here is a boot
@@ -139,7 +140,7 @@ func New(cfg Config, id Identity) (*Template, error) {
 		return nil, err
 	}
 
-	return &Template{tokens: toks, raw: raw}, nil
+	return &Template{tokens: toks, raw: raw, site: id.Site}, nil
 }
 
 // parseTokens splits the template on "." and resolves each token. Each token is
@@ -169,7 +170,7 @@ func parseTokens(raw string, vars map[string]string) ([]token, error) {
 			continue
 		}
 		// A placeholder sharing a token with other text leaves the binding no
-		// boundary to truncate on (see deriveBinding).
+		// boundary to truncate on (see Template.bindingFor).
 		if opens > 1 || !strings.HasPrefix(p, "{") || !strings.HasSuffix(p, "}") {
 			return nil, fmt.Errorf("subject: template %q token %q must be a literal or a single whole-token placeholder like {service}", raw, p)
 		}
@@ -191,7 +192,7 @@ func parseTokens(raw string, vars map[string]string) ([]token, error) {
 }
 
 // Render produces the subject for one ce-type and device. An empty deviceID
-// means a collector-level event and renders as deviceLessID.
+// means a collector-level event and renders as the site.
 func (t *Template) Render(ceType, deviceID string) (string, error) {
 	namespace, service, event, version, err := decompose(ceType)
 	if err != nil {
@@ -213,7 +214,7 @@ func (t *Template) Render(ceType, deviceID string) (string, error) {
 		case "device_id":
 			id := deviceID
 			if id == "" {
-				id = deviceLessID
+				id = t.site
 			}
 			// Checked HERE, before substitution, not on the joined subject.
 			// A device id containing a dot would merge into the rendered
@@ -243,10 +244,8 @@ func decompose(ceType string) (namespace, service, event, version string, err er
 	if len(parts) != 4 {
 		return "", "", "", "", fmt.Errorf("subject: ce-type %q must be <namespace>.<service>.<event>.<version>", ceType)
 	}
-	for _, p := range parts {
-		if p == "" {
-			return "", "", "", "", fmt.Errorf("subject: ce-type %q has an empty token", ceType)
-		}
+	if slices.Contains(parts, "") {
+		return "", "", "", "", fmt.Errorf("subject: ce-type %q has an empty token", ceType)
 	}
 	return parts[0], parts[1], parts[2], parts[3], nil
 }
@@ -353,7 +352,7 @@ func (t *Template) ValidateCETypes(ceTypes []string, deviceIDs []string) error {
 			if err != nil {
 				return fmt.Errorf("subject: template %q cannot render ce-type %q: %w", t.raw, ceType, err)
 			}
-			for _, tok := range strings.Split(subj, ".") {
+			for tok := range strings.SplitSeq(subj, ".") {
 				if !isLegalToken(tok) {
 					return fmt.Errorf("subject: ce-type %q with device %q renders to %q, which has an illegal token %q", ceType, id, subj, tok)
 				}
@@ -380,27 +379,4 @@ func withinBinding(subj, binding string) bool {
 		return strings.HasPrefix(subj, strings.TrimSuffix(binding, ">"))
 	}
 	return subj == binding
-}
-
-// deriveBinding substitutes instance-constants and truncates at the first
-// per-event token, because a JetStream stream needs a static subject filter.
-func deriveBinding(toks []token) (string, error) {
-	var prefix []string
-	for _, tok := range toks {
-		if tok.perEventVar != "" {
-			break
-		}
-		prefix = append(prefix, tok.literal)
-	}
-	if len(prefix) == 0 {
-		return "", fmt.Errorf("subject: template has no static prefix — its leftmost token varies per event, " +
-			"so the stream binding would be \">\" and would capture every subject on the server. " +
-			"Put constant tokens (agency, site, a prefix) leftmost")
-	}
-	if len(prefix) == len(toks) {
-		// No per-event tokens at all: every event renders the same subject.
-		// Legal, if odd; bind it exactly rather than with a wildcard.
-		return strings.Join(prefix, "."), nil
-	}
-	return strings.Join(prefix, ".") + ".>", nil
 }

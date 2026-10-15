@@ -1,0 +1,47 @@
+# Release artifacts for the cabinet hosts (fleet spec H1: Pi-class ARM and
+# small x86 industrial PCs). Run by .github/workflows/release-please.yml when
+# a release is cut; release-please owns the version, the tag and the notes,
+# so this only adds binaries to the release it created.
+#
+# Local check: `make release-snapshot` (needs goreleaser v2 on PATH; CI pins
+# the version in the workflows).
+version: 2
+
+project_name: vikasa-collector
+
+builds:
+  - id: collector
+    main: ./cmd/collector
+    binary: vikasa-collector
+    env:
+      - CGO_ENABLED=0 # static: no libc on the cabinet host to match
+    flags:
+      - -trimpath # no build-machine paths in panics or the binary
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    goos: [linux]
+    goarch: [amd64, arm64]
+    mod_timestamp: "{{ .CommitTimestamp }}" # reproducible
+
+archives:
+  - id: collector
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - NOTICE
+      - README.md
+      - src: collector.yaml
+        dst: collector.yaml.example
+      - src: packaging/systemd/vikasa-collector.service
+        dst: vikasa-collector.service
+
+checksum:
+  name_template: checksums.txt
+
+# release-please writes CHANGELOG.md and the release notes.
+changelog:
+  disable: true
+
+release:
+  mode: keep-existing # keep release-please's notes; only add the assets

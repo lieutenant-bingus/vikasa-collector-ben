@@ -9,7 +9,7 @@ immutable once accepted; reversals get a new ADR that supersedes the old.
 | [0001](0001-greenfield-rebuild.md) | Rebuild the collector greenfield |
 | [0002](0002-domain-model-and-wire-emitter-boundary.md) | Collector-owned domain model + versioned wire emitters |
 | [0003](0003-stable-sdk-in-tree-adapters.md) | Stable SDK, in-tree adapters (Telegraf model) |
-| [0004](0004-pull-only-state-and-event-readers.md) | Pull-only; StateReader vs EventReader split by semantics |
+| [0004](0004-pull-only-state-and-event-readers.md) | Pull-only; StateReader vs EventReader split by semantics (amended by 0021) |
 | [0005](0005-one-catalog-version-per-instance.md) | One catalog version per collector instance |
 | [0006](0006-tenant-scoped-subjects.md) | Tenant-scoped NATS subjects; CE type = catalog ce-type |
 | [0007](0007-collector-owned-health-schema.md) | Collector-owned health event schema |
@@ -24,6 +24,9 @@ immutable once accepted; reversals get a new ADR that supersedes the old.
 | [0016](0016-collector-as-transitional-shim.md) | The collector is a transitional shim; synthesis stays here |
 | [0017](0017-durable-synth-state.md) | Synth's previous state is durable, in the cabinet's own JetStream KV |
 | [0018](0018-tagged-model-pins.md) | The openits-models pin names a release tag (supersedes 0010's pinning clause) |
-| [0019](0019-collector-self-health.md) | **Proposed** — collector self-health: a periodic heartbeat on a per-instance subject |
+| [0019](0019-collector-self-health.md) | Collector self-health: a periodic heartbeat on a per-instance subject |
+| [0020](0020-broker-absence-is-latency.md) | Broker absence is latency, not loss: background connect, held synthesis, bounded publish queue |
+| [0021](0021-sdk-interfaces-ship-with-their-first-implementer.md) | SDK interfaces ship with their first implementer (amends 0004) |
+| [0022](0022-transport-security-and-credentials.md) | Transport security and credentials: creds file not URL, plaintext only on loopback, least-privilege broker user |
 
 Start at the [documentation hub](../README.md) for everything that is not a decision record.

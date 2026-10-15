@@ -18,12 +18,18 @@ func NewDetectorDiffer() Differ {
 	return &detectorDiffer{last: make(map[string]time.Time)}
 }
 
+// Volatile: detector counters change every poll, so this state is never
+// persisted (ADR 0017 writes only on transitions). After a restart the
+// first poll is a first observation and emits nothing, costing one
+// interval's volume delta.
+func (d *detectorDiffer) Volatile() bool { return true }
+
 type detectorDiffer struct {
 	mu   sync.Mutex
 	last map[string]time.Time // deviceID -> previous SampledAt
 }
 
-func (d *detectorDiffer) Kind() model.Kind { return model.KindDetectorSamples }
+func (d *detectorDiffer) Facet() model.Facet { return model.DetectorSamples{} }
 
 func (d *detectorDiffer) Diff(prev, curr model.Facet, base model.Base) []model.Event {
 	// Record this poll's time and recover the previous one. Engine serializes

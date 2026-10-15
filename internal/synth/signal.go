@@ -8,7 +8,7 @@ func NewSignalDiffer() Differ { return signalDiffer{} }
 
 type signalDiffer struct{}
 
-func (signalDiffer) Kind() model.Kind { return model.KindSignalStatus }
+func (signalDiffer) Facet() model.Facet { return model.SignalStatus{} }
 
 func (signalDiffer) Diff(prev, curr model.Facet, base model.Base) []model.Event {
 	c := curr.(model.SignalStatus)

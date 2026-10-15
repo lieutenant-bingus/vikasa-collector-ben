@@ -1,6 +1,6 @@
 # ADR 0004: Pull-only; StateReader vs EventReader split by semantics
 
-**Status:** Accepted (2026-07-12)
+**Status:** Accepted (2026-07-12). Amended by [ADR 0021](0021-sdk-interfaces-ship-with-their-first-implementer.md): the split stands, but `EventReader` and `Commander` are not declared until their first implementer exists.
 
 ## Context
 Every device in the cabinet is polled — nothing pushes. But pull transport

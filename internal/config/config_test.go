@@ -1,8 +1,10 @@
 package config
 
 import (
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -291,5 +293,88 @@ func TestLoadAcceptsValidCollectorID(t *testing.T) {
 	}
 	if cfg.CollectorID != "cabinet-042-collector_1" {
 		t.Fatalf("CollectorID = %q", cfg.CollectorID)
+	}
+}
+
+// TestLoadRejectsUnrecognizedKeys pins ADR 0014's "boot fails on the
+// unrecognized": a misspelled key must not be dropped in favour of a default.
+// The poll_intreval case is the dangerous one — before strict decoding it
+// booted fine and polled at the 5s default the operator never asked for.
+func TestLoadRejectsUnrecognizedKeys(t *testing.T) {
+	cases := map[string]string{
+		"top-level typo":    validYAML + "colector_id: x\n",
+		"device-level typo": strings.Replace(validYAML, "poll_interval: 1s", "poll_intreval: 1s", 1),
+		"subject typo":      validYAML + "subject: { tempalte: \"{namespace}.{region}\" }\n", //nolint:misspell // the misspelling is the test input
+	}
+	for name, yaml := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := Load(write(t, yaml), regWith("ntcip", "asc"))
+			if err == nil || !strings.Contains(err.Error(), "not found") {
+				t.Fatalf("Load() error = %v, want an unknown-field error", err)
+			}
+		})
+	}
+}
+
+// A second YAML document is content the collector would otherwise ignore
+// without a word — the operator edited it believing it took effect.
+func TestLoadRejectsTrailingDocument(t *testing.T) {
+	yaml := validYAML + "---\ncollector_id: other\n"
+	if _, err := Load(write(t, yaml), regWith("ntcip", "asc")); err == nil {
+		t.Fatal("Load() accepted a config with a second YAML document")
+	}
+}
+
+func TestLoadRejectsEmptyFile(t *testing.T) {
+	if _, err := Load(write(t, ""), regWith("ntcip", "asc")); err == nil {
+		t.Fatal("Load() accepted an empty config")
+	}
+}
+
+// model_version selects the catalog emitter (ADR 0005), so a value no
+// emitter in this binary implements cannot boot: before, any non-empty
+// string did, and changed nothing.
+func TestLoadRejectsUnsupportedModelVersion(t *testing.T) {
+	yaml := strings.Replace(validYAML, "model_version: openits/v1", "model_version: openits/v2", 1)
+	_, err := Load(write(t, yaml), regWith("ntcip", "asc"))
+	if err == nil || !strings.Contains(err.Error(), "openits/v2") || !strings.Contains(err.Error(), "openits/v1") {
+		t.Fatalf("Load() error = %v, want one naming the bad value and the supported ones", err)
+	}
+}
+
+// heartbeat_interval defaults to ADR 0019's 300s, and a value too small to be
+// a fleet-health cadence is refused at boot rather than flooding the uplink.
+func TestHeartbeatInterval(t *testing.T) {
+	cfg, err := Load(write(t, validYAML), regWith("ntcip", "asc"))
+	if err != nil || cfg.HeartbeatInterval != 300*time.Second {
+		t.Fatalf("default = %v (err %v), want 300s", cfg.HeartbeatInterval, err)
+	}
+	cfg, err = Load(write(t, validYAML+"heartbeat_interval: 60s\n"), regWith("ntcip", "asc"))
+	if err != nil || cfg.HeartbeatInterval != time.Minute {
+		t.Fatalf("60s = %v (err %v)", cfg.HeartbeatInterval, err)
+	}
+	for _, bad := range []string{"5s", "-1m"} {
+		if _, err := Load(write(t, validYAML+"heartbeat_interval: "+bad+"\n"), regWith("ntcip", "asc")); err == nil {
+			t.Errorf("heartbeat_interval %s accepted", bad)
+		}
+	}
+}
+
+// log_ship_level defaults to warn (ADR 0019 clause 10) and is validated at
+// boot like every other value.
+func TestLogShipLevel(t *testing.T) {
+	cfg, err := Load(write(t, validYAML), regWith("ntcip", "asc"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l, _ := cfg.LogShipFloor(); l != slog.LevelWarn {
+		t.Fatalf("default floor = %v, want WARN", l)
+	}
+	cfg, err = Load(write(t, validYAML+"log_ship_level: error\n"), regWith("ntcip", "asc"))
+	if l, _ := cfg.LogShipFloor(); err != nil || l != slog.LevelError {
+		t.Fatalf("error floor = %v (err %v)", l, err)
+	}
+	if _, err := Load(write(t, validYAML+"log_ship_level: loud\n"), regWith("ntcip", "asc")); err == nil {
+		t.Fatal("log_ship_level: loud accepted")
 	}
 }

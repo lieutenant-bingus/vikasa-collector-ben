@@ -19,7 +19,7 @@ func NewTrafficIntervalDiffer() Differ { return trafficIntervalDiffer{} }
 
 type trafficIntervalDiffer struct{}
 
-func (trafficIntervalDiffer) Kind() model.Kind { return model.KindTrafficIntervals }
+func (trafficIntervalDiffer) Facet() model.Facet { return model.TrafficIntervals{} }
 
 func (trafficIntervalDiffer) Diff(prev, curr model.Facet, base model.Base) []model.Event {
 	c := curr.(model.TrafficIntervals)

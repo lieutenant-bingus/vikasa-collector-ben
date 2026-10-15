@@ -222,14 +222,12 @@ kind has no case in the emitter's routing switch at all, the shared
 default (`return nil, false, nil`) declines it the same way.
 
 Both drop paths converge on the same place: `internal/app/app.go`'s
-`encodeAndPublish` logs a `slog.Warn` — `"event dropped: no ce-source
+`encodeAndEnqueue` logs a `slog.Warn` — `"event dropped: no ce-source
 entity kind for device kind"` or `"event dropped: no emitter for domain
-event"` — and returns without publishing. **That is the part that
-surprises people: these drops are logged, but they are not counted.**
-There is no metrics subsystem anywhere in this repository today — nothing
-under `internal/` or `sdk/` imports Prometheus, `expvar`, or OpenTelemetry
-— so a fleet operator can grep logs for a drop but cannot alert on a drop
-rate or see one on a dashboard. This is a known, tracked gap, not a small
-patch waiting to be written; see
-["Unclaimed wire-emitter events drop without a metric"](../README.md#known-gaps-and-successor-work)
-in the known-gaps list for what closing it actually involves.
+event"` — counts it (`dropped_no_source` or `dropped_no_emitter` in
+`internal/stats`), and returns without publishing. The counters are the
+collector's whole metrics surface ([ADR 0020](../adr/0020-broker-absence-is-latency.md)):
+no Prometheus or OpenTelemetry, but one `stats.Snapshot`, served today on
+the local `/status` endpoint and specified for the ADR 0019 heartbeat, so a
+fleet operator can alert on a drop rate rather than grep a cabinet's logs
+for it once the heartbeat carries it off the box.

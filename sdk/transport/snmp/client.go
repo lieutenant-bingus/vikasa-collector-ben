@@ -37,7 +37,7 @@ type DialConfig struct {
 	Address   string // "host:port"
 	Community string
 	Timeout   time.Duration // default 2s
-	Retries   int           // default 1
+	Retries   int           // 0 means no retries; ntcip sets 1
 	Version   string        // "v1" or "v2c"; empty defaults to v2c
 }
 
@@ -92,9 +92,17 @@ func (c *client) GetAll(ctx context.Context, oids []string) (Values, error) {
 		Ints:   make(map[string]int64, len(oids)),
 		Octets: make(map[string][]byte),
 	}
+	// gosnmp waits on its Context, not just its Timeout: without this a
+	// silent agent holds the poll (and shutdown) for Timeout*(Retries+1)
+	// per chunk regardless of ctx. Set per call, under the mutex, because
+	// the session is shared.
+	c.g.Context = ctx
 	// gosnmp caps PDUs per request; chunk to stay portable across agents.
 	const chunk = 16
 	for i := 0; i < len(oids); i += chunk {
+		if err := ctx.Err(); err != nil {
+			return Values{}, err
+		}
 		end := min(i+chunk, len(oids))
 		pkt, err := c.g.Get(oids[i:end])
 		if err != nil {

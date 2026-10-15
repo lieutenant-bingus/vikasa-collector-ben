@@ -54,6 +54,9 @@ none of this during a pin bump.
    (`internal/wire/openits/golden_test.go`): the fixture event, expected
    ce-type, expected `ce-dataschema`, and exact hex bytes for both `Data`
    and `Identity`.
+6. Delete the ce-type's line from `unmapped`
+   (`internal/wire/openits/catalog_test.go`). `TestUnmappedAllowlistIsCurrent`
+   fails until you do.
 
 ### Adopting a new openits-models release
 
@@ -62,9 +65,10 @@ none of this during a pin bump.
    upstream and read the changelog for every one between the current pin
    and the one you are adopting; a `feat!` there is the whole reason this
    step exists.
-2. Probe the new module (step 1 above) and diff its release's
-   `bindings/nats/asyncapi.yaml` ce-type set against the emitter's current
-   `CETypes()`.
+2. Probe the new module (step 1 above). The ce-type set diff is
+   mechanical: after the pin moves, `catalog_test.go` fails on each new
+   ce-type that is neither mapped nor in `unmapped`, and on each allowlisted
+   one the release dropped. Decide each one; never silence the test.
 3. `go get github.com/Vikasa2M/openits-models@vX.Y.Z` — the chosen tag,
    never `@main` and never `-u`. While only one release compiles at a time,
    edit `internal/wire/openits` in place; copy to `internal/wire/<version>`

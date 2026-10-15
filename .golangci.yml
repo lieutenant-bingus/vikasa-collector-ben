@@ -1,0 +1,36 @@
+# golangci-lint v2. Pinned in tools/go.mod; run with `make lint`.
+#
+# Deliberately small: `standard` (errcheck, govet, ineffassign, staticcheck,
+# unused) plus the handful that catch this codebase's real failure modes —
+# wrapped errors compared with ==, contexts dropped on the way to I/O, slog
+# calls with unpaired keys, and HTTP/network calls without a context (the
+# management surface is coming). Style linters are left out on purpose; gofmt
+# is the style.
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - errorlint
+    - contextcheck
+    - sloglint
+    - noctx
+    - bodyclose
+    - copyloopvar
+    - misspell
+  settings:
+    staticcheck:
+      # staticcheck's defaults, minus QF1001: `!(a || b || c)` reads as "none
+      # of these", which is often exactly what the code means.
+      checks: ["all", "-ST1000", "-ST1003", "-ST1016", "-ST1020", "-ST1021", "-ST1022", "-QF1001"]
+    sloglint:
+      # key=value pairs only; slog.Attr mixed in makes lines hard to grep.
+      kv-only: true
+    errcheck:
+      # Close on a read-only or already-failed path is not actionable.
+      exclude-functions:
+        - (io.Closer).Close
+
+formatters:
+  enable:
+    - gofmt

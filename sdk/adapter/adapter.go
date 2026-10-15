@@ -1,6 +1,8 @@
 // Package adapter defines the vendor×device-kind integration surface.
 // Adapters own transport entirely; their only obligation is to return
-// sdk/model types (ADR 0002, 0003). Everything is pull (ADR 0004).
+// sdk/model types (ADR 0002, 0003). Everything is pull (ADR 0004), and the
+// one read path today is StateReader: an event-shaped reader or a command
+// writer is declared together with its first implementer (ADR 0021).
 package adapter
 
 import (
@@ -12,17 +14,10 @@ import (
 // Capability is a bitset of what an adapter can do.
 type Capability uint8
 
-const (
-	// CapState: implements StateReader — poll returns a Snapshot the core
-	// diffs into events.
-	CapState Capability = 1 << iota
-	// CapEvents: implements EventReader — poll returns discrete events
-	// (log fetchers); no diffing.
-	CapEvents
-	// CapCommand: implements Commander. Reserved seam; nothing dispatches
-	// commands in v1 (ADR 0004).
-	CapCommand
-)
+// CapState means the adapter implements StateReader: a poll returns a
+// Snapshot the core diffs into events. It is the only capability today;
+// the bitset leaves room for the next read path without a breaking change.
+const CapState Capability = 1
 
 // Has reports whether c includes capability q.
 func (c Capability) Has(q Capability) bool { return c&q != 0 }
@@ -47,19 +42,6 @@ type Adapter interface {
 type StateReader interface {
 	Adapter
 	Read(ctx context.Context) (*model.Snapshot, error)
-}
-
-// EventReader polls a source that yields discrete events (e.g. controller
-// hi-res logs). Still pull; split from StateReader by semantics.
-type EventReader interface {
-	Adapter
-	Fetch(ctx context.Context) ([]model.Event, error)
-}
-
-// Commander writes commands to the device. Dormant in v1.
-type Commander interface {
-	Adapter
-	Execute(ctx context.Context, cmd model.Command) error
 }
 
 // Factory builds an Adapter for one configured device. conn is the

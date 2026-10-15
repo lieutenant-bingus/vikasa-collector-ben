@@ -35,7 +35,7 @@ left blank, so the gap is visible instead of implied.
 | The openits-models pin carries no `replace` directive | ADR 0010 | `scripts/lint-boundary.sh` |
 | The openits-models pin names a release tag | ADR 0018 | `scripts/lint-boundary.sh` |
 | The pinned release is a current one, not an old tag | ADR 0018 | Review (manual) |
-| Absence of evidence is never a state change | ADR 0013 | `internal/synth/synth.go`, `TestFailedFacetSuspendsDiffing`, `TestFailedFaultReadNeverClears`, `TestFailedDetectorReadEmitsNothing`, `TestDMSFailedReadEmitsNothing` |
+| Absence of evidence is never a state change | ADR 0013 | `internal/synth/synth.go`, `TestFailedFacetSuspendsDiffing`, `TestFailedFaultReadNeverClears`, `TestFailedDetectorReadEmitsNothing`, `TestDMSFailedReadEmitsNothing`, `TestDMSEnvFailedReadEmitsNothing`, `TestCCTVFailedReadEmitsNothingAndRecoveryDiffsAgainstPreFailure`, `TestZoneIncidentFailedReadNeitherClearsNorRedetects`, `TestTrafficIntervalFailedReadDoesNotDuplicateTheReport`, `TestZoneIntervalFailedReadDoesNotDuplicateTheReport` |
 | Config is the trust boundary; boot fails on the unrecognized | ADR 0014 | `internal/config` |
 | Subjects are operator-configurable; the CloudEvents envelope stays canonical | ADR 0009, ADR 0011, ADR 0015 | `internal/subject`, `internal/cloudevents`, `internal/config` |
 | openits-models is not reshaped to suit the collector | ADR 0016 | Review (manual) |
@@ -122,20 +122,22 @@ read as if the device reported a new value — clearing a fault that never
 cleared, or reporting a mode change that never happened, because the poll
 came back empty instead of wrong. The mechanism lives in
 `synth.Engine.Apply` (`internal/synth/synth.go`): a facet that failed to
-read is simply never present in `Snapshot.Facets`, so its differ is never
-invoked and the engine's remembered previous state survives untouched.
+read is never present in `Snapshot.Facets`, so its differ is never invoked
+and the engine's remembered previous state survives untouched. `Apply`
+does not rely on adapters getting that right: a facet the snapshot also
+lists in `Snapshot.Errors` is skipped (`TestApplyIgnoresAFacetItsSnapshotReportsFailed`),
+and so is a facet whose Go type is not its differ's
+(`TestApplyRejectsAWrongTypedFacet`) — neither is evidence.
 
-**This enforcement is partial, and the table says so rather than implying
-otherwise.** Only 4 of the collector's 9 registered differs have a test
-proving the failed-read path actually holds for them:
-`TestFailedFacetSuspendsDiffing` (signal), `TestFailedFaultReadNeverClears`
-(fault), `TestFailedDetectorReadEmitsNothing` (detector), and
-`TestDMSFailedReadEmitsNothing` (DMS). CCTV, traffic-interval,
-zone-incident, and zone-interval do not have one yet — the shared `Apply`
-mechanism almost certainly covers them too, but "almost certainly" is not
-"proven," and writing the missing four tests is tracked as a successor work
-item rather than papered over here — see the
-[gap list](../README.md#known-gaps-and-successor-work).
+**Every registered differ has a failed-read test** — the nine named in the
+table row above. The four in `internal/synth/failed_read_test.go` go one
+step further than "the failed poll emitted nothing": each recovery poll is
+chosen so that an engine which forgot the pre-failure state would emit
+something different (a transition with the wrong `From`, a re-detected
+incident, a duplicate interval report). That distinction matters because
+silence on the failed poll alone cannot tell a correct engine from one that
+wiped its memory — and a mutation that makes `Apply` forget state on a
+failed read fails all four.
 
 ## Config is the trust boundary; boot fails on the unrecognized
 
@@ -147,18 +149,23 @@ or silently wrong data discovered downstream — instead of a boot failure
 at the moment the mistake was made. `internal/config`'s `Config.validate`
 rejects an unknown vendor/device-kind, tenant tokens that would corrupt
 subject grammar or the source URN, a subject template that can never yield
-a static stream binding, a malformed `collector_id`, a missing
-`model_version`, zero devices, a duplicate or missing device ID, and a
-negative `poll_interval`.
+a static stream binding, a malformed `collector_id`, a
+`model_version` outside `wire.SupportedModelVersions`, zero devices, a duplicate or missing device ID, and a
+negative `poll_interval`. Before any of that, `config.Load` decodes
+strictly: an unknown key anywhere outside a device's `connection` block —
+a misspelled `poll_interval` would otherwise poll at the default — or a
+second YAML document fails boot. The `connection` block is opaque to the
+core, so each adapter enforces the same rule on its own keys; `ntcip`'s
+`parseSNMPBlock` (`internal/vendors/ntcip/register.go`) rejects unknown
+keys and known keys of the wrong type.
 
 ADR 0014 names one sanctioned exception — tolerating an absent broker at
-startup as transient rather than a config error — but that exception is
-**planned, not implemented**. `publish.Connect`
-(`internal/publish/publish.go`) still dials NATS and provisions streams
-during boot today, so a broker that is slow to come up currently makes the
-collector exit, same as any other boot-time failure. Nothing in the code
-carves out the exception yet — it is tracked in the
-[gap list](../README.md#known-gaps-and-successor-work).
+startup as transient rather than a config error — and
+[ADR 0020](../adr/0020-broker-absence-is-latency.md) implements it:
+`publish.Start` (`internal/publish/publish.go`) connects in the background
+and never fails on an absent broker, so the collector boots, polls, and
+queues until NATS appears (`TestRunBootsWithoutABrokerAndPublishesWhenOneArrives`).
+Bad config still fails hard; only the missing peer waits.
 
 ## Subjects are operator-configurable; the CloudEvents envelope stays canonical
 
@@ -248,18 +255,12 @@ the catalog: it proves the goldens keep up with the mapping, and nothing
 about whether the mapping keeps up with the catalog. A ce-type the pinned
 release declares but the emitter never mapped is invisible to it.
 
-There is no catalog-conformance check for the `openits` emitter today.
-`internal/wire/health` does have one — `conformance_test.go` compares the
-health emitter's `CETypes()` against an external document (`asyncapi.yaml`)
-in both directions, failing on an emittable type with no channel *and* on a
-documented channel nothing can emit. The emitter whose ce-types actually
-come from an externally-versioned catalog is the one without that check.
-Building the equivalent against the pinned release's own
-`bindings/nats/asyncapi.yaml` is successor work; see
-[the gap list](../README.md#known-gaps-and-successor-work), whose first
-entry is this finding in full — the audit ledger that originally recorded
-it no longer lives in this repository (that section says how to retrieve it
-from history).
+The catalog itself is checked separately:
+`internal/wire/openits/catalog_test.go` compares the emitter's `CETypes()`
+against the pinned release's own `bindings/nats/asyncapi.yaml` in both
+directions, with an `unmapped` allowlist (each entry carrying a reason) for
+catalog ce-types the emitter consciously does not produce. See
+[`testing-strategy.md`'s catalog-conformance section](../explanation/testing-strategy.md#the-catalog-conformance-check).
 
 ## No fixtures, no merge
 

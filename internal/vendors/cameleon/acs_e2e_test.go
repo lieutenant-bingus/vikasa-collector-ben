@@ -84,7 +84,7 @@ devices:
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cancel()
 	runErr := make(chan error, 1)
-	go func() { runErr <- app.Run(ctx, cfg, reg, ns.ClientURL(), "test") }()
+	go func() { runErr <- app.Run(ctx, cfg, reg, app.Options{NATSURL: ns.ClientURL(), Version: "test"}) }()
 
 	gotStarted := false
 	gotGatePos := false

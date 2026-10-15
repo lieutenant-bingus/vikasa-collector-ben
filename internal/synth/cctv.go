@@ -16,7 +16,7 @@ func NewCCTVDiffer() Differ { return cctvDiffer{} }
 
 type cctvDiffer struct{}
 
-func (cctvDiffer) Kind() model.Kind { return model.KindCCTVStatus }
+func (cctvDiffer) Facet() model.Facet { return model.CCTVStatus{} }
 
 func (cctvDiffer) Diff(prev, curr model.Facet, base model.Base) []model.Event {
 	if prev == nil {

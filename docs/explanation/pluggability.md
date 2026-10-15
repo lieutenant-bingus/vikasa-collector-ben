@@ -42,44 +42,30 @@ an adapter — `ntcip-asc` for the one adapter this repo ships today
 ```go
 type Capability uint8
 
-const (
-	CapState   Capability = 1 << iota // implements StateReader
-	CapEvents                         // implements EventReader
-	CapCommand                        // implements Commander
-)
+const CapState Capability = 1 // implements StateReader
 ```
 
-`Capability` is a bitset an adapter reports on its `Descriptor`, and the
-two read-shaped bits correspond directly to two interfaces:
+`Capability` is a bitset an adapter reports on its `Descriptor`. Today it
+has one bit, for the one read interface:
 
 ```go
 type StateReader interface { // poll → snapshot; core diffs
 	Adapter
 	Read(ctx context.Context) (*model.Snapshot, error)
 }
-
-type EventReader interface { // poll → discrete events; nothing to diff
-	Adapter
-	Fetch(ctx context.Context) ([]model.Event, error)
-}
 ```
 
-The split is by *semantics*, not transport: an ASC status poll returns
-state to be diffed against the last poll (`StateReader`), while a
-hi-res-log fetch returns events that already happened and are forwarded
-as-is (`EventReader`). Both are still poll-driven — see
-["Why pull-only"](#why-pull-only) below. `CapCommand` and its `Commander`
-interface are declared and otherwise unused: v1 is collect-only by
-decision (ADR 0004), and the capability exists so commanding can bolt on
-later without changing any adapter that predates it.
-
-One gap worth knowing about before it surprises you: only `StateReader` is
-wired into the poll path today. `internal/runner.New` takes an
-`adapter.StateReader` specifically, not a general `Adapter`, so an
-`EventReader` adapter would compile and register but have nothing in the
-runner to call its `Fetch`. This is tracked as open work, not a design
-decision to route around — see
-[the known-gaps list](../README.md#known-gaps-and-successor-work).
+ADR 0004 splits adapter reads by *semantics*, not transport: an ASC status
+poll returns state to be diffed against the last poll (`StateReader`),
+while a hi-res-log fetch would return events that already happened, to be
+forwarded as they are. Both are poll-driven — see
+["Why pull-only"](#why-pull-only) below. Only the state side exists in the
+SDK: [ADR 0021](../adr/0021-sdk-interfaces-ship-with-their-first-implementer.md)
+declares an interface together with its first implementer, so an
+event-shaped reader (and a command writer, since v1 is collect-only) will
+arrive with the adapter that needs it, as a new capability bit and a new
+interface. Go interfaces are satisfied implicitly, so adding one changes no
+existing adapter.
 
 ### Factory: how an adapter gets built
 
@@ -119,7 +105,7 @@ construction logic.
 
 Registration is not automatic or discovered — a compiled-in adapter package
 does nothing until something imports it and calls `Register`. That
-something is `cmd/collector/main.go`'s `RegisterAdapters`:
+something is `cmd/collector/adapters.go`'s `RegisterAdapters`:
 
 ```go
 func RegisterAdapters(r *adapter.Registry) {
@@ -131,7 +117,7 @@ Contributing a new vendor means two things: a new package under
 `internal/vendors/<vendor>/` (a file per device kind — e.g.
 `internal/vendors/ntcip/asc.go` — not a `<kind>/` subdirectory, matching
 `architecture.md`'s note on the same point) implementing `Adapter` plus
-`StateReader` and/or `EventReader`, and one added line in
+`StateReader`, and one added line in
 `RegisterAdapters`. That line is deliberate, not an oversight to be
 automated away: it is the one place in the whole binary that decides which
 vendors it ships with, and it is where a maintainer notices a new adapter
@@ -213,11 +199,12 @@ why the collector can't be remotely reached from outside the cabinet; it
 says nothing about the collector's own local link to the devices inside
 it, which is where ADR 0004's decision actually operates.
 
-`StateReader` and `EventReader` exist as two interfaces rather than one
-because "pull" describes the transport direction, not what the data means
-once it arrives — collapsing them into one interface with an
-event-vs-state flag would push that discrimination into every consumer
-instead of settling it once at the interface boundary.
+State and events get separate read interfaces rather than one because
+"pull" describes the transport direction, not what the data means once it
+arrives — one interface with an event-vs-state flag would push that
+discrimination into every consumer instead of settling it once at the
+interface boundary. Only `StateReader` is declared today (ADR 0021); the
+event-shaped one will be its own interface when it arrives.
 
 ## The rule of three
 

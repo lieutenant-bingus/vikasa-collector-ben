@@ -15,8 +15,8 @@ table is what to trust for exact wording, not this file.
 ## Commands
 
 ```bash
-make check              # vet + tests + boundary lint — the CI gate
-go test ./... -race     # CI runs this too; poll loops are concurrent
+make check              # vet + golangci-lint + tidy + race tests + boundary/docs lints — the CI gate
+make vuln               # govulncheck; CI runs it as its own, non-blocking job
 make dev                # whole pipeline locally: embedded NATS + synthetic device
 go run ./cmd/collector -config collector.yaml   # needs a real broker AND real devices
 ```

@@ -57,7 +57,7 @@ func stableMillis(t time.Time) string {
 // 26-character Crockford base32 ULID.
 func ulid(ms int64, randomness []byte) string {
 	var v [16]byte
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		v[i] = byte(ms >> (8 * (5 - i)))
 	}
 	copy(v[6:], randomness)
@@ -68,7 +68,7 @@ func ulid(ms int64, randomness []byte) string {
 	for i := range out {
 		bit := i * 5
 		var acc uint16
-		for j := 0; j < 5; j++ {
+		for j := range 5 {
 			acc <<= 1
 			// The first two positions of the 130-bit field are padding.
 			if p := bit + j - 2; p >= 0 {

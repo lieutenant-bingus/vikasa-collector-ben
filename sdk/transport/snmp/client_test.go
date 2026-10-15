@@ -1,7 +1,11 @@
 package snmp
 
 import (
+	"context"
+	"fmt"
+	"net"
 	"testing"
+	"time"
 
 	"github.com/gosnmp/gosnmp"
 )
@@ -89,5 +93,34 @@ func TestOctetBytes(t *testing.T) {
 	}
 	if _, ok := octetBytes(12); ok {
 		t.Fatal("int must not decode as octet")
+	}
+}
+
+// A poll deadline or shutdown must cut a Get short. Before, GetAll checked
+// ctx once and then waited out gosnmp's own Timeout*(Retries+1) per chunk,
+// which is what made a silent device stall a SIGTERM.
+func TestGetAllHonorsContextOnASilentAgent(t *testing.T) {
+	silent, err := new(net.ListenConfig).ListenPacket(t.Context(), "udp", "127.0.0.1:0") // receives, never replies
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = silent.Close() }()
+
+	c, err := Dial(DialConfig{Address: silent.LocalAddr().String(), Community: "public", Timeout: 5 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+
+	oids := make([]string, 40) // three chunks
+	for i := range oids {
+		oids[i] = fmt.Sprintf(".1.3.6.1.2.1.1.%d.0", i+1)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, err = c.GetAll(ctx, oids)
+	if elapsed := time.Since(start); err == nil || elapsed > time.Second {
+		t.Fatalf("GetAll on a silent agent returned err=%v after %v; want an error within ~100ms", err, elapsed)
 	}
 }

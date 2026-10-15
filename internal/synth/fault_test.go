@@ -80,7 +80,7 @@ func TestAttributeChangeIsNotARaise(t *testing.T) {
 // Determinism: gen-1 iterated a Go map here, so its raise/clear order was
 // nondeterministic. This is a regression guard, not a style preference.
 func TestEventOrderIsSortedByFaultID(t *testing.T) {
-	for i := 0; i < 20; i++ { // map iteration order varies per run
+	for range 20 { // map iteration order varies per run
 		e := NewEngine(NewFaultDiffer())
 		evs := e.Apply(faultSnap(t0, lampOut, mmu, door, powerOut))
 		var ids []string
@@ -100,7 +100,7 @@ func TestEventOrderIsSortedByFaultID(t *testing.T) {
 }
 
 func TestClearOrderIsSortedByFaultID(t *testing.T) {
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		e := NewEngine(NewFaultDiffer())
 		e.Apply(faultSnap(t0, lampOut, mmu, door, powerOut))
 		evs := e.Apply(faultSnap(t0.Add(time.Second)))

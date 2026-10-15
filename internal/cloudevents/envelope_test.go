@@ -5,11 +5,9 @@ import (
 	"time"
 )
 
-var tenant = Tenant{Region: "us-ga", Agency: "metro-atlanta", AgencyUnit: "d01", Site: "cabinet-042"}
-
 func healthEvent(payload string) Event {
 	return Event{
-		CEType:      "openits-collector.health.collector-started.v1",
+		CEType:      "openits-collector.instance.started.v1",
 		Source:      "urn:openits:collector:us-ga:metro-atlanta:d01:cabinet-042",
 		ContentType: "application/json",
 		OccurredAt:  time.Date(2026, 7, 12, 10, 0, 0, 0, time.UTC),

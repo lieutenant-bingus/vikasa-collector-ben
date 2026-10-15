@@ -137,7 +137,7 @@ It does not apply to:
 8. **Nothing outside the adapter changes.** A transport package is never
    registered with `adapter.Registry` on its own — only the adapter that
    calls it is. If adding your transport touches anything under
-   `sdk/adapter/`, `internal/config/`, or `cmd/collector/main.go`, that's a
+   `sdk/adapter/`, `internal/config/`, or `cmd/collector/`, that's a
    sign the work has drifted into adapter or core territory this skill
    doesn't cover.
 

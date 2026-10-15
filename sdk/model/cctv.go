@@ -16,6 +16,8 @@ const KindCCTVStatus Kind = "cctv-status"
 // expressible on the wire and the emitter declines rather than guessing.
 type CCTVControlMode uint8
 
+// CCTVControlMode values. The zero value, CCTVControlUnknown, means the
+// camera did not report who is driving it.
 const (
 	CCTVControlUnknown CCTVControlMode = iota
 	CCTVControlCentral
@@ -42,6 +44,8 @@ func (m CCTVControlMode) String() string {
 // TourRunState is whether a preset tour is running.
 type TourRunState uint8
 
+// TourRunState values. The zero value, TourUnknown, means the tour state was
+// not reported.
 const (
 	TourUnknown TourRunState = iota
 	TourStopped

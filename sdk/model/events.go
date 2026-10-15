@@ -2,8 +2,8 @@ package model
 
 import "time"
 
-// Event is a discrete domain occurrence — produced by synth (from
-// consecutive Snapshots) or returned directly by EventReader adapters.
+// Event is a discrete domain occurrence, produced by synth from consecutive
+// Snapshots.
 // Emitters (internal/wire) are the only consumers that turn Events into
 // wire payloads.
 type Event interface {

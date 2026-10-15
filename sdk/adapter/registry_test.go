@@ -2,6 +2,8 @@ package adapter
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/Vikasa2M/vikasa-collector/sdk/model"
@@ -36,7 +38,7 @@ func TestRegistryBuildAndKnown(t *testing.T) {
 	if _, ok := a.(StateReader); !ok {
 		t.Fatal("built adapter should be a StateReader")
 	}
-	if !a.Descriptor().Caps.Has(CapState) || a.Descriptor().Caps.Has(CapCommand) {
+	if a.Descriptor().Caps != CapState {
 		t.Fatal("capability bits wrong")
 	}
 
@@ -56,4 +58,33 @@ func TestRegistryDuplicatePanics(t *testing.T) {
 		}
 	}()
 	r.Register(d, f)
+}
+
+// A zero Registry is ready to use, like sync.Mutex: a third-party test that
+// declares `var r adapter.Registry` must not panic on its first Register.
+func TestZeroRegistryIsUsable(t *testing.T) {
+	var r Registry
+	r.Register(Descriptor{Vendor: "acme", DeviceKind: "asc", Caps: CapState},
+		func(string, map[string]any) (Adapter, error) { return nil, nil })
+	if !r.Known("acme", "asc") {
+		t.Fatal("zero Registry lost its registration")
+	}
+}
+
+// Callers branch on "nothing registered" with errors.Is, not by matching
+// message text, and both failure paths name the key they were building.
+func TestBuildErrors(t *testing.T) {
+	r := NewRegistry()
+	boom := errors.New("dial refused")
+	r.Register(Descriptor{Vendor: "acme", DeviceKind: "asc", Caps: CapState},
+		func(string, map[string]any) (Adapter, error) { return nil, boom })
+
+	_, err := r.Build("nope", "asc", "d1", nil)
+	if !errors.Is(err, ErrNotRegistered) || !strings.Contains(err.Error(), "nope-asc") {
+		t.Fatalf("unregistered Build error = %v, want ErrNotRegistered naming nope-asc", err)
+	}
+	_, err = r.Build("acme", "asc", "d1", nil)
+	if !errors.Is(err, boom) || !strings.Contains(err.Error(), "acme-asc") {
+		t.Fatalf("factory error = %v, want it wrapped and naming acme-asc", err)
+	}
 }

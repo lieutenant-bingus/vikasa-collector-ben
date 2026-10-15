@@ -40,7 +40,7 @@ skill, and is the natural next step once this one is done.
    report is its own event kind, emitted every poll by design, not
    produced by diffing.
 4. **Differ** (`internal/synth/<domain>.go`): implement `Differ`
-   (`Kind()` + `Diff(prev, curr, base)`) and register it in the
+   (`Facet()` returning the zero facet + `Diff(prev, curr, base)`) and register it in the
    `synth.NewEngine(...)` call in `internal/app/app.go`. `prev == nil` →
    no events, except the fault differ's deliberate first-poll exception
    (it raises everything currently raised). Independent axes diff
