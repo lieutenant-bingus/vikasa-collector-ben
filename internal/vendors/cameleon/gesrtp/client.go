@@ -60,9 +60,26 @@ func Dial(addr string, timeout time.Duration) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("dial: %w", err)
 	}
+	c, err := New(conn, timeout)
+	if err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	return c, nil
+}
+
+// New completes the SRTP handshake on an already-open connection.
+// Tests use it to wrap conn (for example to record frames) before the
+// handshake. The caller owns conn; Close closes it.
+func New(conn net.Conn, timeout time.Duration) (*Client, error) {
+	if conn == nil {
+		return nil, fmt.Errorf("nil connection")
+	}
+	if timeout <= 0 {
+		timeout = 3 * time.Second
+	}
 	c := &Client{conn: conn, timeout: timeout, seq: 1}
 	if err := c.init(); err != nil {
-		_ = conn.Close()
 		return nil, err
 	}
 	return c, nil
