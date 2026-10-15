@@ -24,7 +24,7 @@ import (
 // Asserts collector-started, then a gate-position-changed CloudEvent after the
 // scripted fixture flips WG-111 from closed to opening on the second poll.
 func TestACSEventsReachJetStream(t *testing.T) {
-	ns, err := server.NewServer(&server.Options{Port: -1, JetStream: true, StoreDir: t.TempDir()})
+	ns, err := server.NewServer(&{Port: server.Options{Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
