@@ -27,7 +27,8 @@ func (k GateKind) String() string {
 }
 
 // GateMode is the Cameleon / PLC operating mode encoded in DSW bits 0–1.
-// Zero is Unknown: an unread or out-of-range word must not read as Auto.
+// Unknown is zero and means the word was not read. Decoding a word never
+// produces it: all four 2-bit values are valid modes.
 type GateMode uint8
 
 const (
@@ -35,6 +36,8 @@ const (
 	GateModeAuto
 	GateModeManual
 	GateModeOffline
+	// GateModeManualNonInterlocked is appended so the values above stay put.
+	GateModeManualNonInterlocked
 )
 
 func (m GateMode) String() string {
@@ -45,6 +48,8 @@ func (m GateMode) String() string {
 		return "manual"
 	case GateModeOffline:
 		return "offline"
+	case GateModeManualNonInterlocked:
+		return "manual-non-interlocked"
 	default:
 		return "unknown"
 	}

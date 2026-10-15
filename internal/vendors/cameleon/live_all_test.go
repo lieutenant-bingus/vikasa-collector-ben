@@ -69,6 +69,7 @@ func TestLiveAllACSCabinets(t *testing.T) {
 				t.Logf("%s mode=%s pos=%s raw=0x%04X alarms=[fc=%v fo=%v estop=%v]",
 					g.ID, g.Mode, g.Position, g.Raw,
 					g.FailedClose, g.FailedOpen, g.Estop)
+				// Table 5 decodes every 2-bit mode. Unknown means the word was not read.
 				if g.Mode == model.GateModeUnknown && g.Raw != 0 {
 					t.Errorf("%s: mode unknown with raw=0x%04X", g.ID, g.Raw)
 				}

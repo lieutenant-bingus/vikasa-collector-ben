@@ -27,16 +27,22 @@ func DecodeGateWord(id string, kind model.GateKind, w uint16) model.GateReading 
 	return g
 }
 
+// gateModeFromBits follows Cameleon PLC Interface Programming Guide Table 5
+// and the gate table: 0 Offline, 1 Automatic, 2 Manual, 3 Manual
+// Non-Interlocked. Figure 4's prose lists 0=Auto and 1=Offline, which
+// contradicts Table 5 and the gate table. Table 5 was chosen by the owner
+// and matches live words (0x0021 and 0x0025 decode as Auto). Verify on lab PLC.
+// bits is the 2-bit field, so every value is a mode. Unknown is not a decode.
 func gateModeFromBits(bits uint16) model.GateMode {
-	switch bits {
+	switch bits & 0b11 {
+	case 0:
+		return model.GateModeOffline
 	case 1:
 		return model.GateModeAuto
 	case 2:
 		return model.GateModeManual
-	case 3:
-		return model.GateModeOffline
 	default:
-		return model.GateModeUnknown
+		return model.GateModeManualNonInterlocked
 	}
 }
 

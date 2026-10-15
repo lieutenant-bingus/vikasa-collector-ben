@@ -228,8 +228,17 @@ func gatePositionFor(p model.GatePosition) rlv1.GatePosition {
 }
 
 // gateOperatingModeFor maps domain gate mode onto the identityref string.
-// Out-of-range bits were read and could not be classified, so they are
-// reversible-lane-gate-mode-unknown rather than an absent mode.
+// The pinned reversible-lane types define exactly four identities:
+// reversible-lane-gate-mode-offline, -automatic, -manual, and -unknown.
+// There is no manual-non-interlocked identity. The type description says a
+// mode outside that set derives its own identity rather than the nearest
+// core value, and that interlock bypass is a separate leaf. Substituting
+// manual, or manual plus interlock-bypassed, would be that nearest-neighbour
+// mapping, so ManualNonInterlocked leaves the optional field unset.
+// Unknown means the word was not read. The catalog says an unread mode is
+// absent, not reversible-lane-gate-mode-unknown (that identity is for a mode
+// that was read and could not be classified). An empty return leaves the
+// proto field unset via strp.
 func gateOperatingModeFor(m model.GateMode) string {
 	switch m {
 	case model.GateModeAuto:
@@ -239,7 +248,7 @@ func gateOperatingModeFor(m model.GateMode) string {
 	case model.GateModeOffline:
 		return rlTypes + "reversible-lane-gate-mode-offline"
 	default:
-		return rlTypes + "reversible-lane-gate-mode-unknown"
+		return ""
 	}
 }
 

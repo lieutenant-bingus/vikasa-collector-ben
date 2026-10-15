@@ -71,10 +71,33 @@ func TestDecodeGateWordACS1Live(t *testing.T) {
 }
 
 func TestDecodeGateWordClampsOutOfRange(t *testing.T) {
-	// position bits 4-6 = 7 → unknown
+	// position bits 4-6 = 7 → unknown. Mode bits are 0, which Table 5 calls Offline.
 	g := DecodeGateWord("X", model.GateKindUnknown, 0x0070)
 	if g.Position != model.GatePositionUnknown {
 		t.Fatalf("position = %v, want unknown", g.Position)
+	}
+	if g.Mode != model.GateModeOffline {
+		t.Fatalf("mode = %v, want offline", g.Mode)
+	}
+}
+
+func TestDecodeGateModeTable5(t *testing.T) {
+	// Closed (status 2) plus each mode value in bits 0–1.
+	want := []model.GateMode{
+		model.GateModeOffline,
+		model.GateModeAuto,
+		model.GateModeManual,
+		model.GateModeManualNonInterlocked,
+	}
+	for bits, mode := range want {
+		word := uint16(bits) | (2 << 4)
+		g := DecodeGateWord("WG-111", model.GateKindWarning, word)
+		if g.Mode != mode {
+			t.Errorf("bits %d: mode = %s, want %s", bits, g.Mode, mode)
+		}
+		if g.Position != model.GatePositionClosed {
+			t.Errorf("bits %d: position = %s", bits, g.Position)
+		}
 	}
 }
 

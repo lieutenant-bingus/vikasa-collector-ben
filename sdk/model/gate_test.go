@@ -13,7 +13,8 @@ func TestGateEnumsString(t *testing.T) {
 	}
 	for m, want := range map[GateMode]string{
 		GateModeUnknown: "unknown", GateModeAuto: "auto",
-		GateModeManual: "manual", GateModeOffline: "offline", GateMode(99): "unknown",
+		GateModeManual: "manual", GateModeOffline: "offline",
+		GateModeManualNonInterlocked: "manual-non-interlocked", GateMode(99): "unknown",
 	} {
 		if got := m.String(); got != want {
 			t.Errorf("GateMode(%d).String() = %q, want %q", m, got, want)

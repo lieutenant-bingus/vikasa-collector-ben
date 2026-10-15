@@ -121,6 +121,39 @@ func TestGateFailedReadEmitsNothing(t *testing.T) {
 	}
 }
 
+func TestGateModePairTransitions(t *testing.T) {
+	modes := []model.GateMode{
+		model.GateModeOffline,
+		model.GateModeAuto,
+		model.GateModeManual,
+		model.GateModeManualNonInterlocked,
+	}
+	for _, from := range modes {
+		for _, to := range modes {
+			if from == to {
+				continue
+			}
+			e := NewEngine(NewGateDiffer())
+			start := gateClosed
+			start.Mode = from
+			e.Apply(gateSnap(t0, start))
+			next := start
+			next.Mode = to
+			evs := e.Apply(gateSnap(t0.Add(time.Second), next))
+			if len(evs) != 1 {
+				t.Fatalf("%s -> %s: events = %v", from, to, kinds(evs))
+			}
+			st, ok := evs[0].(model.GateStatusChanged)
+			if !ok || st.PreviousMode != from || st.Mode != to {
+				t.Fatalf("%s -> %s: %+v", from, to, evs[0])
+			}
+			if st.Position != model.GatePositionClosed || st.PreviousPosition != model.GatePositionClosed {
+				t.Fatalf("%s -> %s moved position: %+v", from, to, st)
+			}
+		}
+	}
+}
+
 func TestGateNewIDMidRunEmitsNothing(t *testing.T) {
 	e := NewEngine(NewGateDiffer())
 	e.Apply(gateSnap(t0, gateClosed))
