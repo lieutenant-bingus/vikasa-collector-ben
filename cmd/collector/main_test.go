@@ -28,5 +28,15 @@ func TestExampleConfigIsValid(t *testing.T) {
 		if !reg.Known(d.Vendor, d.DeviceKind) {
 			t.Errorf("device %q: %s-%s not registered", d.ID, d.Vendor, d.DeviceKind)
 		}
+		if d.ID == "acs-1" {
+			gates, _ := d.Connection["gates"].([]any)
+			if len(gates) != 24 {
+				t.Errorf("acs-1 gates = %d, want 24", len(gates))
+			}
+			plc, _ := d.Connection["plc"].(map[string]any)
+			if plc["cabinet_id"] != 1 {
+				t.Errorf("acs-1 cabinet_id = %v", plc["cabinet_id"])
+			}
+		}
 	}
 }

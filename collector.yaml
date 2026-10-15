@@ -125,23 +125,48 @@ devices:
         community: public # optional; defaults to "public"
   # cameleon-acs polls a reversible-lane cabinet over GE SRTP (TCP 18245).
   # dsw is the %R block read each poll. Each gate's dsw word must fall inside
-  # that block. cabinet words are optional.
-  - id: acs-main
+  # that block. %R100 is the first device word and is not a gate. cabinet
+  # words use only bit 0. plc.cabinet_id is compared with %R90 bits 1-6.
+  - id: acs-1
     vendor: cameleon
     device_kind: acs
     poll_interval: 1s
     connection:
       srtp:
-        address: 10.0.0.20:18245
+        address: "<host>:18245"
         timeout: 5s
       dsw:
         start: 90
         length: 110
       gates:
         - { id: "WG-111", dsw: 101, kind: warning }
+        - { id: "WG-112", dsw: 102, kind: warning }
+        - { id: "WG-113", dsw: 103, kind: warning }
         - { id: "BG-114", dsw: 104, kind: barrier }
+        - { id: "WG-119", dsw: 105, kind: warning }
+        - { id: "WG-115", dsw: 106, kind: warning }
+        - { id: "WG-117", dsw: 107, kind: warning }
+        - { id: "WG-118", dsw: 108, kind: warning }
+        - { id: "WG-121", dsw: 109, kind: warning }
+        - { id: "WG-122", dsw: 110, kind: warning }
+        - { id: "WG-123", dsw: 111, kind: warning }
+        - { id: "WG-128", dsw: 112, kind: warning }
+        - { id: "BG-124", dsw: 113, kind: barrier }
+        - { id: "WG-125", dsw: 114, kind: warning }
+        - { id: "WG-126", dsw: 115, kind: warning }
+        - { id: "WG-127", dsw: 116, kind: warning }
+        - { id: "WG-137", dsw: 117, kind: warning }
+        - { id: "WG-136", dsw: 118, kind: warning }
+        - { id: "WG-135", dsw: 119, kind: warning }
+        - { id: "BG-134", dsw: 120, kind: barrier }
+        - { id: "WG-133", dsw: 121, kind: warning }
+        - { id: "WG-132", dsw: 122, kind: warning }
+        - { id: "WG-131", dsw: 123, kind: warning }
+        - { id: "WG-116", dsw: 124, kind: warning }
       cabinet:
         lf_fault: 179
         sp_fault: 180
         door: 181
         gate_estop: 182
+      plc:
+        cabinet_id: 1
