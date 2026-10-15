@@ -326,6 +326,20 @@ func expectFromWords(t *testing.T, words map[int]uint16) (model.GateBank, model.
 		}
 	}
 	faults = append(faults, cabinetFaults(words[cab.lfFault-1], words[cab.spFault-1], words[cab.door-1], words[cab.gateEstop-1])...)
+	if w, ok := words[89]; ok {
+		if w&(1<<10) != 0 {
+			faults = append(faults, model.Fault{
+				ID: "plc/fault", Severity: model.SeverityMajor,
+				Category: model.CategoryCabinet, Description: "PLC fault bit active",
+			})
+		}
+		if w&(1<<7) != 0 {
+			faults = append(faults, model.Fault{
+				ID: "plc/cabinet-id-changed", Severity: model.SeverityMajor,
+				Category: model.CategoryCabinet, Description: "PLC cabinet ID changed",
+			})
+		}
+	}
 	sortGates(gates)
 	sortFaults(faults)
 	return model.GateBank{Gates: gates}, model.FaultSet{Faults: faults}

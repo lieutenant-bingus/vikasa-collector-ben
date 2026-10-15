@@ -32,6 +32,19 @@ type cabinetCfg struct {
 	lfFault, spFault, door, gateEstop int // 0 = not configured
 }
 
+// plcCfg is the optional comparison against %R90–%R94. A zero watchdogStall
+// disables plc/not-scanning. The config parser sets the 5s default; NewACS
+// leaves it disabled so a scripted block does not grow a stall fault.
+type plcCfg struct {
+	hasCabinetID  bool
+	cabinetID     int
+	hasProgramCRC bool
+	programCRC    uint32
+	hasConfigCRC  bool
+	configCRC     uint32
+	watchdogStall time.Duration
+}
+
 type acs struct {
 	deviceID string
 
@@ -45,7 +58,13 @@ type acs struct {
 	dswStart, dswLen int
 	gates            []gateCfg
 	cabinet          cabinetCfg
+	plc              plcCfg
 	now              func() time.Time
+	// Watchdog observation. wdHave is false until a published poll has seen
+	// the counter, and after a failed read or a reconnect.
+	wdHave  bool
+	wdLast  uint16
+	wdSince time.Time
 }
 
 // NewACS wraps an already-open word reader (fixtures / live tests).
@@ -60,11 +79,11 @@ func NewACS(deviceID string, client wordClient, dswStart, dswLen int, gates []ga
 // newACSLazy builds an adapter that dials on first Read and re-dials after
 // a failed poll. Unreachable cabinets do not fail collector boot — the
 // runner turns hard Read errors into device-unreachable health events.
-func newACSLazy(deviceID, addr string, timeout time.Duration, dswStart, dswLen int, gates []gateCfg, cab cabinetCfg) adapter.StateReader {
+func newACSLazy(deviceID, addr string, timeout time.Duration, dswStart, dswLen int, gates []gateCfg, cab cabinetCfg, plc plcCfg) adapter.StateReader {
 	return &acs{
 		deviceID: deviceID, dialAddr: addr, timeout: timeout,
 		dswStart: dswStart, dswLen: dswLen,
-		gates: gates, cabinet: cab, now: time.Now,
+		gates: gates, cabinet: cab, plc: plc, now: time.Now,
 	}
 }
 
@@ -78,6 +97,7 @@ func (a *acs) Close() error {
 	}
 	err := a.client.Close()
 	a.client = nil
+	a.wdHave = false
 	return err
 }
 
@@ -105,6 +125,7 @@ func (a *acs) dropClient() {
 		_ = a.client.Close()
 		a.client = nil
 	}
+	a.wdHave = false
 }
 
 func (a *acs) Read(ctx context.Context) (*model.Snapshot, error) {
@@ -173,10 +194,23 @@ func (a *acs) Read(ctx context.Context) (*model.Snapshot, error) {
 		}
 	}
 
-	// The fault set is one facet built from gate alarm bits and cabinet
-	// words together. If either half is unreadable the set is incomplete, and
-	// publishing the partial list would look like the missing faults cleared.
+	if faultErr == nil && a.seesPLCStatus() {
+		pf, perr := a.plcFaults(words, snap.SampledAt)
+		if perr != nil {
+			faultErr = perr
+		} else {
+			faults = append(faults, pf...)
+		}
+	}
+
+	// The fault set is one facet built from gate alarm bits, cabinet words,
+	// and the PLC status words together. If any of that is unreadable the
+	// set is incomplete, and publishing the partial list would look like the
+	// missing faults cleared. A failed observation also drops the watchdog
+	// window so the next good poll cannot raise or clear plc/not-scanning
+	// from time the PLC was not seen.
 	if faultErr != nil {
+		a.resetWatchdog()
 		snap.Errors = append(snap.Errors, model.FacetError{
 			Kind: model.KindFaultSet, Err: faultErr.Error(),
 		})
@@ -186,4 +220,86 @@ func (a *acs) Read(ctx context.Context) (*model.Snapshot, error) {
 	sortFaults(faults)
 	snap.Facets = append(snap.Facets, model.FaultSet{Faults: faults})
 	return snap, nil
+}
+
+func (a *acs) seesPLCStatus() bool {
+	return a.dswStart <= 90 && 94 < a.dswStart+a.dswLen
+}
+
+func (a *acs) plcFaults(words []uint16, now time.Time) ([]model.Fault, error) {
+	dsw0, err := wordAt(words, a.dswStart, 90)
+	if err != nil {
+		return nil, err
+	}
+	progLo, err := wordAt(words, a.dswStart, 91)
+	if err != nil {
+		return nil, err
+	}
+	progHi, err := wordAt(words, a.dswStart, 92)
+	if err != nil {
+		return nil, err
+	}
+	cfgLo, err := wordAt(words, a.dswStart, 93)
+	if err != nil {
+		return nil, err
+	}
+	cfgHi, err := wordAt(words, a.dswStart, 94)
+	if err != nil {
+		return nil, err
+	}
+	var out []model.Fault
+	add := func(id, desc string, sev model.FaultSeverity) {
+		out = append(out, model.Fault{
+			ID: id, Severity: sev, Category: model.CategoryCabinet, Description: desc,
+		})
+	}
+	if dsw0&(1<<10) != 0 {
+		add("plc/fault", "PLC fault bit active", model.SeverityMajor)
+	}
+	if dsw0&(1<<7) != 0 {
+		add("plc/cabinet-id-changed", "PLC cabinet ID changed", model.SeverityMajor)
+	}
+	if a.plc.hasCabinetID {
+		got := int((dsw0 >> 1) & 0x3f)
+		if got != a.plc.cabinetID {
+			add("plc/cabinet-id-mismatch", "PLC cabinet ID does not match configuration", model.SeverityMajor)
+		}
+	}
+	if a.plc.hasProgramCRC {
+		prog := uint32(progLo) | uint32(progHi)<<16
+		if prog != a.plc.programCRC {
+			add("plc/program-crc-mismatch", "PLC program CRC does not match configuration", model.SeverityMajor)
+		}
+	}
+	if a.plc.hasConfigCRC {
+		cfg := uint32(cfgLo) | uint32(cfgHi)<<16
+		if cfg != a.plc.configCRC {
+			add("plc/config-crc-mismatch", "PLC config CRC does not match configuration", model.SeverityMajor)
+		}
+	}
+	if a.stalled(dsw0>>11, now) {
+		add("plc/not-scanning", "PLC watchdog has not advanced", model.SeverityCritical)
+	}
+	return out, nil
+}
+
+func (a *acs) stalled(counter uint16, now time.Time) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if !a.wdHave || counter != a.wdLast {
+		a.wdHave = true
+		a.wdLast = counter
+		a.wdSince = now
+		return false
+	}
+	if a.plc.watchdogStall <= 0 {
+		return false
+	}
+	return !now.Before(a.wdSince.Add(a.plc.watchdogStall))
+}
+
+func (a *acs) resetWatchdog() {
+	a.mu.Lock()
+	a.wdHave = false
+	a.mu.Unlock()
 }

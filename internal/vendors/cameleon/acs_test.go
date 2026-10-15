@@ -140,6 +140,7 @@ func TestDecodeGateAlarms(t *testing.T) {
 func TestGateAlarmBitsRaiseAndClearThroughDiffer(t *testing.T) {
 	gates := []gateCfg{{id: "WG-111", kind: model.GateKindWarning, dsw: 101}}
 	quiet := append([]uint16(nil), acs1DSWR90...)
+	quiet[0] = 0
 	loud := append([]uint16(nil), quiet...)
 	loud[101-90] = 0x0025 | (1 << 13) | (1 << 14)
 	read := func(words []uint16) *model.Snapshot {
@@ -216,13 +217,14 @@ func TestACSReadGoldenACS1(t *testing.T) {
 	if !ok {
 		t.Fatal("missing fault-set")
 	}
-	if n := len(fs.(model.FaultSet).Faults); n != 0 {
-		t.Fatalf("live snapshot had no alarms; got %d faults", n)
+	if n := len(fs.(model.FaultSet).Faults); n != 1 || fs.(model.FaultSet).Faults[0].ID != "plc/fault" {
+		t.Fatalf("fixture %%R90 has the PLC fault bit; faults = %+v", fs)
 	}
 }
 
 func TestCabinetSpareBitsDoNotRaise(t *testing.T) {
 	words := append([]uint16(nil), acs1DSWR90...)
+	words[0] = 0 // %R90 spare bits must not be confused with the PLC fault bit
 	words[179-90] = 0x0002
 	words[180-90] = 0x0002
 	words[181-90] = 0x0002

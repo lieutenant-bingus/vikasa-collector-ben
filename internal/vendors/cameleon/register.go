@@ -2,6 +2,8 @@ package cameleon
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Vikasa2M/vikasa-collector/sdk/adapter"
@@ -20,6 +22,15 @@ import (
 //	    sp_fault: 180
 //	    door: 181
 //	    gate_estop: 182
+//	  plc:                                             # optional
+//	    cabinet_id: 1                                  # fault if %R90 bits 1–6 differ
+//	    program_crc: "0x00000000"                      # fault while live %R91/%R92 differ
+//	    config_crc: "0x00000000"                       # fault while live %R93/%R94 differ
+//	    watchdog_stall: "5s"                           # default 5s; 0 disables plc/not-scanning
+//
+// %R90–%R94 are the PLC status words when they fall inside dsw. Only bit 0 of
+// each cabinet word is the input. %R95–%R99 (user name) are not read. %R183
+// and every DCW address are never written.
 func RegisterTo(r *adapter.Registry) {
 	r.Register(acsDescriptor, func(deviceID string, conn map[string]any) (adapter.Adapter, error) {
 		cfg, err := parseACSBlock(conn)
@@ -27,7 +38,7 @@ func RegisterTo(r *adapter.Registry) {
 			return nil, fmt.Errorf("cameleon-acs %s: %w", deviceID, err)
 		}
 		// Lazy dial: unreachable cabinets must not fail collector boot.
-		return newACSLazy(deviceID, cfg.addr, cfg.timeout, cfg.dswStart, cfg.dswLen, cfg.gates, cfg.cabinet), nil
+		return newACSLazy(deviceID, cfg.addr, cfg.timeout, cfg.dswStart, cfg.dswLen, cfg.gates, cfg.cabinet, cfg.plc), nil
 	})
 }
 
@@ -37,6 +48,7 @@ type acsConn struct {
 	dswStart, dswLen int
 	gates            []gateCfg
 	cabinet          cabinetCfg
+	plc              plcCfg
 }
 
 func parseACSBlock(conn map[string]any) (acsConn, error) {
@@ -74,6 +86,7 @@ func parseACSBlock(conn map[string]any) (acsConn, error) {
 		return out, fmt.Errorf("connection.dsw.length must be a positive word count")
 	}
 	out.dswStart, out.dswLen = start, length
+	out.plc.watchdogStall = 5 * time.Second
 
 	rawGates, ok := conn["gates"].([]any)
 	if !ok || len(rawGates) == 0 {
@@ -125,12 +138,86 @@ func parseACSBlock(conn map[string]any) (acsConn, error) {
 
 	for k := range conn {
 		switch k {
-		case "srtp", "dsw", "gates", "cabinet":
+		case "srtp", "dsw", "gates", "cabinet", "plc":
 		default:
 			return out, fmt.Errorf("connection: unrecognized key %q", k)
 		}
 	}
+	if rawPLC, ok := conn["plc"]; ok {
+		block, ok := rawPLC.(map[string]any)
+		if !ok {
+			return out, fmt.Errorf("connection.plc must be a map")
+		}
+		if err := parsePLCBlock(&out, block); err != nil {
+			return out, err
+		}
+	}
 	return out, nil
+}
+
+func parsePLCBlock(out *acsConn, m map[string]any) error {
+	if out.dswStart > 90 || 94 >= out.dswStart+out.dswLen {
+		return fmt.Errorf("connection.plc requires %%R90-%%R94 inside the DSW block")
+	}
+	for k := range m {
+		switch k {
+		case "cabinet_id", "program_crc", "config_crc", "watchdog_stall":
+		default:
+			return fmt.Errorf("connection.plc: unrecognized key %q", k)
+		}
+	}
+	if v, ok := m["cabinet_id"]; ok {
+		id, err := asInt(v)
+		if err != nil || id < 1 || id > 63 {
+			return fmt.Errorf("connection.plc.cabinet_id must be an integer 1..63")
+		}
+		out.plc.hasCabinetID = true
+		out.plc.cabinetID = id
+	}
+	if v, ok := m["program_crc"]; ok {
+		crc, err := parseCRC(v)
+		if err != nil {
+			return fmt.Errorf("connection.plc.program_crc: %w", err)
+		}
+		out.plc.hasProgramCRC = true
+		out.plc.programCRC = crc
+	}
+	if v, ok := m["config_crc"]; ok {
+		crc, err := parseCRC(v)
+		if err != nil {
+			return fmt.Errorf("connection.plc.config_crc: %w", err)
+		}
+		out.plc.hasConfigCRC = true
+		out.plc.configCRC = crc
+	}
+	if v, ok := m["watchdog_stall"]; ok {
+		s, ok := v.(string)
+		if !ok {
+			return fmt.Errorf("connection.plc.watchdog_stall must be a duration string")
+		}
+		d, err := time.ParseDuration(s)
+		if err != nil || d < 0 {
+			return fmt.Errorf("connection.plc.watchdog_stall must be a duration >= 0")
+		}
+		out.plc.watchdogStall = d
+	}
+	return nil
+}
+
+func parseCRC(v any) (uint32, error) {
+	s, ok := v.(string)
+	if !ok {
+		return 0, fmt.Errorf("must be a hex string")
+	}
+	s = strings.TrimPrefix(strings.TrimPrefix(s, "0x"), "0X")
+	if s == "" || len(s) > 8 {
+		return 0, fmt.Errorf("must be a 32-bit hex value")
+	}
+	n, err := strconv.ParseUint(s, 16, 32)
+	if err != nil {
+		return 0, fmt.Errorf("must be a 32-bit hex value")
+	}
+	return uint32(n), nil
 }
 
 func optionalAddr(m map[string]any, key string, start, length int) (int, error) {
