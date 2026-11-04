@@ -96,7 +96,9 @@ func (l *ascLog) read(ctx context.Context, after []byte) ([]model.LogEvent, []by
 	var cur *logCursor
 	if len(after) > 0 {
 		var c logCursor
-		if err := json.Unmarshal(after, &c); err == nil && c.ID > 0 {
+		// A cursor primed on an empty log has ID 0 and the prime's instant;
+		// it is valid, and every row logged since has a higher ID.
+		if err := json.Unmarshal(after, &c); err == nil && (c.ID > 0 || !c.At.IsZero()) {
 			cur = &c
 		}
 		// An unreadable cursor is treated as none: prime, rather than fail
@@ -130,7 +132,8 @@ func (l *ascLog) read(ctx context.Context, after []byte) ([]model.LogEvent, []by
 
 	if cur == nil {
 		// First read: no backfill. The cursor starts at the log's end; when
-		// the log is empty, at the start of IDs and now.
+		// the log is empty, at ID 0 and now, so the first rows it gains are
+		// published.
 		next := logCursor{At: l.now().UTC()}
 		if n := len(rows); n > 0 {
 			next = logCursor{ID: rows[n-1].id, At: rows[n-1].at}

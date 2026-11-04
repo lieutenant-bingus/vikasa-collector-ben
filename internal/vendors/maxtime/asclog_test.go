@@ -278,3 +278,26 @@ func TestRegisteredWithLog(t *testing.T) {
 		t.Error("an adapter with no log configured must not declare CapEvents")
 	}
 }
+
+// A log that is empty on first contact primes at ID 0; the rows it gains
+// afterwards are published, not taken for another first contact.
+func TestLogEmptyPrimeThenRows(t *testing.T) {
+	s := &httpapitest.Static{}
+	s.Set("GET "+defaultLogPath, http.StatusOK, `<EventResponses><EventResponse></EventResponse></EventResponses>`)
+	l := newLog(s, false, fixedNow())
+	evs, next, err := l.read(t.Context(), nil)
+	if err != nil || len(evs) != 0 {
+		t.Fatalf("empty prime: %d events, err %v", len(evs), err)
+	}
+	if c := decodeCursor(t, next); c.ID != 0 || c.At.IsZero() {
+		t.Fatalf("empty prime cursor = %+v, want ID 0 at now", c)
+	}
+	s.Set("GET "+defaultLogPath, http.StatusOK, `<EventResponses><EventResponse>`+
+		`<Event ID="1" TimeStamp="11-04-2026 09:00:00.0" EventTypeID="1" Parameter="2"/>`+
+		`<Event ID="2" TimeStamp="11-04-2026 09:00:00.1" EventTypeID="7" Parameter="2"/>`+
+		`</EventResponse></EventResponses>`)
+	evs, next, err = l.read(t.Context(), next)
+	if err != nil || len(evs) != 2 || decodeCursor(t, next).ID != 2 {
+		t.Errorf("after empty prime: %d events, cursor %s, err %v; want both rows", len(evs), next, err)
+	}
+}
