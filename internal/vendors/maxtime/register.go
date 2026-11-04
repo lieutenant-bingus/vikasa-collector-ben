@@ -25,6 +25,7 @@ import (
 //	    asclog:                                  # optional; the high-resolution log
 //	      timezone: "America/New_York"           # required: the controller clock's zone
 //	      interval: "15s"                        # optional
+//	      timeout: "60s"                         # optional, per log request
 //	      path: "/v1/asclog/xml/full"            # optional
 //	      since: true                            # optional; false = download the whole ring
 //	      enabled: true                          # optional; false keeps the block, reads nothing
@@ -47,7 +48,17 @@ func RegisterTo(r *adapter.Registry) {
 		if cfg.log == nil {
 			return a, nil
 		}
-		return &ascWithLog{asc: a, log: &ascLog{api: a.api, cfg: *cfg.log, now: time.Now}}, nil
+		// The log has its own client: a first read downloads the whole ring
+		// (about 500 KB on the 2.15.1 lab controller, more than 5 s), which
+		// must not stretch the state poll's per-request timeout.
+		ld := cfg.dial
+		ld.Timeout = cfg.log.timeout
+		lc, err := httpapi.Dial(ld)
+		if err != nil {
+			_ = c.Close()
+			return nil, err
+		}
+		return &ascWithLog{asc: a, log: &ascLog{api: cfg.api(lc), cfg: *cfg.log, now: time.Now}}, nil
 	})
 }
 
@@ -166,7 +177,7 @@ func parseLogBlock(raw map[string]any) (*logConfig, error) {
 	if !ok {
 		return nil, fmt.Errorf("%s must be a mapping", logPath)
 	}
-	if err := adapter.OnlyKeys(logPath, b, "enabled", "timezone", "interval", "path", "since"); err != nil {
+	if err := adapter.OnlyKeys(logPath, b, "enabled", "timezone", "interval", "timeout", "path", "since"); err != nil {
 		return nil, err
 	}
 	enabled, err := optBool(logPath, b, "enabled", true)
@@ -176,7 +187,7 @@ func parseLogBlock(raw map[string]any) (*logConfig, error) {
 	if !enabled {
 		return nil, nil
 	}
-	cfg := &logConfig{path: defaultLogPath, interval: 15 * time.Second}
+	cfg := &logConfig{path: defaultLogPath, interval: 15 * time.Second, timeout: 60 * time.Second}
 	tz, err := adapter.OptString(logPath, b, "timezone")
 	if err != nil {
 		return nil, err
@@ -194,6 +205,14 @@ func parseLogBlock(raw map[string]any) (*logConfig, error) {
 			return nil, fmt.Errorf("%s.interval %v: want a duration of at least 1s", logPath, iv)
 		}
 		cfg.interval = d
+	}
+	if tv, ok := b["timeout"]; ok {
+		s, ok := tv.(string)
+		d, err := time.ParseDuration(s)
+		if !ok || err != nil || d <= 0 {
+			return nil, fmt.Errorf("%s.timeout %v: want a positive duration", logPath, tv)
+		}
+		cfg.timeout = d
 	}
 	p, err := adapter.OptString(logPath, b, "path")
 	if err != nil {

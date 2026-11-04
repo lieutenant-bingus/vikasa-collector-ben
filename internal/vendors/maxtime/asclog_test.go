@@ -220,12 +220,12 @@ func TestLogUsesTheConfiguredAuth(t *testing.T) {
 
 func TestParseLogBlock(t *testing.T) {
 	cfg, err := parseHTTPBlock(block(map[string]any{"base_url": "http://h", "asclog": map[string]any{
-		"timezone": "America/Chicago", "interval": "30s", "path": "/maxtime/v1/asclog/xml/full", "since": false,
+		"timezone": "America/Chicago", "interval": "30s", "timeout": "90s", "path": "/maxtime/v1/asclog/xml/full", "since": false,
 	}}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if l := cfg.log; l == nil || l.loc.String() != "America/Chicago" || l.interval != 30*time.Second ||
+	if l := cfg.log; l == nil || l.loc.String() != "America/Chicago" || l.interval != 30*time.Second || l.timeout != 90*time.Second ||
 		l.path != "/maxtime/v1/asclog/xml/full" || l.since {
 		t.Errorf("log = %+v", cfg.log)
 	}
@@ -241,6 +241,7 @@ func TestParseLogBlock(t *testing.T) {
 		"no timezone":  {map[string]any{}, "timezone required"},
 		"bad timezone": {map[string]any{"timezone": "Mars/Base"}, "Mars/Base"},
 		"short":        {map[string]any{"timezone": "UTC", "interval": "100ms"}, "at least 1s"},
+		"bad timeout":  {map[string]any{"timezone": "UTC", "timeout": "0s"}, "positive duration"},
 		"query path":   {map[string]any{"timezone": "UTC", "path": "/v1/asclog?x"}, "no query"},
 		"unknown":      {map[string]any{"timezone": "UTC", "url": "http://h"}, "url"},
 	} {

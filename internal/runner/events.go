@@ -53,10 +53,16 @@ type eventResult struct {
 	err    error
 }
 
+// defaultEventTimeout is EventConfig.Timeout's default.
+const defaultEventTimeout = 2 * time.Minute
+
 // EventConfig is what an EventRunner needs beyond the adapter itself.
 type EventConfig struct {
 	DeviceID string
-	// Timeout bounds one read; zero means the adapter's EventInterval.
+	// Timeout bounds one read; zero means defaultEventTimeout. It is a
+	// backstop for a hung adapter: the adapter's transport bounds a normal
+	// read, and a first read of a whole log can take far longer than the
+	// interval.
 	Timeout time.Duration
 	Store   CursorStore
 	// Out receives each read's events, oldest first. It must not block.
@@ -74,7 +80,7 @@ func NewEvents(dev adapter.EventReader, c EventConfig) *EventRunner {
 		panic(fmt.Sprintf("runner.NewEvents: non-positive event interval %v for device %s", interval, c.DeviceID))
 	}
 	if c.Timeout <= 0 {
-		c.Timeout = interval
+		c.Timeout = max(interval, defaultEventTimeout)
 	}
 	if c.Counters == nil {
 		c.Counters = new(stats.Counters)

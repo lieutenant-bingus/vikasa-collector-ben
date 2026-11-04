@@ -139,3 +139,4 @@ devices:
   #       asclog: # optional: read the high-resolution log too (ADR 0025)
   #         timezone: America/New_York # required: the controller clock's zone
   #         interval: 15s # optional
+  #         timeout: 60s # optional: per log request; the first read is the whole log

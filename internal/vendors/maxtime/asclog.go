@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"net/url"
 	"slices"
@@ -47,6 +48,7 @@ const sinceLayout = "01-02-2006 15:04:05.0"
 type logConfig struct {
 	path     string
 	interval time.Duration
+	timeout  time.Duration // per log request; its own client's
 	loc      *time.Location
 	since    bool
 }
@@ -87,6 +89,11 @@ func (a *ascWithLog) Descriptor() adapter.Descriptor {
 }
 
 func (a *ascWithLog) EventInterval() time.Duration { return a.log.cfg.interval }
+
+// Close closes both clients: the state poll's and the log's.
+func (a *ascWithLog) Close() error {
+	return errors.Join(a.asc.Close(), a.log.api.client.Close())
+}
 
 func (a *ascWithLog) ReadEvents(ctx context.Context, after []byte) ([]model.LogEvent, []byte, error) {
 	return a.log.read(ctx, after)

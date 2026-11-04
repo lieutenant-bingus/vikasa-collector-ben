@@ -58,7 +58,7 @@ func (f *fakeLog) ReadEvents(_ context.Context, after []byte) ([]model.LogEvent,
 
 func newEvents(dev adapter.EventReader, store CursorStore, out func([]model.Event), counters *stats.Counters) *EventRunner {
 	return NewEvents(dev, EventConfig{
-		DeviceID: "asc-1", Store: store, Out: out, Counters: counters,
+		DeviceID: "asc-1", Store: store, Out: out, Counters: counters, Timeout: 10 * time.Millisecond,
 		Log: slog.New(slog.DiscardHandler), Jitter: func(time.Duration) time.Duration { return 0 },
 	})
 }
