@@ -91,6 +91,11 @@ func recordFixture(ctx context.Context, args []string, stdout, stderr io.Writer,
 		return rec
 	})
 	undoHTTP := httpapi.InterceptDial(func(c httpapi.DialConfig, inner httpapi.Client) httpapi.Client {
+		if httpRec != nil {
+			// A second client of the same adapter (maxtime's event log):
+			// record into the same fixture, or the poll's exchanges are lost.
+			return httpRec.Wrap(inner)
+		}
 		httpRec, httpDialed = httpfixture.NewRecorder(inner), c
 		return httpRec
 	})

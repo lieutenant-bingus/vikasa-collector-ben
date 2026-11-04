@@ -61,3 +61,18 @@ func TestValidate(t *testing.T) {
 		t.Fatalf("Validate = %v", err)
 	}
 }
+
+func TestWrapRecordsIntoTheSameFixture(t *testing.T) {
+	a, b := &httpapitest.Static{}, &httpapitest.Static{}
+	a.Set("GET /mibs", 200, "poll")
+	b.Set("GET /log", 200, "log")
+	rec := httpfixture.NewRecorder(a)
+	second := rec.Wrap(b)
+	ctx := context.Background()
+	_, _ = rec.Do(ctx, httpapi.Request{Path: "/mibs"})
+	_, _ = second.Do(ctx, httpapi.Request{Path: "/log"})
+	f := rec.Fixture(prov)
+	if f.Exchanges["GET /mibs"].Body != "poll" || f.Exchanges["GET /log"].Body != "log" {
+		t.Fatalf("exchanges = %+v", f.Exchanges)
+	}
+}

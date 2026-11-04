@@ -140,7 +140,27 @@ var _ httpapi.Client = (*Recorder)(nil)
 
 // Do passes the request through. A failed request records nothing.
 func (r *Recorder) Do(ctx context.Context, req httpapi.Request) (httpapi.Response, error) {
-	resp, err := r.inner.Do(ctx, req)
+	return r.do(ctx, r.inner, req)
+}
+
+// Wrap returns a client that passes requests through to c and records them
+// into r, so an adapter that dials more than one client (a state poll and an
+// event log, say) records into one fixture. Closing it closes c.
+func (r *Recorder) Wrap(c httpapi.Client) httpapi.Client { return &tap{r: r, inner: c} }
+
+type tap struct {
+	r     *Recorder
+	inner httpapi.Client
+}
+
+func (t *tap) Do(ctx context.Context, req httpapi.Request) (httpapi.Response, error) {
+	return t.r.do(ctx, t.inner, req)
+}
+
+func (t *tap) Close() error { return t.inner.Close() }
+
+func (r *Recorder) do(ctx context.Context, inner httpapi.Client, req httpapi.Request) (httpapi.Response, error) {
+	resp, err := inner.Do(ctx, req)
 	if err != nil {
 		return resp, err
 	}
