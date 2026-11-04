@@ -31,12 +31,13 @@ func (e HighResEvent) Stamped(deviceID, deviceKind string) Event {
 type HighResClass uint8
 
 const (
-	HighResUnmapped   HighResClass = iota // no typed notification yet; published raw
-	HighResPhase                          // phase-state-change
-	HighResPedestrian                     // pedestrian-event
-	HighResDetector                       // detector-transition
-	HighResOverlap                        // overlap-change
-	HighResPreemption                     // preemption-event
+	HighResUnmapped     HighResClass = iota // no typed notification yet; published raw
+	HighResPhase                            // phase-state-change
+	HighResPedestrian                       // pedestrian-event
+	HighResDetector                         // detector-transition
+	HighResOverlap                          // overlap-change
+	HighResPreemption                       // preemption-event
+	HighResCoordination                     // coordination-change
 )
 
 // Class is the family of e's code. Codes outside every family — and every
@@ -61,6 +62,12 @@ func (e HighResEvent) Class() HighResClass {
 		return pick(id, HighResPreemption)
 	case c == 116: // preempt force-off: the param is the phase forced off
 		return pick(phase, HighResPreemption)
+	case c >= 50 && c <= 54, c == 151: // MAX-in-effect, yield point: the param is a phase
+		return pick(phase, HighResCoordination)
+	case c >= 131 && c <= 149: // pattern, cycle, offset, split N: the param is a value
+		return HighResCoordination
+	case c == 150: // cycle state 0..7 (Indiana 2020)
+		return pick(p <= 7, HighResCoordination)
 	default:
 		return HighResUnmapped
 	}
@@ -86,6 +93,8 @@ func (e HighResEvent) EventKind() string {
 		return "hr-overlap"
 	case HighResPreemption:
 		return "hr-preemption"
+	case HighResCoordination:
+		return "hr-coordination"
 	default:
 		return "hr-unmapped"
 	}

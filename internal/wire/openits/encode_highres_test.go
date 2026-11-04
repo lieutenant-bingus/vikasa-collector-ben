@@ -110,3 +110,54 @@ func TestHighResParamPlacement(t *testing.T) {
 		t.Errorf("phase 0 is not a phase; want unmapped with the raw code, got %v", m)
 	}
 }
+
+// Indiana 150's cycle-state names are bare strings joined to scTypes at
+// run time, so the source scan in TestIdentitiesAreDeclared cannot see them.
+func TestCycleStatesAreDeclared(t *testing.T) {
+	out, err := exec.CommandContext(t.Context(), "go", "list", "-m", "-f", "{{.Dir}}", modelsModule).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	declared := identitiesIn(t, filepath.Join(strings.TrimSpace(string(out)), "yang", "openits-signal-control-types.yang"))
+	for i, name := range cycleStates {
+		if !declared[name] {
+			t.Errorf("Indiana 150 param %d: %s is not declared in the pinned release", i, name)
+		}
+	}
+}
+
+func TestHighResCoordinationLeaves(t *testing.T) {
+	enc := func(code, param uint16) *scv1.CoordinationChange {
+		t.Helper()
+		e, ok, err := New("x", testEpoch).Encode(model.HighResEvent{Base: gbase("asc-1", "asc"), Code: code, Param: param})
+		if err != nil || !ok {
+			t.Fatalf("code %d: ok=%v err=%v", code, ok, err)
+		}
+		m, err := unmarshalFor(e.CEType, e.Data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return m.(*scv1.CoordinationChange)
+	}
+	if m := enc(131, 30); m.Pattern == nil || *m.Pattern != 30 {
+		t.Errorf("pattern 30: %v", m)
+	}
+	if m := enc(131, 254); m.Pattern != nil || m.GetSource().GetIndiana().GetIndianaParam() != 254 {
+		t.Errorf("pattern 254 is free, not a plan: %v", m)
+	}
+	if m := enc(132, 110); m.CycleLengthS == nil || *m.CycleLengthS != 110 {
+		t.Errorf("cycle length: %v", m)
+	}
+	if m := enc(133, 12); m.OffsetS == nil || *m.OffsetS != 12 {
+		t.Errorf("offset: %v", m)
+	}
+	if m := enc(149, 30); m.GetPhaseNumber() != 16 || m.GetSplitS() != 30 {
+		t.Errorf("split 16: %v", m)
+	}
+	if m := enc(150, 7); m.GetCycleState() != scTypes+"cycle-master-cycle-zero" {
+		t.Errorf("cycle state 7: %v", m)
+	}
+	if m := enc(151, 2); m.GetPhaseNumber() != 2 {
+		t.Errorf("yield point: %v", m)
+	}
+}

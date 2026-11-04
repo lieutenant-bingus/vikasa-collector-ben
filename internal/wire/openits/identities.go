@@ -545,6 +545,7 @@ var dataSchemaFor = map[string]string{
 	"openits.signal-control.overlap-change.v1":            registryBase + "openits-signal-control-events/2026-10-17/",
 	"openits.signal-control.preemption-event.v1":          registryBase + "openits-signal-control-events/2026-10-17/",
 	"openits.signal-control.unmapped-event.v1":            registryBase + "openits-signal-control-events/2026-10-17/",
+	"openits.signal-control.coordination-change.v1":       registryBase + "openits-signal-control-events/2026-10-17/",
 
 	// v0.4.0 moved openits-dms-events to 2026-08-27 (the phase leaf at
 	// 2026-08-23, then the two new notifications); the other event modules

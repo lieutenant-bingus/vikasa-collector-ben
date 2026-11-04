@@ -179,6 +179,22 @@ var goldenCases = []struct {
 		identHex:   "0a0608c0e182d30632056173632d319a062e6f70656e6974732d7369676e616c2d636f6e74726f6c2d74797065733a73632d756e6d61707065642d6576656e74a206100a07696e6469616e61120508c8011003",
 	},
 	{
+		name:       "signal-control coordination-change (hr 150 cycle-local-zero)",
+		ev:         model.HighResEvent{Base: gbase("asc-1", "asc"), Code: 150, Param: 5},
+		ceType:     "openits.signal-control.coordination-change.v1",
+		dataSchema: "https://schemas.open-its.org/openits-signal-control-events/2026-10-17/",
+		dataHex:    "0a056173632d31320608c0e182d3063a10636162696e65742d706f6c6c65722d31480192012d6f70656e6974732d7369676e616c2d636f6e74726f6c2d74797065733a6379636c652d6c6f63616c2d7a65726fa2011b30315445535445504f4348303030303030303030303030303030309a06356f70656e6974732d7369676e616c2d636f6e74726f6c2d74797065733a636f6f72642d6379636c652d73746174652d6368616e6765a206100a07696e6469616e6112050896011005",
+		identHex:   "0a056173632d31320608c0e182d30692012d6f70656e6974732d7369676e616c2d636f6e74726f6c2d74797065733a6379636c652d6c6f63616c2d7a65726f9a06356f70656e6974732d7369676e616c2d636f6e74726f6c2d74797065733a636f6f72642d6379636c652d73746174652d6368616e6765a206100a07696e6469616e6112050896011005",
+	},
+	{
+		name:       "signal-control coordination-change (hr 139 split 6)",
+		ev:         model.HighResEvent{Base: gbase("asc-1", "asc"), Code: 139, Param: 22},
+		ceType:     "openits.signal-control.coordination-change.v1",
+		dataSchema: "https://schemas.open-its.org/openits-signal-control-events/2026-10-17/",
+		dataHex:    "0a056173632d311006320608c0e182d3063a10636162696e65742d706f6c6c65722d314801800116a2011b30315445535445504f4348303030303030303030303030303030309a063a6f70656e6974732d7369676e616c2d636f6e74726f6c2d74797065733a636f6f72642d70726f6772616d6d65642d73706c69742d6368616e6765a206100a07696e6469616e611205088b011016",
+		identHex:   "0a056173632d311006320608c0e182d3068001169a063a6f70656e6974732d7369676e616c2d636f6e74726f6c2d74797065733a636f6f72642d70726f6772616d6d65642d73706c69742d6368616e6765a206100a07696e6469616e611205088b011016",
+	},
+	{
 		name:       "dms mode-changed (display axis)",
 		ev:         model.DMSDisplayStateChanged{Base: gbase("dms-1", "dms"), From: model.DisplayNormal, To: model.DisplayBlank},
 		ceType:     "openits.dms.mode-changed.v1",
@@ -576,6 +592,8 @@ func emptyMessageFor(ceType string) proto.Message {
 		return &scv1.PreemptionEvent{}
 	case "openits.signal-control.unmapped-event.v1":
 		return &scv1.UnmappedEvent{}
+	case "openits.signal-control.coordination-change.v1":
+		return &scv1.CoordinationChange{}
 	case "openits.signal-control.operational-status-report.v1":
 		return &scv1.OperationalStatusReport{}
 	case "openits.signal-control.preemption-activated.v1":

@@ -13,11 +13,19 @@ import (
 // highResBase is the identity base each domain family's codes must derive
 // from in the pinned catalog.
 var highResBase = map[model.HighResClass]string{
-	model.HighResPhase:      "sc-phase-event-kind",
-	model.HighResPedestrian: "sc-pedestrian-event-kind",
-	model.HighResDetector:   "sc-detector-event-kind",
-	model.HighResOverlap:    "sc-overlap-event-kind",
-	model.HighResPreemption: "sc-preemption-event-kind",
+	model.HighResPhase:        "sc-phase-event-kind",
+	model.HighResPedestrian:   "sc-pedestrian-event-kind",
+	model.HighResDetector:     "sc-detector-event-kind",
+	model.HighResOverlap:      "sc-overlap-event-kind",
+	model.HighResPreemption:   "sc-preemption-event-kind",
+	model.HighResCoordination: "sc-coordination-event-kind",
+}
+
+// cycleStates is Indiana 150's param, in the pinned coordination-cycle-state
+// identities (0-4 persistent states, 5-7 instantaneous markers).
+var cycleStates = [...]string{
+	"cycle-free", "cycle-in-step", "cycle-transition-add", "cycle-transition-subtract",
+	"cycle-transition-dwell", "cycle-local-zero", "cycle-begin-pickup", "cycle-master-cycle-zero",
 }
 
 // encodeHighRes builds the notification for one high-resolution log row.
@@ -95,6 +103,33 @@ func (e *emitter) encodeHighRes(v model.HighResEvent) (proto.Message, bool) {
 		}
 		if v.Code != 116 { // 116's param is the phase forced off, not a preempt
 			m.PreemptNumber = proto.Uint32(param)
+		}
+		return m, true
+	case model.HighResCoordination:
+		m := &scv1.CoordinationChange{
+			Kind: kind, SourceDeviceId: v.DeviceID, OccurredAt: at,
+			ObservedBy: proto.String(e.collectorID), SequenceEpoch: e.epoch, Sequence: e.nextSequence(v.DeviceID),
+			Source: src,
+		}
+		// The log row carries only the new value; previous-* stay absent.
+		switch c := v.Code; {
+		case c >= 50 && c <= 54, c == 151:
+			m.PhaseNumber = proto.Uint32(param)
+		case c == 131:
+			// 0, 254 and 255 are free, free and flash in NTCIP's pattern
+			// space, not plans; the raw param stays in source.
+			if param >= 1 && param <= 253 {
+				m.Pattern = proto.Uint32(param)
+			}
+		case c == 132:
+			m.CycleLengthS = proto.Uint32(param)
+		case c == 133:
+			m.OffsetS = proto.Uint32(param)
+		case c >= 134 && c <= 149: // split N change: N is the phase, the param its split
+			m.PhaseNumber = proto.Uint32(uint32(c) - 133)
+			m.SplitS = proto.Uint32(param)
+		case c == 150:
+			m.CycleState = proto.String(scTypes + cycleStates[param])
 		}
 		return m, true
 	}

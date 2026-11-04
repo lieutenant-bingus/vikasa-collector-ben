@@ -622,6 +622,7 @@ func TestCETypes_IsCompleteSortedAndDeduped(t *testing.T) {
 		"openits.perception.zone-interval-report.v1",
 		"openits.signal-control.cabinet-output-changed.v1",
 		"openits.signal-control.comm-health-event.v1",
+		"openits.signal-control.coordination-change.v1",
 		"openits.signal-control.detector-report.v1",
 		"openits.signal-control.detector-transition.v1",
 		"openits.signal-control.fault-cleared.v1",

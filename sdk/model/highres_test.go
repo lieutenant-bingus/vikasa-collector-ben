@@ -18,7 +18,12 @@ func TestHighResClass(t *testing.T) {
 		{61, 1, HighResOverlap, "hr-overlap"},
 		{102, 1, HighResPreemption, "hr-preemption"},
 		{116, 4, HighResPreemption, "hr-preemption"},
-		{150, 1, HighResUnmapped, "hr-unmapped"},
+		{150, 5, HighResCoordination, "hr-coordination"},
+		{150, 8, HighResUnmapped, "hr-unmapped"},
+		{131, 254, HighResCoordination, "hr-coordination"},
+		{139, 22, HighResCoordination, "hr-coordination"},
+		{50, 0, HighResUnmapped, "hr-unmapped"},
+		{13, 2, HighResUnmapped, "hr-unmapped"},   // Indiana 2019 ext-timer gap-out: not in the pinned catalog
 		{305, 20, HighResUnmapped, "hr-unmapped"}, // a vendor code above 255
 	} {
 		e := HighResEvent{Code: tc.code, Param: tc.param}

@@ -82,15 +82,21 @@ type EventReader interface {
 **`model.HighResEvent`** carries a row as the controller logged it: Indiana
 code, param, and the controller's timestamp. `Class()` routes the code to a
 catalog family by its Indiana range and the param's validity for that
-family; anything else (MaxTime codes above 255, coordination codes,
-out-of-range params) is `unmapped-event` with the raw code and param in
+family; anything else (MaxTime codes above 255, Indiana codes the pinned
+release does not define, out-of-range params) is `unmapped-event` with the raw code and param in
 `source`. The emitter's Indiana table is generated from, and tested
 against, the pinned YANG's identity descriptions, so a code is never given
 an identity the release does not define, and the code→identity mapping
 cannot drift from the pin.
 
 ## Consequences
-- Six ce-types leave the "not yet assessed" allowlist.
+- Seven ce-types leave the "not yet assessed" allowlist: the six above and
+  coordination-change. Indiana 50-54 and 151 carry the phase, 131 the
+  pattern (only 1-253: 0, 254 and 255 are free/flash sentinels, so the
+  leaf is omitted and the raw param stays in `source`), 132 the cycle
+  length, 133 the offset, 134-149 phase 1-16's split, and 150 (param 0-7)
+  the cycle state. A row is one change, so the `previous-*` leaves are
+  absent: the emitter keeps no per-device state to fill them.
 - The SDK gains an exported interface that is now frozen with v1. Its
   signature was written against a real log, with checkpointing, which is
   what ADR 0021 waited for.
