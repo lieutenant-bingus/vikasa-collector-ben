@@ -2,3 +2,11 @@
 # `git diff` from trying to wrap-print the binary and `git merge`
 # from attempting a 3-way text merge that would corrupt the file.
 # (Recorded adapter fixtures should be added here as they land.)
+
+# Go and shell sources are LF everywhere: a Windows checkout with
+# core.autocrlf=true otherwise fails gofmt in `make check`.
+*.go text eol=lf
+*.sh text eol=lf
+
+# Recorded MaxTime fixtures: byte-for-byte as recorded, never converted.
+internal/vendors/maxtime/testdata/*.json -text
