@@ -123,3 +123,16 @@ devices:
       snmp:
         address: 10.0.0.12:161 # host:port, required
         community: public # optional; defaults to "public"
+
+  # A Q-Free MaxTime controller read through its JSON MIB API (HTTP), not
+  # SNMP. The credentials make this file a secret (ADR 0022).
+  # - id: asc-maxtime-bench
+  #   vendor: maxtime
+  #   device_kind: asc
+  #   poll_interval: 5s
+  #   connection:
+  #     http:
+  #       base_url: http://10.0.0.20/maxtime # path = MIB API prefix (/maxtime-cv on the CV build)
+  #       auth: basic # basic | maxprofile; required with username/password
+  #       username: admin
+  #       password: change-me

@@ -1,0 +1,19 @@
+{
+  "exchanges": {
+    "GET /maxtime/api/mibs/FlashSta,PatrnSta,preemptStatus,SAlarms,Alarms1,Alarms2,DtAlrms,Volume,percentOccupancy/": {
+      "body": "[{\"name\":\"FlashSta\",\"data\":{\"1\":\"2\"}},{\"name\":\"PatrnSta\",\"data\":{\"1\":\"254\"}},{\"name\":\"preemptStatus\",\"data\":{\"1\":\"0\"}},{\"name\":\"SAlarms\",\"data\":{\"1\":\"0\"}},{\"name\":\"Alarms1\",\"data\":{\"1\":\"0\"}},{\"name\":\"Alarms2\",\"data\":{\"1\":\"0\"}},{\"name\":\"DtAlrms\",\"data\":{\"1\":\"0\",\"2\":\"0\"}},{\"name\":\"Volume\",\"data\":{\"1\":\"0\",\"2\":\"0\"}},{\"name\":\"percentOccupancy\",\"data\":{\"1\":\"0\",\"2\":\"0\"}}]",
+      "content_type": "application/json",
+      "status": 200
+    }
+  },
+  "provenance": {
+    "adapter": "maxtime-asc",
+    "firmware": "unrecorded",
+    "make": "Q-Free",
+    "model": "MaxTime",
+    "note": "Bench controller, healthy, running free (PatrnSta 254), no flash, no alarms. Converted from the 2026-08-28 per-object capture (one GET per MIB, bodies verbatim, Volume/percentOccupancy trimmed to channels 1-2) into the batched request the adapter makes. Superseded once re-recorded with collector record-fixture.",
+    "recorded": "2026-08-28",
+    "recorded_by": "per-object curl capture, converted",
+    "scheme": "http"
+  }
+}

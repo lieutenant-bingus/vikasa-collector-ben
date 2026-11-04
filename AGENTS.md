@@ -31,9 +31,11 @@ go run ./cmd/collector -config collector.yaml   # needs a real broker AND real d
 - `sdk/` — the stable surface adapters build on: `sdk/adapter` (the
   `StateReader` contract, registry, strict connection-block helpers),
   `sdk/model` (facets and domain events), `sdk/transport/snmp` (+ its
-  `snmptest` replay fake).
-- `internal/vendors/ntcip` — the only adapters today: `ntcip-asc` and
-  `ntcip-dms`.
+  `snmptest` replay fake), `sdk/transport/httpapi` (+ `httpapitest` and the
+  `httpfixture` format).
+- `internal/vendors/ntcip` — `ntcip-asc` and `ntcip-dms` over SNMP.
+  `internal/vendors/maxtime` — `maxtime-asc`, a MaxTime controller's NTCIP
+  objects read through its JSON MIB API over HTTP.
 - `internal/synth` — one differ per facet kind. `internal/durable` keeps
   its previous state in the JetStream KV bucket `VIKASA_SYNTH_STATE`.
 - `internal/wire/openits` — the openits-models emitter (`encode_<family>.go`

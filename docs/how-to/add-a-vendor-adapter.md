@@ -87,9 +87,12 @@ a new facet: a camera or a roadside sensor may already have one waiting.
 
 ## Pick the transport, and parse the connection block
 
-One transport ships today: `sdk/transport/snmp`, with its replay fake
-`sdk/transport/snmp/snmptest`. If your device speaks SNMP, use it. If it
-does not, build a transport first — the `add-transport` skill
+Two transports ship today: `sdk/transport/snmp`, with its replay fake
+`sdk/transport/snmp/snmptest`, and `sdk/transport/httpapi` for a device
+that answers a request/response API over HTTP(S), with
+`sdk/transport/httpapi/httpapitest` (`maxtime-asc` is the worked example).
+If your device speaks one of them, use it. If it does not, build a
+transport first — the `add-transport` skill
 (`.claude/skills/add-transport/SKILL.md`) is that workflow — and nothing in
 `internal/` or `sdk/adapter` changes to accommodate it.
 
