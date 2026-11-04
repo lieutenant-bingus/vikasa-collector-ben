@@ -154,13 +154,26 @@ request because a device that lacks it would fail the whole PDU
 
 ## Set capability bits to match what you implemented
 
-`Descriptor.Caps` is a bitset (`sdk/adapter/adapter.go`) with one bit
-today: `CapState`, for `StateReader`. Set it, as `ascDescriptor` and
-`dmsDescriptor` do. If your device produces discrete events rather than
-state (a log fetcher, say), the SDK has no interface for that yet, by
-design: [ADR 0021](../adr/0021-sdk-interfaces-ship-with-their-first-implementer.md)
-says an interface ships with its first implementer, so that adapter would
-define it and its runner path too. Raise it before writing the adapter.
+`Descriptor.Caps` is a bitset (`sdk/adapter/adapter.go`). `CapState`, for
+`StateReader`, is required; set it, as `ascDescriptor` and `dmsDescriptor`
+do. If the device also keeps a log of discrete events (a high-resolution
+log), implement `EventReader` as well and set `CapEvents`
+([ADR 0025](../adr/0025-event-reader-with-checkpointing.md)):
+
+- Register the Descriptor with every bit the adapter can have, and have a
+  built adapter's `Descriptor()` report only what that device is
+  configured for. `maxtime-asc` returns a state-only type when its
+  `asclog` block is absent, so no event loop starts.
+- Treat the cursor as yours to define and the core's to store. With none,
+  return no events and the log's end. Resynchronise yourself when the
+  device renumbers.
+- Bound one read, and skip a row that does not parse rather than failing
+  the read: a failed read keeps the cursor, so one bad row would pin it.
+- Return `model.LogEvent`s with `OccurredAt` set from the device and
+  DeviceID left to the core.
+
+A command writer has no interface yet, by design
+([ADR 0021](../adr/0021-sdk-interfaces-ship-with-their-first-implementer.md)).
 
 ## Register the adapter
 

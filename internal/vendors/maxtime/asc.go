@@ -38,7 +38,14 @@ var pollMIBs = []string{
 	mibVolume, mibOccupancy,
 }
 
+// ascDescriptor is what is registered: the adapter can read the
+// high-resolution log. A device configured without it is state-only, and
+// its adapter says so (stateDescriptor), so no event loop starts for it.
 var ascDescriptor = adapter.Descriptor{
+	Vendor: "maxtime", DeviceKind: "asc", Caps: adapter.CapState | adapter.CapEvents,
+}
+
+var stateDescriptor = adapter.Descriptor{
 	Vendor: "maxtime", DeviceKind: "asc", Caps: adapter.CapState,
 }
 
@@ -50,7 +57,7 @@ type asc struct {
 
 var _ adapter.StateReader = (*asc)(nil)
 
-func (a *asc) Descriptor() adapter.Descriptor { return ascDescriptor }
+func (a *asc) Descriptor() adapter.Descriptor { return stateDescriptor }
 
 func (a *asc) Close() error { return a.api.client.Close() }
 

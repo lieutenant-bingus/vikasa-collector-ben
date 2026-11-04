@@ -46,6 +46,7 @@ func recordFixture(ctx context.Context, args []string, stdout, stderr io.Writer,
 	firmware := fs.String("firmware", "", "firmware version as the device reports it (required)")
 	note := fs.String("note", "", "what state the device was in, e.g. \"flash, door open\"")
 	timeout := fs.Duration("timeout", 30*time.Second, "time allowed for the poll")
+	events := fs.Bool("events", false, "also record one read of the device's event log (adapters with CapEvents, HTTP only)")
 	var redact oidList
 	fs.Var(&redact, "redact", "OID whose octet-string value identifies the deployment; replaced before writing (repeatable)")
 	fs.Usage = func() {
@@ -114,6 +115,17 @@ func recordFixture(ctx context.Context, args []string, stdout, stderr io.Writer,
 	snap, err := reader.Read(pollCtx)
 	if err != nil {
 		return fmt.Errorf("poll %s: %w (nothing written)", dev.ID, err)
+	}
+
+	if *events {
+		er, ok := a.(adapter.EventReader)
+		if !ok || !a.Descriptor().Caps.Has(adapter.CapEvents) || httpRec == nil {
+			return fmt.Errorf("-events: %s on device %s does not read an event log over HTTP (nothing written)", key, dev.ID)
+		}
+		// A first read: the whole log, with no cursor, so nothing is filtered.
+		if _, _, err := er.ReadEvents(pollCtx, nil); err != nil {
+			return fmt.Errorf("event log %s: %w (nothing written)", dev.ID, err)
+		}
 	}
 
 	if httpRec != nil {

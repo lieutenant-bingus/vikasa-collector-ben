@@ -34,7 +34,7 @@ func TestParseHTTPBlockRejects(t *testing.T) {
 		want string
 	}{
 		"no block":         {map[string]any{}, "connection.http block required"},
-		"unknown key":      {block(map[string]any{"base_url": "http://h", "asclog": true}), "asclog"},
+		"unknown key":      {block(map[string]any{"base_url": "http://h", "asc_log": true}), "asc_log"},
 		"no base url":      {block(map[string]any{}), "base_url required"},
 		"creds in url":     {block(map[string]any{"base_url": "http://u:p@h"}), "must not carry credentials"},
 		"user, no auth":    {block(map[string]any{"base_url": "http://h", "username": "u", "password": "p"}), "auth required"},

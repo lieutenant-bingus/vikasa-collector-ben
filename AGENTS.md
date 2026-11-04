@@ -35,9 +35,11 @@ go run ./cmd/collector -config collector.yaml   # needs a real broker AND real d
   `httpfixture` format).
 - `internal/vendors/ntcip` — `ntcip-asc` and `ntcip-dms` over SNMP.
   `internal/vendors/maxtime` — `maxtime-asc`, a MaxTime controller's NTCIP
-  objects read through its JSON MIB API over HTTP.
+  objects read through its JSON MIB API over HTTP, and (optionally) its
+  high-resolution log, the first `EventReader` (ADR 0025).
 - `internal/synth` — one differ per facet kind. `internal/durable` keeps
-  its previous state in the JetStream KV bucket `VIKASA_SYNTH_STATE`.
+  its previous state in the JetStream KV bucket `VIKASA_SYNTH_STATE`, and
+  each `EventReader`'s log cursor beside it.
 - `internal/wire/openits` — the openits-models emitter (`encode_<family>.go`
   per service); `internal/wire/health` — the collector-owned schema
   (described in `asyncapi.yaml`); `internal/wire/tier2` — the Tier 2

@@ -22,6 +22,12 @@ import (
 //	    timeout: "5s"                            # optional, per request
 //	    insecure_skip_verify: false              # optional, https with a self-signed cert
 //	    mib_batch: true                          # optional; false = one GET per object
+//	    asclog:                                  # optional; the high-resolution log
+//	      timezone: "America/New_York"           # required: the controller clock's zone
+//	      interval: "15s"                        # optional
+//	      path: "/v1/asclog/xml/full"            # optional
+//	      since: true                            # optional; false = download the whole ring
+//	      enabled: true                          # optional; false keeps the block, reads nothing
 //
 // base_url's path is the MIB API prefix: /maxtime on the standard build,
 // /maxtime-cv on the CV build. It defaults to /maxtime. Credentials live in
@@ -37,7 +43,11 @@ func RegisterTo(r *adapter.Registry) {
 		if err != nil {
 			return nil, err
 		}
-		return &asc{deviceID: deviceID, api: cfg.api(c), now: time.Now}, nil
+		a := &asc{deviceID: deviceID, api: cfg.api(c), now: time.Now}
+		if cfg.log == nil {
+			return a, nil
+		}
+		return &ascWithLog{asc: a, log: &ascLog{api: a.api, cfg: *cfg.log, now: time.Now}}, nil
 	})
 }
 
@@ -48,6 +58,7 @@ type httpConfig struct {
 	username string
 	password string
 	batch    bool
+	log      *logConfig // nil: the high-resolution log is not read
 }
 
 func (c httpConfig) api(client httpapi.Client) *mibAPI {
@@ -67,7 +78,7 @@ func parseHTTPBlock(conn map[string]any) (httpConfig, error) {
 		return httpConfig{}, errors.New("connection.http block required")
 	}
 	if err := adapter.OnlyKeys(blockPath, raw,
-		"base_url", "auth", "username", "password", "timeout", "insecure_skip_verify", "mib_batch"); err != nil {
+		"base_url", "auth", "username", "password", "timeout", "insecure_skip_verify", "mib_batch", "asclog"); err != nil {
 		return httpConfig{}, err
 	}
 	base, err := adapter.OptString(blockPath, raw, "base_url")
@@ -129,23 +140,85 @@ func parseHTTPBlock(conn map[string]any) (httpConfig, error) {
 		}
 		cfg.dial.Timeout = d
 	}
-	if cfg.dial.InsecureSkipVerify, err = optBool(raw, "insecure_skip_verify", false); err != nil {
+	if cfg.dial.InsecureSkipVerify, err = optBool(blockPath, raw, "insecure_skip_verify", false); err != nil {
 		return httpConfig{}, err
 	}
-	if cfg.batch, err = optBool(raw, "mib_batch", true); err != nil {
+	if cfg.batch, err = optBool(blockPath, raw, "mib_batch", true); err != nil {
+		return httpConfig{}, err
+	}
+	if cfg.log, err = parseLogBlock(raw); err != nil {
 		return httpConfig{}, err
 	}
 	return cfg, nil
 }
 
-func optBool(raw map[string]any, key string, def bool) (bool, error) {
+const logPath = blockPath + ".asclog"
+
+// parseLogBlock reads connection.http.asclog. Its presence enables the log.
+// timezone is required rather than defaulted to the collector host's: the
+// controller logs its own wall clock, and a wrong zone shifts every event.
+func parseLogBlock(raw map[string]any) (*logConfig, error) {
+	v, ok := raw["asclog"]
+	if !ok {
+		return nil, nil
+	}
+	b, ok := v.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("%s must be a mapping", logPath)
+	}
+	if err := adapter.OnlyKeys(logPath, b, "enabled", "timezone", "interval", "path", "since"); err != nil {
+		return nil, err
+	}
+	enabled, err := optBool(logPath, b, "enabled", true)
+	if err != nil {
+		return nil, err
+	}
+	if !enabled {
+		return nil, nil
+	}
+	cfg := &logConfig{path: defaultLogPath, interval: 15 * time.Second}
+	tz, err := adapter.OptString(logPath, b, "timezone")
+	if err != nil {
+		return nil, err
+	}
+	if tz == "" {
+		return nil, fmt.Errorf("%s.timezone required: the controller clock's IANA zone, e.g. \"America/New_York\"", logPath)
+	}
+	if cfg.loc, err = time.LoadLocation(tz); err != nil {
+		return nil, fmt.Errorf("%s.timezone %q: %w", logPath, tz, err)
+	}
+	if iv, ok := b["interval"]; ok {
+		s, ok := iv.(string)
+		d, err := time.ParseDuration(s)
+		if !ok || err != nil || d < time.Second {
+			return nil, fmt.Errorf("%s.interval %v: want a duration of at least 1s", logPath, iv)
+		}
+		cfg.interval = d
+	}
+	p, err := adapter.OptString(logPath, b, "path")
+	if err != nil {
+		return nil, err
+	}
+	if p != "" {
+		if !strings.HasPrefix(p, "/") || strings.ContainsAny(p, "?#") {
+			return nil, fmt.Errorf("%s.path %q: want an absolute path with no query", logPath, p)
+		}
+		cfg.path = p
+	}
+	if cfg.since, err = optBool(logPath, b, "since", true); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
+func optBool(path string, raw map[string]any, key string, def bool) (bool, error) {
 	v, ok := raw[key]
 	if !ok {
 		return def, nil
 	}
 	b, ok := v.(bool)
 	if !ok {
-		return false, fmt.Errorf("%s.%s must be true or false", blockPath, key)
+		return false, fmt.Errorf("%s.%s must be true or false", path, key)
 	}
 	return b, nil
 }

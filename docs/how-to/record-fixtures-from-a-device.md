@@ -112,6 +112,12 @@ collector record-fixture -config collector.yaml -device asc-1 \
   -out internal/vendors/maxtime/testdata/asc-healthy-free.json
 ```
 
+Add `-events` to record one read of an `EventReader`'s log in the same
+file (it reads with no cursor, so the whole log is recorded). A MaxTime
+ring is about ten thousand rows, close to a megabyte: record it to its own
+file, e.g. `testdata/asclog-<state>.json`, and keep the state poll's
+fixture separate.
+
 ## Regenerating a fixture
 
 Run the same command against the same make, model and firmware, with the

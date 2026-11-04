@@ -136,3 +136,6 @@ devices:
   #       auth: basic # basic | maxprofile; required with username/password
   #       username: admin
   #       password: change-me
+  #       asclog: # optional: read the high-resolution log too (ADR 0025)
+  #         timezone: America/New_York # required: the controller clock's zone
+  #         interval: 15s # optional
