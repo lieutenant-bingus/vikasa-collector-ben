@@ -1,6 +1,8 @@
 # ADR 0021: SDK interfaces ship with their first implementer
 
-**Status:** Accepted (2026-10-13)
+**Status:** Accepted (2026-10-13). Amended 2026-11-04 by
+[ADR 0025](0025-event-reader-with-checkpointing.md): `EventReader` and
+`CapEvents` return with their first implementer, `maxtime-asc`.
 **Amends:** [ADR 0004](0004-pull-only-state-and-event-readers.md) — its
 semantic split stands; the two interfaces it declared ahead of any
 implementer are removed until one exists.

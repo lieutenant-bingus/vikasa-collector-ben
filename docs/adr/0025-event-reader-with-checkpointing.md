@@ -1,6 +1,6 @@
 # ADR 0025: EventReader, with a core-owned checkpoint
 
-**Status:** Proposed (2026-11-04)
+**Status:** Accepted (2026-11-04); implemented
 **Amends:** [ADR 0021](0021-sdk-interfaces-ship-with-their-first-implementer.md) —
 the event-shaped reader it removed returns, in the change that implements
 it, as that ADR requires. [ADR 0004](0004-pull-only-state-and-event-readers.md)'s
@@ -59,6 +59,12 @@ type EventReader interface {
 - **Resynchronisation is the adapter's.** A device that renumbers its log
   (reboot, clear) or wraps past the cursor is recognised by the adapter,
   which resumes from what it can place rather than failing every read.
+- **Two deliberate losses, both bounded.** A cursor the adapter cannot
+  parse (a format change across an upgrade) is treated as none and primes
+  at the log's end: failing every read until an operator clears the bucket
+  would lose more. A log row that does not parse is skipped and the cursor
+  moves past it: retrying it would pin the cursor on that row forever.
+  The gap shows in the published rows' source IDs.
 - **The core stamps device identity** (`model.LogEvent.Stamped`), as it
   does a Snapshot's kind, so an adapter cannot publish as another device.
 - **A separate loop, sharing the poll loop's isolation but not its health

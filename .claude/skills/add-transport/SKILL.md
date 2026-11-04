@@ -6,8 +6,9 @@ contract: v1
 
 # Adding a transport
 
-Exactly one transport exists in this repo today, `sdk/transport/snmp`. This
-skill generalises from it honestly: where SNMP's shape is a genuine
+Two transports exist in this repo: `sdk/transport/snmp` and
+`sdk/transport/httpapi` (with `httpapitest` and `httpfixture`). This skill
+generalises from them honestly: where SNMP's shape is a genuine
 protocol constraint (a PDU size cap, a connection that cannot be shared
 across goroutines), that constraint is named as SNMP's, not smuggled in as
 a rule every transport must follow. Where SNMP's shape is just SNMP's
@@ -110,9 +111,11 @@ It does not apply to:
      can exercise "this facet's read failed, that one didn't" without a
      second fake type.
    - This fake is what a fixture *replays into* — it is not a recorder.
-     The recorder (`collector record-fixture`) records SNMP only, by
-     wrapping the client `snmp.Dial` returns (`snmp.InterceptDial`). Until
-     your transport offers the same hook, its adapters hand-capture with a
+     The recorder (`collector record-fixture`) records SNMP and HTTP, by
+     wrapping the client `snmp.Dial` or `httpapi.Dial` returns
+     (`snmp.InterceptDial`, `httpapi.InterceptDial`; `-events` also
+     records one event-log read). Until your transport offers the same
+     hook and a fixture format, its adapters hand-capture with a
      provenance comment
      ([`record-fixtures-from-a-device.md`](../../../docs/how-to/record-fixtures-from-a-device.md),
      "Without the recorder"). Your fake existing is what makes that
