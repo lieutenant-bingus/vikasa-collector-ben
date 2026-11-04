@@ -319,3 +319,38 @@ func TestReadLabFixture2151(t *testing.T) {
 		t.Errorf("detector samples: %d, first %+v", len(d.Samples), d.Samples[:1])
 	}
 }
+
+// Preempt 3 held (PreCtrSt) on the lab controller. SAlarms bit 0 (preempt)
+// is set and Alarms1's coord-active bit drops for the hold; neither is a
+// fault. PatrnSta stays 30, so the mode stays coordinated.
+func TestReadLabPreemptFixture(t *testing.T) {
+	snap, err := newASC(httpapitest.LoadFixture(t, "testdata/asc-lab-preempt.json")).Read(t.Context())
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if len(snap.Errors) != 0 || len(snap.Facets) != 3 {
+		t.Fatalf("facets %+v, errors %+v", snap.Facets, snap.Errors)
+	}
+	want := model.SignalStatus{Mode: model.ModeCoordinated, CabinetOutput: model.OutputNormal, ActivePlanID: 30,
+		PreemptionActive: true, PreemptionSource: "preempt-3"}
+	if diff := cmp.Diff(want, snap.Facets[0]); diff != "" {
+		t.Errorf("status (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(model.FaultSet{}, snap.Facets[1]); diff != "" {
+		t.Errorf("a preempt is not a fault (-want +got):\n%s", diff)
+	}
+}
+
+// Phase calls latched on the lab controller; detector counts stayed 0.
+func TestReadLabTrafficFixture(t *testing.T) {
+	snap, err := newASC(httpapitest.LoadFixture(t, "testdata/asc-lab-traffic.json")).Read(t.Context())
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if diff := cmp.Diff(model.SignalStatus{Mode: model.ModeCoordinated, CabinetOutput: model.OutputNormal, ActivePlanID: 30}, snap.Facets[0]); diff != "" {
+		t.Errorf("status (-want +got):\n%s", diff)
+	}
+	if d := snap.Facets[2].(model.DetectorSamples); len(d.Samples) != 64 {
+		t.Errorf("detector samples = %d, want 64", len(d.Samples))
+	}
+}
