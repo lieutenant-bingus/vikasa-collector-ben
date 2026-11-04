@@ -94,10 +94,13 @@ stale. Each entry carries one of four reasons:
 - **describes a command** (3) — the `openits.cctv.*` PTZ and lockout
   events. The collector commands nothing; the SDK has no command path at
   all ([ADR 0021](adr/0021-sdk-interfaces-ship-with-their-first-implementer.md)).
-- **signal control, not yet assessed per event** (11) — mostly high-rate
-  per-cycle events an SNMP poller cannot observe. They want a controller
-  that pushes, which is the end state ADR 0016 expects to make the
-  collector unnecessary. Each needs its own verdict.
+- **signal control, not yet assessed per event** (5) — mostly high-rate
+  per-cycle events an SNMP poller cannot observe. The six a
+  high-resolution log carries (phase, pedestrian, detector, overlap,
+  preemption, unmapped) are mapped from `EventReader` adapters
+  ([ADR 0025](adr/0025-event-reader-with-checkpointing.md)); the rest want
+  a controller that pushes, which is the end state ADR 0016 expects to make
+  the collector unnecessary. Each needs its own verdict.
 - **owed** (3) — `traffic-sensor-status-report`, `queue-state-changed`
   and `zone-occupancy-changed`, in services already wired end to end.
 

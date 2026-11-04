@@ -41,9 +41,10 @@ contract), [0013](0013-absence-of-evidence.md) (the synth rule), and
 | [0018](0018-tagged-model-pins.md) | The openits-models pin names a release tag | Accepted 2026-08-23. Supersedes 0010's pinning clause |
 | [0019](0019-collector-self-health.md) | Collector self-health: a periodic heartbeat on a per-instance subject | Accepted 2026-10-12, amended 2026-10-14 (comm-health per device kind, with a fallback); implemented. Amends 0007 |
 | [0020](0020-broker-absence-is-latency.md) | Broker absence is latency, not loss: background connect, held synthesis, bounded publish queue | Accepted 2026-10-12; implemented 2026-10-13. Implements 0014's exception; amends 0017 |
-| [0021](0021-sdk-interfaces-ship-with-their-first-implementer.md) | SDK interfaces ship with their first implementer | Accepted 2026-10-13. Amends 0004 |
+| [0021](0021-sdk-interfaces-ship-with-their-first-implementer.md) | SDK interfaces ship with their first implementer | Accepted 2026-10-13. Amends 0004. EventReader returned by 0025 |
 | [0022](0022-transport-security-and-credentials.md) | Transport security and credentials: creds file not URL, plaintext only on loopback, least-privilege broker user | Accepted 2026-10-15 |
 | [0023](0023-ship-a-binary-and-a-runtime-contract.md) | Ship a binary and a runtime contract; packaging is the deployer's | Accepted 2026-10-20 |
 | [0024](0024-openits-models-v0.8-domain-changes.md) | Domain changes for openits-models v0.8.0: cabinet output split from coordination mode, fault first-observed, comm-lost last-contact | Accepted 2026-10-20. Amends 0013's application to the signal facet and 0019's reachability fallback |
+| [0025](0025-event-reader-with-checkpointing.md) | EventReader, with a core-owned checkpoint: no backfill, publish then advance, adapter-owned resync | Proposed 2026-11-04. Amends 0021 |
 
 Start at the [documentation hub](../README.md) for everything that is not a decision record.

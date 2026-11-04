@@ -235,6 +235,14 @@ func Run(ctx context.Context, cfg *config.Config, reg *adapter.Registry, opts Op
 			Counters: counters, Devices: devices, Log: log, Liveness: live,
 		})
 		wg.Go(func() { r.Run(ctx) })
+		// A device whose adapter reads its event log gets a second loop for
+		// it (ADR 0025), resuming from the cursor durable state stored.
+		if er, ok := readers[i].(adapter.EventReader); ok && er.Descriptor().Caps.Has(adapter.CapEvents) {
+			e := runner.NewEvents(er, runner.EventConfig{
+				DeviceID: d.ID, Store: state, Out: sink, Counters: counters, Log: log,
+			})
+			wg.Go(func() { e.Run(ctx) })
+		}
 	}
 	if opts.Notify != nil {
 		wg.Go(func() { notifyReady(ctx, log, opts.Notify, devices) })
@@ -311,6 +319,13 @@ func buildReaders(log *slog.Logger, devices []config.Device, reg *adapter.Regist
 			_ = a.Close()
 			closeAll(log, readers)
 			return nil, fmt.Errorf("device %s: adapter %s lacks CapState", d.ID, a.Descriptor().Key())
+		}
+		if a.Descriptor().Caps.Has(adapter.CapEvents) {
+			if _, ok := a.(adapter.EventReader); !ok {
+				_ = a.Close()
+				closeAll(log, readers)
+				return nil, fmt.Errorf("device %s: adapter %s declares CapEvents but is not an EventReader", d.ID, a.Descriptor().Key())
+			}
 		}
 		readers = append(readers, sr)
 	}

@@ -13,6 +13,16 @@ type Event interface {
 	EventOccurredAt() time.Time
 }
 
+// LogEvent is an event an EventReader reads from a device's own log rather
+// than one synth derives from a diff. The core stamps the device's identity
+// onto it — as it does a Snapshot's — so an adapter cannot publish an event
+// as another device, or under a kind that disagrees with its registration.
+type LogEvent interface {
+	Event
+	// Stamped returns the event with DeviceID and DeviceKind set.
+	Stamped(deviceID, deviceKind string) Event
+}
+
 // Base carries the fields every event has; embed it.
 type Base struct {
 	DeviceID string

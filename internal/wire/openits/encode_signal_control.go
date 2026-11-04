@@ -13,6 +13,9 @@ import (
 func (e *emitter) encodeSignalControl(ev model.Event) (proto.Message, bool) {
 	var msg proto.Message
 	switch v := ev.(type) {
+	case model.HighResEvent:
+		return e.encodeHighRes(v)
+
 	case model.ModeChanged:
 		// Coordination mode (ADR 0024). `mode` is mandatory, so a move to an
 		// unknown mode is not claimed; the differ does not emit one anyway.

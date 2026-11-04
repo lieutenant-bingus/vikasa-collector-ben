@@ -135,6 +135,14 @@ var ceTypeFor = map[key]string{
 	{"preemption-cleared", "asc"}:        "openits.signal-control.preemption-cleared.v1",
 	{"detector-report", "asc"}:           "openits.signal-control.detector-report.v1",
 
+	// High-resolution log rows (ADR 0025), routed by Indiana family.
+	{"hr-phase", "asc"}:      "openits.signal-control.phase-state-change.v1",
+	{"hr-pedestrian", "asc"}: "openits.signal-control.pedestrian-event.v1",
+	{"hr-detector", "asc"}:   "openits.signal-control.detector-transition.v1",
+	{"hr-overlap", "asc"}:    "openits.signal-control.overlap-change.v1",
+	{"hr-preemption", "asc"}: "openits.signal-control.preemption-event.v1",
+	{"hr-unmapped", "asc"}:   "openits.signal-control.unmapped-event.v1",
+
 	{"message-activation-failed", "dms"}: "openits.dms.message-activation-failed.v1",
 	{"message-changed", "dms"}:           "openits.dms.message-changed.v1",
 	{"sign-status-report", "dms"}:        "openits.dms.sign-status-report.v1",

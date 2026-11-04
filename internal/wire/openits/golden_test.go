@@ -131,6 +131,54 @@ var goldenCases = []struct {
 		identHex:   "0a056173632d31120608a2e182d306181f220a0801182a220431322e352a0608c0e182d3069a062f6f70656e6974732d7369676e616c2d636f6e74726f6c2d74797065733a73632d6465746563746f722d7265706f7274",
 	},
 	{
+		name:       "signal-control phase-state-change (hr 1 phase-begin-green)",
+		ev:         model.HighResEvent{Base: gbase("asc-1", "asc"), Code: 1, Param: 2},
+		ceType:     "openits.signal-control.phase-state-change.v1",
+		dataSchema: "https://schemas.open-its.org/openits-signal-control-events/2026-10-17/",
+		dataHex:    "0a056173632d3110021a1b30315445535445504f4348303030303030303030303030303030303a0608c0e182d3064210636162696e65742d706f6c6c65722d3150019a062e6f70656e6974732d7369676e616c2d636f6e74726f6c2d74797065733a70686173652d626567696e2d677265656ea2060f0a07696e6469616e61120408011002",
+		identHex:   "0a056173632d3110023a0608c0e182d3069a062e6f70656e6974732d7369676e616c2d636f6e74726f6c2d74797065733a70686173652d626567696e2d677265656ea2060f0a07696e6469616e61120408011002",
+	},
+	{
+		name:       "signal-control pedestrian-event (hr 21 ped-begin-walk)",
+		ev:         model.HighResEvent{Base: gbase("asc-1", "asc"), Code: 21, Param: 4},
+		ceType:     "openits.signal-control.pedestrian-event.v1",
+		dataSchema: "https://schemas.open-its.org/openits-signal-control-events/2026-10-17/",
+		dataHex:    "0a056173632d311004221b30315445535445504f4348303030303030303030303030303030302a0608c0e182d3063210636162696e65742d706f6c6c65722d3140019a062b6f70656e6974732d7369676e616c2d636f6e74726f6c2d74797065733a7065642d626567696e2d77616c6ba2060f0a07696e6469616e61120408151004",
+		identHex:   "0a056173632d3110042a0608c0e182d3069a062b6f70656e6974732d7369676e616c2d636f6e74726f6c2d74797065733a7065642d626567696e2d77616c6ba2060f0a07696e6469616e61120408151004",
+	},
+	{
+		name:       "signal-control detector-transition (hr 82 vehicle-detector-on)",
+		ev:         model.HighResEvent{Base: gbase("asc-1", "asc"), Code: 82, Param: 7},
+		ceType:     "openits.signal-control.detector-transition.v1",
+		dataSchema: "https://schemas.open-its.org/openits-signal-control-events/2026-10-17/",
+		dataHex:    "0a056173632d3110071a1b30315445535445504f4348303030303030303030303030303030303a0608c0e182d3064210636162696e65742d706f6c6c65722d3150019a06306f70656e6974732d7369676e616c2d636f6e74726f6c2d74797065733a76656869636c652d6465746563746f722d6f6ea2060f0a07696e6469616e61120408521007",
+		identHex:   "0a056173632d3110073a0608c0e182d3069a06306f70656e6974732d7369676e616c2d636f6e74726f6c2d74797065733a76656869636c652d6465746563746f722d6f6ea2060f0a07696e6469616e61120408521007",
+	},
+	{
+		name:       "signal-control overlap-change (hr 61 overlap-begin-green)",
+		ev:         model.HighResEvent{Base: gbase("asc-1", "asc"), Code: 61, Param: 1},
+		ceType:     "openits.signal-control.overlap-change.v1",
+		dataSchema: "https://schemas.open-its.org/openits-signal-control-events/2026-10-17/",
+		dataHex:    "0a056173632d3110011a1b30315445535445504f434830303030303030303030303030303030220608c0e182d3062a10636162696e65742d706f6c6c65722d3138019a06306f70656e6974732d7369676e616c2d636f6e74726f6c2d74797065733a6f7665726c61702d626567696e2d677265656ea2060f0a07696e6469616e611204083d1001",
+		identHex:   "0a056173632d311001220608c0e182d3069a06306f70656e6974732d7369676e616c2d636f6e74726f6c2d74797065733a6f7665726c61702d626567696e2d677265656ea2060f0a07696e6469616e611204083d1001",
+	},
+	{
+		name:       "signal-control preemption-event (hr 102 preempt-call-on)",
+		ev:         model.HighResEvent{Base: gbase("asc-1", "asc"), Code: 102, Param: 1},
+		ceType:     "openits.signal-control.preemption-event.v1",
+		dataSchema: "https://schemas.open-its.org/openits-signal-control-events/2026-10-17/",
+		dataHex:    "0a056173632d3110011a1b30315445535445504f4348303030303030303030303030303030302a0608c0e182d3063210636162696e65742d706f6c6c65722d3140019a062c6f70656e6974732d7369676e616c2d636f6e74726f6c2d74797065733a707265656d70742d63616c6c2d6f6ea2060f0a07696e6469616e61120408661001",
+		identHex:   "0a056173632d3110012a0608c0e182d3069a062c6f70656e6974732d7369676e616c2d636f6e74726f6c2d74797065733a707265656d70742d63616c6c2d6f6ea2060f0a07696e6469616e61120408661001",
+	},
+	{
+		name:       "signal-control unmapped-event (hr 200)",
+		ev:         model.HighResEvent{Base: gbase("asc-1", "asc"), Code: 200, Param: 3},
+		ceType:     "openits.signal-control.unmapped-event.v1",
+		dataSchema: "https://schemas.open-its.org/openits-signal-control-events/2026-10-17/",
+		dataHex:    "0a0608c0e182d306121b30315445535445504f4348303030303030303030303030303030301a10636162696e65742d706f6c6c65722d31280132056173632d319a062e6f70656e6974732d7369676e616c2d636f6e74726f6c2d74797065733a73632d756e6d61707065642d6576656e74a206100a07696e6469616e61120508c8011003",
+		identHex:   "0a0608c0e182d30632056173632d319a062e6f70656e6974732d7369676e616c2d636f6e74726f6c2d74797065733a73632d756e6d61707065642d6576656e74a206100a07696e6469616e61120508c8011003",
+	},
+	{
 		name:       "dms mode-changed (display axis)",
 		ev:         model.DMSDisplayStateChanged{Base: gbase("dms-1", "dms"), From: model.DisplayNormal, To: model.DisplayBlank},
 		ceType:     "openits.dms.mode-changed.v1",
@@ -516,6 +564,18 @@ func emptyMessageFor(ceType string) proto.Message {
 		return &scv1.CabinetOutputChanged{}
 	case "openits.signal-control.plan-applied.v1":
 		return &scv1.PlanApplied{}
+	case "openits.signal-control.phase-state-change.v1":
+		return &scv1.PhaseStateChange{}
+	case "openits.signal-control.pedestrian-event.v1":
+		return &scv1.PedestrianEvent{}
+	case "openits.signal-control.detector-transition.v1":
+		return &scv1.DetectorTransition{}
+	case "openits.signal-control.overlap-change.v1":
+		return &scv1.OverlapChange{}
+	case "openits.signal-control.preemption-event.v1":
+		return &scv1.PreemptionEvent{}
+	case "openits.signal-control.unmapped-event.v1":
+		return &scv1.UnmappedEvent{}
 	case "openits.signal-control.operational-status-report.v1":
 		return &scv1.OperationalStatusReport{}
 	case "openits.signal-control.preemption-activated.v1":

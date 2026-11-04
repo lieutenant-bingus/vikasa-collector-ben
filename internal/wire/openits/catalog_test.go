@@ -170,13 +170,7 @@ var unmapped = map[string]unmappedReason{
 	// signal-control
 	"openits.signal-control.controller-fault-event.v1":      signalControlNotAssessed,
 	"openits.signal-control.coordination-change.v1":         signalControlNotAssessed,
-	"openits.signal-control.detector-transition.v1":         signalControlNotAssessed,
-	"openits.signal-control.overlap-change.v1":              signalControlNotAssessed,
-	"openits.signal-control.pedestrian-event.v1":            signalControlNotAssessed,
-	"openits.signal-control.phase-state-change.v1":          signalControlNotAssessed,
-	"openits.signal-control.preemption-event.v1":            signalControlNotAssessed,
 	"openits.signal-control.tsam-mode-changed.v1":           signalControlNotAssessed,
 	"openits.signal-control.tsam-recommendation-applied.v1": signalControlNotAssessed,
 	"openits.signal-control.tsp-event.v1":                   signalControlNotAssessed,
-	"openits.signal-control.unmapped-event.v1":              signalControlNotAssessed,
 }
