@@ -276,7 +276,11 @@ func readDetectors(snap *model.Snapshot, got map[string]rows) {
 		o, ok := occ[ch]
 		if !ok || vol[ch] < 0 || o < 0 || o > 100 {
 			// Half-read or out of range: skip the channel rather than
-			// fabricate a sample.
+			// fabricate a sample. Firmware 2.15.1 reports Volume for 128
+			// channels but percentOccupancy for only 64, so channels
+			// 65-128 are skipped there. The semantics of both (count
+			// window, occupancy scale) are unverified: the lab capture
+			// had no traffic.
 			continue
 		}
 		ds.Samples = append(ds.Samples, model.DetectorSample{

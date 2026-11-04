@@ -302,3 +302,48 @@ func TestLogEmptyPrimeThenRows(t *testing.T) {
 		t.Errorf("after empty prime: %d events, cursor %s, err %v; want both rows", len(evs), next, err)
 	}
 }
+
+const labLogFixture = "testdata/asclog-lab-2.15.1.json"
+
+// The lab controller (firmware 2.15.1, recorded with record-fixture): 6165
+// rows, IDs from 1, timestamps in America/New_York (EST on the day).
+func TestLabLogPrimesAtTheEnd(t *testing.T) {
+	now := time.Date(2026, 11, 4, 20, 0, 0, 0, time.UTC)
+	evs, next, err := newLog(httpapitest.LoadFixture(t, labLogFixture), false, now).read(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(evs) != 0 {
+		t.Fatalf("first read published %d rows of history", len(evs))
+	}
+	want := time.Date(2026, 11, 4, 19, 55, 15, 400_000_000, time.UTC) // 14:55:15.4 EST
+	if c := decodeCursor(t, next); c.ID != 6165 || !c.At.Equal(want) {
+		t.Errorf("cursor = %+v, want 6165 at %v", c, want)
+	}
+}
+
+func TestLabLogClassesAfterACursor(t *testing.T) {
+	now := time.Date(2026, 11, 4, 20, 0, 0, 0, time.UTC)
+	l := newLog(httpapitest.LoadFixture(t, labLogFixture), false, now)
+	evs, _, err := l.read(t.Context(), cursor(t, 6146, time.Date(2026, 11, 4, 19, 53, 56, 0, time.UTC)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(evs) != 19 { // 6147..6165
+		t.Fatalf("got %d events, want 19", len(evs))
+	}
+	for i, want := range map[int]struct {
+		code, param uint16
+		class       model.HighResClass
+	}{
+		0: {13, 2, model.HighResUnmapped},      // not in the pinned release
+		4: {150, 5, model.HighResCoordination}, // cycle state 5
+		5: {316, 110, model.HighResUnmapped},   // MaxTime vendor range
+		8: {150, 7, model.HighResCoordination},
+	} {
+		e := evs[i].(model.HighResEvent)
+		if e.Code != want.code || e.Param != want.param || e.Class() != want.class {
+			t.Errorf("event %d = code %d param %d class %d, want %+v", i, e.Code, e.Param, e.Class(), want)
+		}
+	}
+}

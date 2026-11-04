@@ -293,3 +293,29 @@ func TestDecodeAcceptsNumbers(t *testing.T) {
 		t.Error("non-JSON body: want error")
 	}
 }
+
+// The lab controller as found: coordinated on plan 30, normal output, no
+// alarms, no traffic. Volume reports 128 channels but percentOccupancy only
+// 64; a channel without both is not sampled.
+func TestReadLabFixture2151(t *testing.T) {
+	snap, err := newASC(httpapitest.LoadFixture(t, "testdata/asc-lab-2.15.1.json")).Read(t.Context())
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if len(snap.Errors) != 0 {
+		t.Fatalf("facet errors: %+v", snap.Errors)
+	}
+	if len(snap.Facets) != 3 {
+		t.Fatalf("facets = %+v", snap.Facets)
+	}
+	if diff := cmp.Diff(model.SignalStatus{Mode: model.ModeCoordinated, CabinetOutput: model.OutputNormal, ActivePlanID: 30}, snap.Facets[0]); diff != "" {
+		t.Errorf("status (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(model.FaultSet{}, snap.Facets[1]); diff != "" {
+		t.Errorf("faults (-want +got):\n%s", diff)
+	}
+	d := snap.Facets[2].(model.DetectorSamples)
+	if len(d.Samples) != 64 || d.Samples[0].Channel != 1 || d.Samples[63].Channel != 64 {
+		t.Errorf("detector samples: %d, first %+v", len(d.Samples), d.Samples[:1])
+	}
+}
