@@ -127,10 +127,15 @@ func faultKindIdentity(c model.FaultCategory, deviceKind string) (string, bool) 
 			return scTypes + "sc-fault-detector", true
 		case model.CategoryLamp:
 			return scTypes + "sc-fault-lamp", true
+		case model.CategoryController:
+			// The controller's own logic failing — NTCIP's cycle and
+			// coordination faults — is what sc-fault-software names: "the
+			// controller software/firmware", not the cabinet around it.
+			return scTypes + "sc-fault-software", true
 		default:
-			// Includes the DMS-only categories (pixel, controller,
-			// environment): meaningless on a controller, so the base rather
-			// than a cross-service identity that would misdescribe the fault.
+			// Includes the DMS-only categories (pixel, environment):
+			// meaningless on a controller, so the base rather than a
+			// cross-service identity that would misdescribe the fault.
 			return scTypes + "sc-fault-event-kind", true
 		}
 	case "cctv":
