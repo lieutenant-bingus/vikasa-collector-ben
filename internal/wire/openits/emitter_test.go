@@ -832,6 +832,19 @@ func TestFaultKindIdentity_UnmappedCategoryFallsBackPerService(t *testing.T) {
 	}
 }
 
+func TestFaultKindIdentity_SignalControllerLogicFault(t *testing.T) {
+	// NTCIP cycle and coordination faults are the controller's own logic
+	// failing; v0.8 names that sc-fault-software, and its conformance check
+	// rejects the base kind, so the controller category must not fall back.
+	got, ok := faultKindIdentity(model.CategoryController, "asc")
+	if want := "openits-signal-control-types:sc-fault-software"; !ok || got != want {
+		t.Errorf("kind = %q, %v; want %q", got, ok, want)
+	}
+	if got, _ := faultKindIdentity(model.CategoryPixel, "asc"); got != "openits-signal-control-types:sc-fault-event-kind" {
+		t.Errorf("pixel on asc = %q, want the base kind", got)
+	}
+}
+
 func TestEncode_TrafficIntervalReport(t *testing.T) {
 	var got tsv1.TrafficIntervalReport
 	ceType := encodeOK(t, model.TrafficIntervalReport{
