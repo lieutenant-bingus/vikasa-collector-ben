@@ -155,6 +155,26 @@ var goldenCases = []struct {
 		identHex:   "0a056173632d3110073a0608c0e182d3069a06306f70656e6974732d7369676e616c2d636f6e74726f6c2d74797065733a76656869636c652d6465746563746f722d6f6ea2060f0a07696e6469616e61120408521007",
 	},
 	{
+		// The call phase the adapter joined; channel 9 calls none, so its
+		// phase-served is absent rather than 0.
+		name: "signal-control detector-report with phase-served",
+		ev: model.DetectorReport{Base: gbase("asc-1", "asc"),
+			IntervalStart: goldenAt.Add(-900 * time.Second), IntervalDuration: 900 * time.Second,
+			Readings: []model.DetectorReading{{Channel: 3, VolumeDelta: 17, OccupancyTenths: 40, PhaseServed: 2}, {Channel: 9, VolumeDelta: 0}}},
+		ceType:     "openits.signal-control.detector-report.v1",
+		dataSchema: "https://schemas.open-its.org/openits-signal-control-events/2026-10-17/",
+		dataHex:    "0a056173632d31120608bcda82d306188407220b0803100218112203342e302209080918002203302e302a0608c0e182d3063210636162696e65742d706f6c6c65722d3140014a1b30315445535445504f4348303030303030303030303030303030309a062f6f70656e6974732d7369676e616c2d636f6e74726f6c2d74797065733a73632d6465746563746f722d7265706f7274",
+		identHex:   "0a056173632d31120608bcda82d306188407220b0803100218112203342e302209080918002203302e302a0608c0e182d3069a062f6f70656e6974732d7369676e616c2d636f6e74726f6c2d74797065733a73632d6465746563746f722d7265706f7274",
+	},
+	{
+		name:       "signal-control detector-transition with phase-served (hr 82)",
+		ev:         model.HighResEvent{Base: gbase("asc-1", "asc"), Code: 82, Param: 31, PhaseServed: 8},
+		ceType:     "openits.signal-control.detector-transition.v1",
+		dataSchema: "https://schemas.open-its.org/openits-signal-control-events/2026-10-17/",
+		dataHex:    "0a056173632d31101f1a1b30315445535445504f43483030303030303030303030303030303030083a0608c0e182d3064210636162696e65742d706f6c6c65722d3150019a06306f70656e6974732d7369676e616c2d636f6e74726f6c2d74797065733a76656869636c652d6465746563746f722d6f6ea2060f0a07696e6469616e6112040852101f",
+		identHex:   "0a056173632d31101f30083a0608c0e182d3069a06306f70656e6974732d7369676e616c2d636f6e74726f6c2d74797065733a76656869636c652d6465746563746f722d6f6ea2060f0a07696e6469616e6112040852101f",
+	},
+	{
 		name:       "signal-control overlap-change (hr 61 overlap-begin-green)",
 		ev:         model.HighResEvent{Base: gbase("asc-1", "asc"), Code: 61, Param: 1},
 		ceType:     "openits.signal-control.overlap-change.v1",

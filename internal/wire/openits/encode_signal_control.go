@@ -117,11 +117,15 @@ func (e *emitter) encodeSignalControl(ev model.Event) (proto.Message, bool) {
 	case model.DetectorReport:
 		dets := make([]*scv1.DetectorReportDetector, 0, len(v.Readings))
 		for _, r := range v.Readings {
-			dets = append(dets, &scv1.DetectorReportDetector{
+			d := &scv1.DetectorReportDetector{
 				DetectorId: proto.Uint32(r.Channel),
 				Volume:     proto.Uint32(r.VolumeDelta),
 				Occupancy:  proto.String(occupancyPercent(r.OccupancyTenths)),
-			})
+			}
+			if r.PhaseServed != 0 { // omitted when the detector calls no phase
+				d.PhaseServed = proto.Uint32(uint32(r.PhaseServed))
+			}
+			dets = append(dets, d)
 		}
 		msg = &scv1.DetectorReport{
 			Kind:           scTypes + "sc-detector-report",

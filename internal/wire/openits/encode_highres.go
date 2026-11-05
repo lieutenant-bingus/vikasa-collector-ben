@@ -82,13 +82,18 @@ func (e *emitter) encodeHighRes(v model.HighResEvent) (proto.Message, bool) {
 		}
 		return m, true
 	case model.HighResDetector:
-		// phase-served is left absent: the log row does not say, and the
-		// detector's assignment belongs on the detector object, not the event.
-		return &scv1.DetectorTransition{
+		// phase-served is what the adapter joined from the call-phase
+		// assignment in force when the row was logged; the row itself does
+		// not say. Absent when the detector called no phase or it is unknown.
+		m := &scv1.DetectorTransition{
 			Kind: kind, SourceDeviceId: v.DeviceID, OccurredAt: at,
 			ObservedBy: proto.String(e.collectorID), SequenceEpoch: e.epoch, Sequence: e.nextSequence(v.DeviceID),
 			Channel: param, Source: src,
-		}, true
+		}
+		if v.PhaseServed != 0 {
+			m.PhaseServed = proto.Uint32(uint32(v.PhaseServed))
+		}
+		return m, true
 	case model.HighResOverlap:
 		return &scv1.OverlapChange{
 			Kind: kind, SourceDeviceId: v.DeviceID, OccurredAt: at,

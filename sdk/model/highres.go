@@ -18,6 +18,11 @@ type HighResEvent struct {
 	Base
 	Code  uint16
 	Param uint16
+	// PhaseServed is, for a detector row, the phase that detector called
+	// when the row was logged; 0 when it called none or that is not known.
+	// The row does not say: the adapter joins it from the call-phase
+	// assignment it read, and only for rows logged under that assignment.
+	PhaseServed uint8
 }
 
 // Stamped is e with the device identity the core owns (LogEvent).
