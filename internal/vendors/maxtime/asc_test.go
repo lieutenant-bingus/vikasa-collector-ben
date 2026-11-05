@@ -59,11 +59,13 @@ func healthy() map[string]rows {
 	}
 }
 
-// prePeriodFixture loads a fixture recorded before the poll asked for the
-// collection period (ADR 0026) and serves its one MIB exchange for today's
-// batch request. That answer has no Occupanc or period objects, so the
-// detector facet fails; status and faults read as recorded.
-func prePeriodFixture(t *testing.T, path string) *httpapitest.Static {
+// earlierPollFixture loads a fixture recorded by an earlier version of the
+// poll and serves its one MIB exchange for today's batch request. Recorded
+// before the collection period (ADR 0026), the answer has no Occupanc or
+// period objects, so the detector facet fails; recorded before the call
+// phase, it has no activeVehicleDetectorPlan, so no phase is joined. The
+// rest reads as recorded.
+func earlierPollFixture(t *testing.T, path string) *httpapitest.Static {
 	t.Helper()
 	s := httpapitest.LoadFixture(t, path)
 	for k, r := range s.Responses {
@@ -95,7 +97,7 @@ func read(t *testing.T, objs map[string]rows) *model.Snapshot {
 }
 
 func TestReadGoldenFromLabFixture(t *testing.T) {
-	snap, err := newASC(prePeriodFixture(t, "testdata/asc-healthy-free.json")).Read(t.Context())
+	snap, err := newASC(earlierPollFixture(t, "testdata/asc-healthy-free.json")).Read(t.Context())
 	if err != nil {
 		t.Fatalf("Read: %v", err)
 	}
@@ -354,7 +356,7 @@ func TestDecodeAcceptsNumbers(t *testing.T) {
 // The lab controller as found: coordinated on plan 30, normal output, no
 // alarms, no traffic. Recorded before the poll read the collection period.
 func TestReadLabFixture2151(t *testing.T) {
-	snap, err := newASC(prePeriodFixture(t, "testdata/asc-lab-2.15.1.json")).Read(t.Context())
+	snap, err := newASC(earlierPollFixture(t, "testdata/asc-lab-2.15.1.json")).Read(t.Context())
 	if err != nil {
 		t.Fatalf("Read: %v", err)
 	}
@@ -374,7 +376,7 @@ func TestReadLabFixture2151(t *testing.T) {
 // is set and Alarms1's coord-active bit drops for the hold; neither is a
 // fault. PatrnSta stays 30, so the mode stays coordinated.
 func TestReadLabPreemptFixture(t *testing.T) {
-	snap, err := newASC(prePeriodFixture(t, "testdata/asc-lab-preempt.json")).Read(t.Context())
+	snap, err := newASC(earlierPollFixture(t, "testdata/asc-lab-preempt.json")).Read(t.Context())
 	if err != nil {
 		t.Fatalf("Read: %v", err)
 	}
@@ -394,7 +396,7 @@ func TestReadLabPreemptFixture(t *testing.T) {
 
 // Phase calls latched on the lab controller; detector counts stayed 0.
 func TestReadLabTrafficFixture(t *testing.T) {
-	snap, err := newASC(prePeriodFixture(t, "testdata/asc-lab-traffic.json")).Read(t.Context())
+	snap, err := newASC(earlierPollFixture(t, "testdata/asc-lab-traffic.json")).Read(t.Context())
 	if err != nil {
 		t.Fatalf("Read: %v", err)
 	}
@@ -408,7 +410,7 @@ func TestReadLabTrafficFixture(t *testing.T) {
 // was held, before the poll read the collection period: the detector
 // facet fails rather than publish its totals as a counter's deltas.
 func TestReadLabDetectorFixture(t *testing.T) {
-	snap, err := newASC(prePeriodFixture(t, "testdata/asc-lab-detectors.json")).Read(t.Context())
+	snap, err := newASC(earlierPollFixture(t, "testdata/asc-lab-detectors.json")).Read(t.Context())
 	if err != nil {
 		t.Fatalf("Read: %v", err)
 	}
@@ -470,7 +472,7 @@ func TestDetectorPeriodIsRequired(t *testing.T) {
 // matching SNMP v1 for the closed period, and none between rolls or twice
 // across a restart.
 func TestReadLabPeriodFixture(t *testing.T) {
-	a := newASC(httpapitest.LoadFixture(t, "testdata/asc-lab-period.json"))
+	a := newASC(earlierPollFixture(t, "testdata/asc-lab-period.json"))
 	ny, err := time.LoadLocation("America/New_York")
 	if err != nil {
 		t.Fatal(err)

@@ -41,6 +41,7 @@ var pollMIBs = []string{
 	mibFlashStatus, mibPatternStatus, mibPreemptStatus,
 	mibShortAlarms, mibAlarms1, mibAlarms2, mibDetectorAlarms,
 	mibVolume, mibOccupancy, mibPeriodSequence, mibSampleTime, mibSampleDuration,
+	mibActiveDetectorPlan,
 }
 
 // ascDescriptor is what is registered: the adapter can read the
@@ -66,6 +67,8 @@ type asc struct {
 	// later poll without it cannot fall back to the summary bit and clear
 	// the per-detector faults it raised (absence of evidence).
 	perDetector atomic.Bool
+	// calls is the detector-to-phase assignment, shared with the log reader.
+	calls *callPhases
 }
 
 var _ adapter.StateReader = (*asc)(nil)
@@ -84,9 +87,10 @@ func (a *asc) Read(ctx context.Context) (*model.Snapshot, error) {
 		return nil, fmt.Errorf("maxtime-asc %s: %w", a.deviceID, err)
 	}
 	snap := &model.Snapshot{DeviceID: a.deviceID, SampledAt: a.now().UTC()}
+	a.calls.refresh(ctx, a.api, got, snap.SampledAt)
 	readSignalStatus(snap, got)
 	readFaultSet(snap, got, &a.perDetector)
-	readDetectors(snap, got, a.loc)
+	readDetectors(snap, got, a.loc, func(ch uint32) uint8 { return a.calls.phase(ch, snap.SampledAt) })
 	return snap, nil
 }
 
@@ -281,7 +285,7 @@ func readFaultSet(snap *model.Snapshot, got map[string]rows, answered *atomic.Bo
 // 9000; VOccPer 60 times auxVolOccNumPeriods 15), so they are period
 // totals, not counters. percentOccupancy, read before this, stayed 0
 // throughout and is not occupancy.
-func readDetectors(snap *model.Snapshot, got map[string]rows, loc *time.Location) {
+func readDetectors(snap *model.Snapshot, got map[string]rows, loc *time.Location, phaseOf func(uint32) uint8) {
 	fail := func(msg string) {
 		snap.Errors = append(snap.Errors, model.FacetError{Kind: model.KindDetectorSamples, Err: msg})
 	}
@@ -321,6 +325,7 @@ func readDetectors(snap *model.Snapshot, got map[string]rows, loc *time.Location
 			Channel:         ch,
 			VolumeCount:     uint32(vol[ch]), //nolint:gosec // range-checked above
 			OccupancyTenths: uint16(o * 5),   //nolint:gosec // half-percent 0..200 checked above
+			PhaseServed:     phaseOf(ch),
 		})
 	}
 	snap.Facets = append(snap.Facets, ds)

@@ -71,6 +71,9 @@ type ascLog struct {
 	api *mibAPI
 	cfg logConfig
 	now func() time.Time
+	// calls is the state poll's detector-to-phase assignment; nil leaves
+	// detector rows without phase-served.
+	calls *callPhases
 }
 
 // ascWithLog is the adapter for a MaxTime whose high-resolution log is
@@ -157,7 +160,11 @@ func (l *ascLog) read(ctx context.Context, after []byte) ([]model.LogEvent, []by
 	}
 	events := make([]model.LogEvent, len(fresh))
 	for i, r := range fresh {
-		events[i] = model.HighResEvent{Base: model.Base{OccurredAt: r.at}, Code: r.code, Param: r.param}
+		ev := model.HighResEvent{Base: model.Base{OccurredAt: r.at}, Code: r.code, Param: r.param}
+		if ev.Class() == model.HighResDetector {
+			ev.PhaseServed = l.calls.phase(uint32(r.param), r.at)
+		}
+		events[i] = ev
 	}
 	last := fresh[len(fresh)-1]
 	return events, encodeCursor(logCursor{ID: last.id, At: last.at}), nil
