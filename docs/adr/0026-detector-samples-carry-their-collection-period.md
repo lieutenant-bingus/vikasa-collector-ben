@@ -64,6 +64,11 @@ configured period.
   to deltas. The period's end needs the controller's zone, which comes from
   `asclog.timezone`. With no asclog block, the end is unknown and the
   report is anchored at the poll.
+- End to end, in the lab on 2026-11-05 (fixture `asc-lab-period.json`): one
+  detector-report per roll and none between rolls, each over 900 s and
+  equal to SNMP for the period that closed (det 1 180 at 20.0%, det 3 at
+  99.0%). A 60 s restart neither repeated nor dropped a period. The first
+  period seen after each start was not reported, as decided.
 - The 900 s period is `VOccPer` (60) × `auxVolOccNumPeriods` (15), shown
   read-only as `auxVolOccPeriodDuration`.
 - The `ntcip` adapter reads `maxVehicleDetectors` at `…2.1.2.3.0` and

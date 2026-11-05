@@ -430,3 +430,47 @@ func TestDetectorPeriodIsRequired(t *testing.T) {
 		t.Errorf("without detectorSampleTime the period stands, end unknown: %+v", p)
 	}
 }
+
+// Recorded with today's poll (2026-11-05, 2.15.1) just after the 10:30 EST
+// roll, detector 3 held through the period, detector 1 idle in it. In the
+// same run the collector published one detector-report per roll, each
+// matching SNMP v1 for the closed period, and none between rolls or twice
+// across a restart.
+func TestReadLabPeriodFixture(t *testing.T) {
+	a := newASC(httpapitest.LoadFixture(t, "testdata/asc-lab-period.json"))
+	ny, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.loc = ny
+	snap, err := a.Read(t.Context())
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if len(snap.Errors) != 0 || len(snap.Facets) != 3 {
+		t.Fatalf("facets %+v, errors %+v", snap.Facets, snap.Errors)
+	}
+	if diff := cmp.Diff(model.SignalStatus{Mode: model.ModeCoordinated, CabinetOutput: model.OutputNormal, ActivePlanID: 20}, snap.Facets[0]); diff != "" {
+		t.Errorf("status (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(model.FaultSet{}, snap.Facets[1]); diff != "" {
+		t.Errorf("faults (-want +got):\n%s", diff)
+	}
+	d := snap.Facets[2].(model.DetectorSamples)
+	wantPeriod := &model.CollectionPeriod{Sequence: 124, End: time.Date(2026, 11, 5, 15, 30, 0, 0, time.UTC), Duration: 900 * time.Second}
+	if diff := cmp.Diff(wantPeriod, d.Period, cmp.Comparer(func(a, b time.Time) bool { return a.Equal(b) })); diff != "" {
+		t.Errorf("period (-want +got):\n%s", diff)
+	}
+	if len(d.Samples) != 128 {
+		t.Errorf("samples = %d, want 128 (Occupanc covers every Volume channel)", len(d.Samples))
+	}
+	for _, s := range d.Samples {
+		want := model.DetectorSample{Channel: s.Channel}
+		if s.Channel == 3 {
+			want.OccupancyTenths = 990 // 198 half-percent; held, no new rising edge
+		}
+		if s != want {
+			t.Errorf("channel %d = %+v, want %+v", s.Channel, s, want)
+		}
+	}
+}
