@@ -157,3 +157,51 @@ func TestFailedDetectorReadEmitsNothing(t *testing.T) {
 		t.Fatalf("VolumeDelta = %d, want 6 (delta vs the surviving sample)", r.Readings[0].VolumeDelta)
 	}
 }
+
+func periodSnap(at time.Time, seq uint32, end time.Time, samples ...model.DetectorSample) *model.Snapshot {
+	return &model.Snapshot{DeviceID: "asc-1", SampledAt: at, Facets: []model.Facet{model.DetectorSamples{
+		Samples: samples, Period: &model.CollectionPeriod{Sequence: seq, End: end, Duration: 15 * time.Minute},
+	}}}
+}
+
+// The lab sequence (MaxTime 2.15.1, detector 1 pulsed): period totals 9,
+// 169 and 180 at 17:15, 17:30 and 17:45. Each is reported once, as is, over
+// its own 15 minutes. The cumulative path published 9, 160 and 11.
+func TestPeriodTotalsAreReportedOncePerPeriod(t *testing.T) {
+	t.Parallel()
+	e := NewEngine(NewDetectorDiffer())
+	end := t0.Add(15 * time.Minute)
+	if evs := e.Apply(periodSnap(end.Add(5*time.Second), 54, end, model.DetectorSample{Channel: 1, VolumeCount: 9})); len(evs) != 0 {
+		t.Fatalf("first period seen after start must not be reported: %v", kinds(evs))
+	}
+	var got []uint32
+	for i, total := range []uint32{169, 180} {
+		end := t0.Add(time.Duration(i+2) * 15 * time.Minute)
+		for _, poll := range []time.Duration{5 * time.Second, 10 * time.Second} { // two polls see each period
+			for _, ev := range e.Apply(periodSnap(end.Add(poll), uint32(55+i), end, model.DetectorSample{Channel: 1, VolumeCount: total, OccupancyTenths: 200})) {
+				r := ev.(model.DetectorReport)
+				if !r.IntervalStart.Equal(end.Add(-15*time.Minute)) || r.IntervalDuration != 15*time.Minute {
+					t.Errorf("interval %v +%v, want the period ending %v", r.IntervalStart, r.IntervalDuration, end)
+				}
+				if r.Readings[0].OccupancyTenths != 200 {
+					t.Errorf("occupancy %d", r.Readings[0].OccupancyTenths)
+				}
+				got = append(got, r.Readings[0].VolumeDelta)
+			}
+		}
+	}
+	if len(got) != 2 || got[0] != 169 || got[1] != 180 {
+		t.Fatalf("reported volumes %v, want [169 180]", got)
+	}
+}
+
+func TestPeriodWithoutAnEndIsAnchoredAtThePoll(t *testing.T) {
+	t.Parallel()
+	e := NewEngine(NewDetectorDiffer())
+	e.Apply(periodSnap(t0, 1, time.Time{}, model.DetectorSample{Channel: 1}))
+	at := t0.Add(15 * time.Minute)
+	evs := e.Apply(periodSnap(at, 2, time.Time{}, model.DetectorSample{Channel: 1, VolumeCount: 4}))
+	if len(evs) != 1 || !evs[0].(model.DetectorReport).IntervalStart.Equal(t0) {
+		t.Fatalf("events %+v", evs)
+	}
+}

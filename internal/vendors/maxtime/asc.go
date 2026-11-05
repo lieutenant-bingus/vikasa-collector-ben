@@ -276,7 +276,16 @@ func readDetectors(snap *model.Snapshot, got map[string]rows) {
 		o, ok := occ[ch]
 		if !ok || vol[ch] < 0 || o < 0 || o > 100 {
 			// Half-read or out of range: skip the channel rather than
-			// fabricate a sample. Firmware 2.15.1 reports Volume for 128
+			// fabricate a sample.
+			//
+			// Lab, 2.15.1, SNMP-driven actuations: Volume is the last
+			// completed collection period's total (900 s there, whatever
+			// VOccPer says), not a cumulative counter, and percentOccupancy
+			// stays 0 while NTCIP occupancy reads 200. Both need ADR 0026's
+			// Period, which waits on the API names for the sequence and
+			// the true occupancy.
+			//
+			// Firmware 2.15.1 reports Volume for 128
 			// channels but percentOccupancy for only 64, so channels
 			// 65-128 are skipped there. The semantics of both (count
 			// window, occupancy scale) are unverified: the lab capture
