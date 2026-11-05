@@ -3,10 +3,13 @@
 # from attempting a 3-way text merge that would corrupt the file.
 # (Recorded adapter fixtures should be added here as they land.)
 
-# Go and shell sources are LF everywhere: a Windows checkout with
-# core.autocrlf=true otherwise fails gofmt in `make check`.
+# Go sources, module files and shell scripts are LF everywhere: a Windows checkout with
+# core.autocrlf=true otherwise fails gofmt and `go mod tidy -diff`
+# in `make check`.
 *.go text eol=lf
 *.sh text eol=lf
+go.mod text eol=lf
+go.sum text eol=lf
 
 # Recorded MaxTime fixtures: byte-for-byte as recorded, never converted.
 internal/vendors/maxtime/testdata/*.json -text
