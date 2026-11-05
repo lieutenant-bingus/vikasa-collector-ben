@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"math"
 	"slices"
 	"time"
 
@@ -20,22 +21,25 @@ import (
 
 // MaxTime short names for the NTCIP 1202 objects this adapter reads.
 const (
-	mibFlashStatus    = "FlashSta"         // unitFlashStatus
-	mibPatternStatus  = "PatrnSta"         // coordPatternStatus
-	mibPreemptStatus  = "preemptStatus"    // active preempt, 0 = none
-	mibShortAlarms    = "SAlarms"          // shortAlarmStatus
-	mibAlarms1        = "Alarms1"          // unitAlarmStatus1
-	mibAlarms2        = "Alarms2"          // unitAlarmStatus2
-	mibDetectorAlarms = "DtAlrms"          // vehicleDetectorStatusGroupAlarms, one row per group of 8
-	mibVolume         = "Volume"           // per detector channel
-	mibOccupancy      = "percentOccupancy" // per detector channel, whole percent
+	mibFlashStatus    = "FlashSta"               // unitFlashStatus
+	mibPatternStatus  = "PatrnSta"               // coordPatternStatus
+	mibPreemptStatus  = "preemptStatus"          // active preempt, 0 = none
+	mibShortAlarms    = "SAlarms"                // shortAlarmStatus
+	mibAlarms1        = "Alarms1"                // unitAlarmStatus1
+	mibAlarms2        = "Alarms2"                // unitAlarmStatus2
+	mibDetectorAlarms = "DtAlrms"                // vehicleDetectorStatusGroupAlarms, one row per group of 8
+	mibVolume         = "Volume"                 // detectorVolume: the last completed period's count, uncapped
+	mibOccupancy      = "Occupanc"               // detectorOccupancy: 0-200 half-percent, 210-255 detector faults
+	mibPeriodSequence = "VOccSeq"                // volumeOccupancySequence: changes when a period completes
+	mibSampleTime     = "detectorSampleTime"     // the period's end, local wall-clock seconds since 1970
+	mibSampleDuration = "detectorSampleDuration" // the period's length, tenths of a second
 )
 
 // pollMIBs is everything one Read asks for, in one request when batching.
 var pollMIBs = []string{
 	mibFlashStatus, mibPatternStatus, mibPreemptStatus,
 	mibShortAlarms, mibAlarms1, mibAlarms2, mibDetectorAlarms,
-	mibVolume, mibOccupancy,
+	mibVolume, mibOccupancy, mibPeriodSequence, mibSampleTime, mibSampleDuration,
 }
 
 // ascDescriptor is what is registered: the adapter can read the
@@ -53,6 +57,10 @@ type asc struct {
 	deviceID string
 	api      *mibAPI
 	now      func() time.Time
+	// loc is the controller clock's zone, for detectorSampleTime. Nil (no
+	// asclog block, so no timezone configured) leaves the period's end
+	// unknown, and the report is anchored at the poll that saw it.
+	loc *time.Location
 }
 
 var _ adapter.StateReader = (*asc)(nil)
@@ -73,7 +81,7 @@ func (a *asc) Read(ctx context.Context) (*model.Snapshot, error) {
 	snap := &model.Snapshot{DeviceID: a.deviceID, SampledAt: a.now().UTC()}
 	readSignalStatus(snap, got)
 	readFaultSet(snap, got)
-	readDetectors(snap, got)
+	readDetectors(snap, got, a.loc)
 	return snap, nil
 }
 
@@ -250,7 +258,17 @@ func readFaultSet(snap *model.Snapshot, got map[string]rows) {
 
 // --- detectors -----------------------------------------------------------
 
-func readDetectors(snap *model.Snapshot, got map[string]rows) {
+// readDetectors reads one completed collection period (ADR 0026).
+//
+// Lab, firmware 2.15.1, SNMP-driven actuations against SNMP v1 reads of
+// the same objects: Volume and Occupanc equal NTCIP detectorVolume and
+// detectorOccupancy after each roll (det 1 pulsed 1 s in 5: 180 and 40;
+// det 3 held: 198), except that Volume is not capped at 254. They hold the
+// last completed period, which rolled every 900 s (detectorSampleDuration
+// 9000; VOccPer 60 times auxVolOccNumPeriods 15), so they are period
+// totals, not counters. percentOccupancy, read before this, stayed 0
+// throughout and is not occupancy.
+func readDetectors(snap *model.Snapshot, got map[string]rows, loc *time.Location) {
 	fail := func(msg string) {
 		snap.Errors = append(snap.Errors, model.FacetError{Kind: model.KindDetectorSamples, Err: msg})
 	}
@@ -258,6 +276,13 @@ func readDetectors(snap *model.Snapshot, got map[string]rows) {
 	or, ook := got[mibOccupancy]
 	if !vok || !ook {
 		fail("detector volume/occupancy unanswered")
+		return
+	}
+	period, err := readPeriod(got, loc)
+	if err != nil {
+		// Without the period the totals cannot be attributed: publishing
+		// them as a counter's deltas is the error ADR 0026 fixes.
+		fail(err.Error())
 		return
 	}
 	vol, err := vr.table(mibVolume)
@@ -271,32 +296,61 @@ func readDetectors(snap *model.Snapshot, got map[string]rows) {
 		return
 	}
 	// A controller with no detector rows yields an EMPTY facet, not an error.
-	ds := model.DetectorSamples{}
+	ds := model.DetectorSamples{Period: period}
 	for _, ch := range slices.Sorted(maps.Keys(vol)) {
 		o, ok := occ[ch]
-		if !ok || vol[ch] < 0 || o < 0 || o > 100 {
-			// Half-read or out of range: skip the channel rather than
-			// fabricate a sample.
-			//
-			// Lab, 2.15.1, SNMP-driven actuations: Volume is the last
-			// completed collection period's total (900 s there, whatever
-			// VOccPer says), not a cumulative counter, and percentOccupancy
-			// stays 0 while NTCIP occupancy reads 200. Both need ADR 0026's
-			// Period, which waits on the API names for the sequence and
-			// the true occupancy.
-			//
-			// Firmware 2.15.1 reports Volume for 128
-			// channels but percentOccupancy for only 64, so channels
-			// 65-128 are skipped there. The semantics of both (count
-			// window, occupancy scale) are unverified: the lab capture
-			// had no traffic.
+		if !ok || vol[ch] < 0 || vol[ch] > math.MaxUint32 || o < 0 || o > 200 {
+			// Half-read, out of range, or an NTCIP occupancy fault code
+			// (210-255): skip the channel rather than fabricate a sample.
 			continue
 		}
 		ds.Samples = append(ds.Samples, model.DetectorSample{
 			Channel:         ch,
-			VolumeCount:     uint32(vol[ch]), //nolint:gosec // range-checked above; counter wraps are the differ's to handle
-			OccupancyTenths: uint16(o * 10),  //nolint:gosec // 0..100 checked above
+			VolumeCount:     uint32(vol[ch]), //nolint:gosec // range-checked above
+			OccupancyTenths: uint16(o * 5),   //nolint:gosec // half-percent 0..200 checked above
 		})
 	}
 	snap.Facets = append(snap.Facets, ds)
+}
+
+// readPeriod is the completed period the detector values total.
+func readPeriod(got map[string]rows, loc *time.Location) (*model.CollectionPeriod, error) {
+	need := func(name string) (int64, error) {
+		r, ok := got[name]
+		if !ok {
+			return 0, fmt.Errorf("detector collection period: %s unanswered", name)
+		}
+		return r.scalar(name)
+	}
+	seq, err := need(mibPeriodSequence)
+	if err != nil {
+		return nil, err
+	}
+	tenths, err := need(mibSampleDuration)
+	if err != nil {
+		return nil, err
+	}
+	if seq < 0 || seq > math.MaxUint32 || tenths <= 0 {
+		return nil, fmt.Errorf("detector collection period: sequence %d, duration %d tenths", seq, tenths)
+	}
+	p := &model.CollectionPeriod{
+		Sequence: uint32(seq), //nolint:gosec // range-checked above
+		Duration: time.Duration(tenths) * time.Second / 10,
+	}
+	// The end is optional: absent, or no zone to read it in, and the
+	// differ anchors the report at the poll.
+	if r, ok := got[mibSampleTime]; ok && loc != nil {
+		if secs, err := r.scalar(mibSampleTime); err == nil && secs > 0 {
+			p.End = localWallClock(secs, loc)
+		}
+	}
+	return p, nil
+}
+
+// localWallClock reads seconds since 1970 counted on the controller's
+// local clock (1793871000 was 09:30:00 EST, not 09:30 UTC) as that local
+// time. In the repeated hour at a DST step back, Go picks the first.
+func localWallClock(secs int64, loc *time.Location) time.Time {
+	w := time.Unix(secs, 0).UTC()
+	return time.Date(w.Year(), w.Month(), w.Day(), w.Hour(), w.Minute(), w.Second(), 0, loc)
 }

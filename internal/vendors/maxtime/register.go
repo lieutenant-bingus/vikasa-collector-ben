@@ -58,6 +58,7 @@ func RegisterTo(r *adapter.Registry) {
 			_ = c.Close()
 			return nil, err
 		}
+		a.loc = cfg.log.loc
 		return &ascWithLog{asc: a, log: &ascLog{api: cfg.api(lc), cfg: *cfg.log, now: time.Now}}, nil
 	})
 }

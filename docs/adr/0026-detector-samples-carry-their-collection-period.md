@@ -1,6 +1,6 @@
 # ADR 0026: Detector samples carry their collection period
 
-**Status:** Proposed (2026-11-05); core implemented, `maxtime-asc` wiring pending
+**Status:** Proposed (2026-11-05); implemented for `maxtime-asc`
 **Amends:** the detector-samples contract in `sdk/model/detector.go`
 (`VolumeCount` was always a cumulative counter).
 
@@ -54,10 +54,18 @@ configured period.
 - The wire is unchanged: a detector-report's interval is now the
   collection period. At 900 s that is one report per detector set per
   15 min, not one per poll.
-- `maxtime-asc` must find the MIB API names for the sequence, sample time,
-  duration and true occupancy before it can set `Period`. Until then it
-  publishes the cumulative-path values above, which are known wrong, and
-  must not be merged as is.
+- `maxtime-asc` reads `Volume`, `Occupanc` (NTCIP half-percent; the UI's
+  Data Collection Status page uses it), `VOccSeq`, `detectorSampleTime` and
+  `detectorSampleDuration` (tenths of a second) in its one batched GET. On
+  2026-11-05 the lab compared these against SNMP across a roll and they
+  matched: sequence 119 to 120, end 09:30:00 EST, 9000, det 1 at 180/40,
+  det 3 at 1/198. `percentOccupancy` is no longer read. Without the
+  sequence or the duration, the detector facet fails rather than fall back
+  to deltas. The period's end needs the controller's zone, which comes from
+  `asclog.timezone`. With no asclog block, the end is unknown and the
+  report is anchored at the poll.
+- The 900 s period is `VOccPer` (60) × `auxVolOccNumPeriods` (15), shown
+  read-only as `auxVolOccPeriodDuration`.
 - The `ntcip` adapter reads `maxVehicleDetectors` at `…2.1.2.3.0` and
   volume/occupancy at `…2.1.2.4.1.{2,4}`. In NTCIP 1202 those are
   `maxVehicleDetectorStatusGroups` and the status-group table. The objects

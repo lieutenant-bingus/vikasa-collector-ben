@@ -26,12 +26,18 @@ func TestRecordingAMaxTimeWithItsLogConfigured(t *testing.T) {
 			_, _ = w.Write([]byte(logBody))
 			return
 		}
-		x, ok := lab.Exchanges["GET "+r.URL.Path]
-		if !ok {
+		// Any MIB batch gets the lab answer: what is under test is that the
+		// recorder keeps it, not which objects the adapter asks for.
+		if !strings.HasPrefix(r.URL.Path, "/maxtime/api/mibs/") {
 			http.NotFound(w, r)
 			return
 		}
-		_, _ = w.Write([]byte(x.Body))
+		for k, x := range lab.Exchanges {
+			if strings.HasPrefix(k, "GET /maxtime/api/mibs/") {
+				_, _ = w.Write([]byte(x.Body))
+				return
+			}
+		}
 	}))
 	defer srv.Close()
 
