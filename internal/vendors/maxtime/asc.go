@@ -13,6 +13,7 @@ import (
 	"maps"
 	"math"
 	"slices"
+	"sync/atomic"
 	"time"
 
 	"github.com/Vikasa2M/vikasa-collector/sdk/adapter"
@@ -61,6 +62,10 @@ type asc struct {
 	// asclog block, so no timezone configured) leaves the period's end
 	// unknown, and the report is anchored at the poll that saw it.
 	loc *time.Location
+	// perDetector records that this controller has answered DtAlrms, so a
+	// later poll without it cannot fall back to the summary bit and clear
+	// the per-detector faults it raised (absence of evidence).
+	perDetector atomic.Bool
 }
 
 var _ adapter.StateReader = (*asc)(nil)
@@ -80,7 +85,7 @@ func (a *asc) Read(ctx context.Context) (*model.Snapshot, error) {
 	}
 	snap := &model.Snapshot{DeviceID: a.deviceID, SampledAt: a.now().UTC()}
 	readSignalStatus(snap, got)
-	readFaultSet(snap, got)
+	readFaultSet(snap, got, &a.perDetector)
 	readDetectors(snap, got, a.loc)
 	return snap, nil
 }
@@ -199,7 +204,7 @@ var (
 
 const shortAlarmDetectorFault = 5
 
-func readFaultSet(snap *model.Snapshot, got map[string]rows) {
+func readFaultSet(snap *model.Snapshot, got map[string]rows, answered *atomic.Bool) {
 	fail := func(msg string) {
 		snap.Errors = append(snap.Errors, model.FacetError{Kind: model.KindFaultSet, Err: msg})
 	}
@@ -231,13 +236,21 @@ func readFaultSet(snap *model.Snapshot, got map[string]rows) {
 	// the per-group alarm table, else the summary bit. Either way a detector
 	// fault is raised exactly once per detector, never both forms.
 	perDetector := false
-	if r, ok := got[mibDetectorAlarms]; ok {
+	r, ok := got[mibDetectorAlarms]
+	if !ok && answered.Load() && bits[0]&(1<<shortAlarmDetectorFault) != 0 {
+		// It answered before and a detector is failed: which ones is
+		// unknown this poll, and the summary fault would clear them.
+		fail(mibDetectorAlarms + " unanswered")
+		return
+	}
+	if ok {
 		groups, err := r.table(mibDetectorAlarms)
 		if err != nil {
 			fail(err.Error())
 			return
 		}
 		perDetector = true
+		answered.Store(true)
 		for _, g := range slices.Sorted(maps.Keys(groups)) {
 			for b := range uint32(8) {
 				if groups[g]&(1<<b) != 0 {

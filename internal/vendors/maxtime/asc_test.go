@@ -176,6 +176,39 @@ func TestDetectorSummaryBitOnlyWithoutPerDetectorTable(t *testing.T) {
 	}
 }
 
+// A controller that has answered DtAlrms and then omits it, with a
+// detector failed, cannot say which: the facet fails rather than trade
+// detector-3-fault for the summary fault, which would clear it downstream.
+func TestDetectorAlarmsGoingUnansweredIsFaultSetFacetError(t *testing.T) {
+	o := healthy()
+	o[mibShortAlarms] = rows{"1": "32"}
+	o[mibDetectorAlarms] = rows{"1": "4", "2": "0"}
+	s := &httpapitest.Static{}
+	s.Set(batchKey, 200, answer(t, o))
+	a := newASC(s)
+	if _, err := a.Read(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	delete(o, mibDetectorAlarms)
+	s.Set(batchKey, 200, answer(t, o))
+	snap, err := a.Read(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := snap.Facet(model.KindFaultSet); ok {
+		t.Error("fault set published without the per-detector table it was raised from")
+	}
+	if len(snap.Errors) != 1 || snap.Errors[0].Kind != model.KindFaultSet {
+		t.Errorf("errors = %+v, want one fault-set FacetError", snap.Errors)
+	}
+	// With the summary bit clear, no detector is failed: that is evidence.
+	o[mibShortAlarms] = rows{"1": "0"}
+	s.Set(batchKey, 200, answer(t, o))
+	if snap, _ := a.Read(t.Context()); len(snap.Errors) != 0 {
+		t.Errorf("summary bit clear: errors = %+v, want none", snap.Errors)
+	}
+}
+
 func TestFacetsFailIndependently(t *testing.T) {
 	o := healthy()
 	delete(o, mibAlarms2)
