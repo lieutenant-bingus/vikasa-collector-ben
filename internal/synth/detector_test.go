@@ -205,3 +205,69 @@ func TestPeriodWithoutAnEndIsAnchoredAtThePoll(t *testing.T) {
 		t.Fatalf("events %+v", evs)
 	}
 }
+
+// The period axes move alone: totals that change inside one period (the
+// controller rewriting them, or a mid-period read) emit nothing, and a
+// change of sequence alone, with identical totals, emits exactly one report.
+func TestPeriodAxesChangeIndependently(t *testing.T) {
+	t.Parallel()
+	e := NewEngine(NewDetectorDiffer())
+	end := t0.Add(15 * time.Minute)
+	e.Apply(periodSnap(end, 7, end, model.DetectorSample{Channel: 1, VolumeCount: 3}))
+	if evs := e.Apply(periodSnap(end.Add(5*time.Second), 7, end, model.DetectorSample{Channel: 1, VolumeCount: 40, OccupancyTenths: 90})); len(evs) != 0 {
+		t.Fatalf("totals changing within a period must emit nothing, got %v", kinds(evs))
+	}
+	next := end.Add(15 * time.Minute)
+	evs := e.Apply(periodSnap(next, 8, next, model.DetectorSample{Channel: 1, VolumeCount: 40, OccupancyTenths: 90}))
+	if len(evs) != 1 {
+		t.Fatalf("a new sequence must emit exactly one report, got %v", kinds(evs))
+	}
+}
+
+// Absence of evidence, for the period path. The recovery poll carries a new
+// sequence: an engine that kept the pre-failure period reports it; one that
+// forgot its state would treat it as a first period and stay silent.
+func TestFailedPeriodReadEmitsNothingAndRecoveryReportsTheNewPeriod(t *testing.T) {
+	t.Parallel()
+	e := NewEngine(NewDetectorDiffer())
+	end := t0.Add(15 * time.Minute)
+	e.Apply(periodSnap(end, 7, end, model.DetectorSample{Channel: 1, VolumeCount: 3}))
+	failed := &model.Snapshot{DeviceID: "asc-1", SampledAt: end.Add(5 * time.Second),
+		Errors: []model.FacetError{{Kind: model.KindDetectorSamples, Err: "detectorSampleTime absent"}}}
+	if evs := e.Apply(failed); len(evs) != 0 {
+		t.Fatalf("failed read must emit nothing, got %v", kinds(evs))
+	}
+	next := end.Add(15 * time.Minute)
+	evs := e.Apply(periodSnap(next.Add(5*time.Second), 8, next, model.DetectorSample{Channel: 1, VolumeCount: 12}))
+	if len(evs) != 1 || evs[0].(model.DetectorReport).Readings[0].VolumeDelta != 12 {
+		t.Fatalf("recovery must report period 8 against the surviving state, got %+v", evs)
+	}
+}
+
+// A device that switches from cumulative counters to periods (an adapter
+// upgrade across a restart-free reload) has no reported period to compare
+// against: the first period is not reported, as after a restart.
+func TestCumulativeToPeriodSwitchEmitsNothing(t *testing.T) {
+	t.Parallel()
+	e := NewEngine(NewDetectorDiffer())
+	e.Apply(detSnap(t0, model.DetectorSample{Channel: 1, VolumeCount: 5000}))
+	end := t0.Add(15 * time.Minute)
+	if evs := e.Apply(periodSnap(end, 7, end, model.DetectorSample{Channel: 1, VolumeCount: 9})); len(evs) != 0 {
+		t.Fatalf("first period after cumulative samples must emit nothing, got %v", kinds(evs))
+	}
+}
+
+func TestPeriodReportCarriesDeviceKind(t *testing.T) {
+	t.Parallel()
+	e := NewEngine(NewDetectorDiffer())
+	end := t0.Add(15 * time.Minute)
+	s := periodSnap(end, 7, end, model.DetectorSample{Channel: 1})
+	s.DeviceKind = "asc"
+	e.Apply(s)
+	s = periodSnap(end.Add(15*time.Minute), 8, end.Add(15*time.Minute), model.DetectorSample{Channel: 1, VolumeCount: 2})
+	s.DeviceKind = "asc"
+	evs := e.Apply(s)
+	if len(evs) != 1 || evs[0].EventDeviceKind() != "asc" {
+		t.Fatalf("events %+v, want one report stamped asc", evs)
+	}
+}
