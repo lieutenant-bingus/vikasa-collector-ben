@@ -26,6 +26,10 @@ findings:
 - The period was 900 s (`detectorSampleTime` stepped 900 s, and
   `detectorSampleDuration` read 9000, in tenths). `volumeOccupancyPeriod`
   and the API's `VOccPer` both said 60. Configured period is not evidence.
+- `detectorSampleTime` is the period's end, in controller-local wall-clock
+  seconds since 1970. 1793812500 arrived at 17:15:02 EST, when the
+  17:00-17:15 period closed, and decodes to 17:15 UTC. The adapter must
+  read it in the controller's zone, as it does for log timestamps.
 - The API's `percentOccupancy` stayed 0 while SNMP `detectorOccupancy`
   read 40 (20%) and 200 (100%). It is not the occupancy the controller
   reports over NTCIP.

@@ -354,3 +354,26 @@ func TestReadLabTrafficFixture(t *testing.T) {
 		t.Errorf("detector samples = %d, want 64", len(d.Samples))
 	}
 }
+
+// SNMP-driven actuations on the lab controller, recorded while detector 3
+// was held: the API's Volume is the last completed 900 s period's total
+// (det 1 = 180, det 4 = 900, above NTCIP's 254 cap), and percentOccupancy is
+// 0 on every channel although SNMP detectorOccupancy read 40, 200 and 40.
+// ADR 0026: this pins what the API says, not what the adapter should
+// publish.
+func TestReadLabDetectorFixture(t *testing.T) {
+	snap, err := newASC(httpapitest.LoadFixture(t, "testdata/asc-lab-detectors.json")).Read(t.Context())
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	d := snap.Facets[2].(model.DetectorSamples)
+	got := map[uint32]model.DetectorSample{}
+	for _, s := range d.Samples {
+		got[s.Channel] = s
+	}
+	for ch, vol := range map[uint32]uint32{1: 180, 3: 0, 4: 900, 5: 0} {
+		if s := got[ch]; s.VolumeCount != vol || s.OccupancyTenths != 0 {
+			t.Errorf("channel %d = %+v, want volume %d, occupancy 0", ch, s, vol)
+		}
+	}
+}
