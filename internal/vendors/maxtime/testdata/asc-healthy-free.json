@@ -11,7 +11,7 @@
     "firmware": "unrecorded",
     "make": "Q-Free",
     "model": "MaxTime",
-    "note": "Bench controller, healthy, running free (PatrnSta 254), no flash, no alarms. Converted from the 2026-08-28 per-object capture (one GET per MIB, bodies verbatim, Volume/percentOccupancy trimmed to channels 1-2) into the batched request the adapter makes. Superseded once re-recorded with collector record-fixture.",
+    "note": "Bench controller, healthy, running free (PatrnSta 254), no flash, no alarms. Converted from the 2026-08-28 per-object capture (one GET per MIB, bodies verbatim, Volume/percentOccupancy trimmed to channels 1-2) into the batched request the adapter makes. Kept beside the record-fixture recordings (asc-lab-*.json, firmware 2.15.1) as the only capture of the controller running free.",
     "recorded": "2026-08-28",
     "recorded_by": "per-object curl capture, converted",
     "scheme": "http"
