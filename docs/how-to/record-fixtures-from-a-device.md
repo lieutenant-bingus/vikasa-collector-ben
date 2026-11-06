@@ -9,9 +9,10 @@ came from — the bar
 **You need** the device (or a simulator that faithfully reproduces one) on
 a network you can reach, a `collector.yaml` with that device in it, and the
 collector binary built from a tree that registers your adapter. These steps
-are for SNMP, the one transport that ships today. The recorder records
-any adapter that dials through `sdk/transport/snmp`; an adapter on another
-transport has no recorder yet and follows the manual steps at the end.
+are written for SNMP. The recorder records any adapter that dials through
+`sdk/transport/snmp` or `sdk/transport/httpapi` (see "HTTP adapters"
+below); an adapter on another transport has no recorder yet and follows the
+manual steps at the end.
 
 ## How the recorder works
 
@@ -85,6 +86,31 @@ The file is JSON (`sdk/transport/snmp/snmpfixture`):
 6. **Optionally, keep a live test.** `internal/vendors/ntcip/dms_live_test.go`
    reads a real sign only when `DMS_SNMP_ADDR` is set and skips otherwise,
    so CI never needs the device and the address never enters the repo.
+
+## HTTP adapters
+
+The same command records an adapter that dials through
+`sdk/transport/httpapi`, wrapping its client with `httpapi.InterceptDial`.
+The file is `sdk/transport/httpapi/httpfixture`: `provenance` (with
+`scheme` in place of the SNMP version) and `exchanges`, each GET the
+adapter made keyed `"GET <path>?<query>"`, with the status and the body
+verbatim.
+
+A recording never holds a credential. Request headers and bodies are not
+recorded, and a request that is not a GET — a login — is passed through
+but only listed in `unrecorded`; its answer is a session token. Replay
+(`httpapitest.LoadFixture`) answers a request with no entry with a 404, so
+a test that drives an authenticating adapter adds the login answer itself.
+There is no `-redact` for HTTP: a replaced JSON or XML body would leave
+the adapter nothing to parse, so a body that names the deployment refuses
+the recording, and you record a state that does not.
+
+```bash
+collector record-fixture -config collector.yaml -device asc-1 \
+  -make Q-Free -model MaxTime -firmware <as the controller reports it> \
+  -note "lab, as found" \
+  -out internal/vendors/maxtime/testdata/asc-lab-<firmware>.json
+```
 
 ## Regenerating a fixture
 

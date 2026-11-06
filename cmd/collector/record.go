@@ -9,6 +9,7 @@ import (
 	"io"
 	"maps"
 	"net"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -18,6 +19,8 @@ import (
 	"github.com/Vikasa2M/vikasa-collector/internal/config"
 	"github.com/Vikasa2M/vikasa-collector/sdk/adapter"
 	"github.com/Vikasa2M/vikasa-collector/sdk/model"
+	"github.com/Vikasa2M/vikasa-collector/sdk/transport/httpapi"
+	"github.com/Vikasa2M/vikasa-collector/sdk/transport/httpapi/httpfixture"
 	"github.com/Vikasa2M/vikasa-collector/sdk/transport/snmp"
 	"github.com/Vikasa2M/vikasa-collector/sdk/transport/snmp/snmpfixture"
 )
@@ -78,19 +81,28 @@ func recordFixture(ctx context.Context, args []string, stdout, stderr io.Writer,
 		rec    *snmpfixture.Recorder
 		dialed snmp.DialConfig
 	)
+	var (
+		httpRec    *httpfixture.Recorder
+		httpDialed httpapi.DialConfig
+	)
 	undo := snmp.InterceptDial(func(c snmp.DialConfig, inner snmp.Client) snmp.Client {
 		rec, dialed = snmpfixture.NewRecorder(inner), c
 		return rec
 	})
+	undoHTTP := httpapi.InterceptDial(func(c httpapi.DialConfig, inner httpapi.Client) httpapi.Client {
+		httpRec, httpDialed = httpfixture.NewRecorder(inner), c
+		return httpRec
+	})
 	a, err := reg.Build(dev.Vendor, dev.DeviceKind, dev.ID, dev.Connection)
 	undo()
+	undoHTTP()
 	if err != nil {
 		return err
 	}
 	defer func() { _ = a.Close() }()
 	key := adapter.Descriptor{Vendor: dev.Vendor, DeviceKind: dev.DeviceKind}.Key()
-	if rec == nil {
-		return fmt.Errorf("%s does not use the SNMP transport; this recorder records SNMP only", key)
+	if rec == nil && httpRec == nil {
+		return fmt.Errorf("%s uses neither the SNMP nor the HTTP transport; this recorder records those only", key)
 	}
 	reader, ok := a.(adapter.StateReader)
 	if !ok {
@@ -102,6 +114,15 @@ func recordFixture(ctx context.Context, args []string, stdout, stderr io.Writer,
 	snap, err := reader.Read(pollCtx)
 	if err != nil {
 		return fmt.Errorf("poll %s: %w (nothing written)", dev.ID, err)
+	}
+
+	if httpRec != nil {
+		return writeHTTPFixture(stdout, *out, httpRec, httpDialed, cfg, dev, snap, httpfixture.Provenance{
+			Adapter: key, Make: *mk, Model: *mdl, Firmware: *firmware,
+			Recorded:   time.Now().UTC().Format(time.DateOnly),
+			RecordedBy: "collector record-fixture " + ver,
+			Note:       *note,
+		})
 	}
 
 	snmpVersion, err := versionName(dialed.Version)
@@ -228,5 +249,46 @@ func (l *oidList) Set(v string) error {
 		return fmt.Errorf("OID %q needs a leading dot, as the fixture keys it", v)
 	}
 	*l = append(*l, v)
+	return nil
+}
+
+// writeHTTPFixture finishes a recording made through the HTTP transport. The
+// recorder has already left out every header, request body and non-GET
+// exchange; what is left is checked for the deployment's own names and
+// address the same way an SNMP recording is. There is no per-exchange
+// -redact: replacing a JSON or XML body would leave the adapter nothing to
+// parse, so a recording that names the deployment is refused and the
+// operator records a device state that does not.
+func writeHTTPFixture(w io.Writer, path string, rec *httpfixture.Recorder, dialed httpapi.DialConfig, cfg *config.Config, dev config.Device, snap *model.Snapshot, p httpfixture.Provenance) error {
+	ident := identifying(cfg, dev, snmp.DialConfig{})
+	if u, err := url.Parse(dialed.BaseURL); err == nil {
+		p.Scheme = u.Scheme
+		if h := u.Hostname(); h != "" {
+			ident["device address"] = h
+		}
+	}
+	f := rec.Fixture(p)
+	var found []string
+	for _, k := range slices.Sorted(maps.Keys(f.Exchanges)) {
+		body := strings.ToLower(f.Exchanges[k].Body)
+		for _, what := range slices.Sorted(maps.Keys(ident)) {
+			if strings.Contains(body, strings.ToLower(ident[what])) {
+				found = append(found, fmt.Sprintf("%s contains the %s", k, what))
+			}
+		}
+	}
+	if len(found) > 0 {
+		return fmt.Errorf("the recording identifies the deployment: %s (nothing written)", strings.Join(found, "; "))
+	}
+	if err := httpfixture.Write(path, f); err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintf(w, "wrote %s: %d exchanges, %d unrecorded (non-GET)\n", path, len(f.Exchanges), len(f.Unrecorded))
+	for _, facet := range snap.Facets {
+		_, _ = fmt.Fprintf(w, "facet %s: %+v\n", facet.FacetKind(), facet)
+	}
+	for _, e := range snap.Errors {
+		_, _ = fmt.Fprintf(w, "facet %s failed: %s\n", e.Kind, e.Err)
+	}
 	return nil
 }

@@ -10,3 +10,6 @@
 *.sh text eol=lf
 go.mod text eol=lf
 go.sum text eol=lf
+
+# Recorded MaxTime fixtures: byte-for-byte as recorded, never converted.
+internal/vendors/maxtime/testdata/*.json -text

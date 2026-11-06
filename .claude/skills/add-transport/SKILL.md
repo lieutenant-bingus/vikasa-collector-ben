@@ -111,9 +111,10 @@ It does not apply to:
      can exercise "this facet's read failed, that one didn't" without a
      second fake type.
    - This fake is what a fixture *replays into* — it is not a recorder.
-     The recorder (`collector record-fixture`) records SNMP only, by
-     wrapping the client `snmp.Dial` returns (`snmp.InterceptDial`). Until
-     your transport offers the same hook, its adapters hand-capture with a
+     The recorder (`collector record-fixture`) records SNMP and HTTP, by
+     wrapping the client `snmp.Dial` or `httpapi.Dial` returns
+     (`snmp.InterceptDial`, `httpapi.InterceptDial`). Until your transport
+     offers the same hook and a fixture format, its adapters hand-capture with a
      provenance comment
      ([`record-fixtures-from-a-device.md`](../../../docs/how-to/record-fixtures-from-a-device.md),
      "Without the recorder"). Your fake existing is what makes that
