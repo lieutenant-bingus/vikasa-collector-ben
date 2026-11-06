@@ -143,6 +143,14 @@ var goldenCases = []struct {
 		identHex:   "0a056173632d31120608bcda82d306188407220b0803100218112203342e302209080918002203302e302a0608c0e182d3069a062f6f70656e6974732d7369676e616c2d636f6e74726f6c2d74797065733a73632d6465746563746f722d7265706f7274",
 	},
 	{
+		name:       "signal-control unmapped-event (hr 200)",
+		ev:         model.HighResEvent{Base: gbase("asc-1", "asc"), Code: 200, Param: 3},
+		ceType:     "openits.signal-control.unmapped-event.v1",
+		dataSchema: "https://schemas.open-its.org/openits-signal-control-events/2026-10-17/",
+		dataHex:    "0a0608c0e182d306121b30315445535445504f4348303030303030303030303030303030301a10636162696e65742d706f6c6c65722d31280132056173632d319a062e6f70656e6974732d7369676e616c2d636f6e74726f6c2d74797065733a73632d756e6d61707065642d6576656e74a206100a07696e6469616e61120508c8011003",
+		identHex:   "0a0608c0e182d30632056173632d319a062e6f70656e6974732d7369676e616c2d636f6e74726f6c2d74797065733a73632d756e6d61707065642d6576656e74a206100a07696e6469616e61120508c8011003",
+	},
+	{
 		name:       "dms mode-changed (display axis)",
 		ev:         model.DMSDisplayStateChanged{Base: gbase("dms-1", "dms"), From: model.DisplayNormal, To: model.DisplayBlank},
 		ceType:     "openits.dms.mode-changed.v1",
@@ -536,6 +544,8 @@ func emptyMessageFor(ceType string) proto.Message {
 		return &scv1.PreemptionCleared{}
 	case "openits.signal-control.detector-report.v1":
 		return &scv1.DetectorReport{}
+	case "openits.signal-control.unmapped-event.v1":
+		return &scv1.UnmappedEvent{}
 	case "openits.dms.message-activation-failed.v1":
 		return &dmsv1.MessageActivationFailed{}
 	default:

@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -315,5 +318,139 @@ func TestRestartDoesNotReRaiseStandingFaults(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	if got := countRaised(); got != 1 {
 		t.Fatalf("fault-raised published %d times across a restart, want 1", got)
+	}
+}
+
+// logASC is a state-quiet controller whose event log gains one detector-on
+// row per read. Its cursor is the last row number, as text.
+type logASC struct {
+	mu    sync.Mutex
+	reads int
+}
+
+func (l *logASC) Descriptor() adapter.Descriptor {
+	return adapter.Descriptor{Vendor: "fixture", DeviceKind: "asc", Caps: adapter.CapState | adapter.CapEvents}
+}
+func (l *logASC) Close() error { return nil }
+func (l *logASC) Read(context.Context) (*model.Snapshot, error) {
+	return &model.Snapshot{DeviceID: "asc-1", SampledAt: time.Now().UTC()}, nil
+}
+func (l *logASC) EventInterval() time.Duration { return 20 * time.Millisecond }
+func (l *logASC) ReadEvents(_ context.Context, after []byte) ([]model.LogEvent, []byte, error) {
+	l.mu.Lock()
+	l.reads++
+	l.mu.Unlock()
+	if after == nil {
+		return nil, []byte("0"), nil // prime: no backfill
+	}
+	n, err := strconv.Atoi(string(after))
+	if err != nil || n >= 200 {
+		return nil, after, err
+	}
+	n++
+	return []model.LogEvent{model.HighResEvent{
+		Base: model.Base{OccurredAt: time.Unix(int64(n), 0).UTC()}, Code: 82, Param: uint16(n),
+	}}, []byte(strconv.Itoa(n)), nil
+}
+func (l *logASC) readCount() int { l.mu.Lock(); defer l.mu.Unlock(); return l.reads }
+
+// ADR 0025, end to end: log rows reach the bus as catalog notifications, and
+// a restart resumes from the stored cursor — nothing skipped, nothing
+// replayed.
+func TestEventLogResumesAcrossARestart(t *testing.T) {
+	ns := startNATS(t)
+	cfg := &config.Config{
+		Region: "us-ga", Agency: "metro", AgencyUnit: "d01", Site: "cab-1",
+		CollectorID: "metro-cab-1-collector", ModelVersion: "openits/v1",
+		Devices: []config.Device{{ID: "asc-1", Vendor: "fixture", DeviceKind: "asc", PollInterval: time.Second}},
+	}
+	nc, err := nats.Connect(ns.ClientURL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer nc.Close()
+	var mu sync.Mutex
+	var rows []string
+	if _, err := nc.Subscribe(">", func(m *nats.Msg) {
+		if m.Header.Get("ce-type") == "openits.signal-control.unmapped-event.v1" {
+			mu.Lock()
+			rows = append(rows, m.Header.Get("ce-time"))
+			mu.Unlock()
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	count := func() int { mu.Lock(); defer mu.Unlock(); return len(rows) }
+
+	lifetime := func(until func(*logASC) bool) {
+		dev := &logASC{}
+		reg := adapter.NewRegistry()
+		reg.Register(dev.Descriptor(), func(string, map[string]any) (adapter.Adapter, error) { return dev, nil })
+		ctx, cancel := context.WithCancel(t.Context())
+		done := make(chan error, 1)
+		go func() { done <- Run(ctx, cfg, reg, Options{NATSURL: ns.ClientURL(), Version: "test"}) }()
+		deadline := time.Now().Add(10 * time.Second)
+		for !until(dev) {
+			if time.Now().After(deadline) {
+				t.Fatal("lifetime condition never met")
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+		if err := nc.Flush(); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	lifetime(func(*logASC) bool { return count() >= 3 })
+	first := count()
+	lifetime(func(dev *logASC) bool { return dev.readCount() >= 5 && count() >= first+3 })
+
+	mu.Lock()
+	defer mu.Unlock()
+	for i, ts := range rows {
+		want := time.Unix(int64(i+1), 0).UTC().Format(time.RFC3339)
+		if ts != want {
+			t.Fatalf("row %d ce-time = %s, want %s: rows %v (a gap or a replay across the restart)", i, ts, want, rows)
+		}
+	}
+}
+
+// eventsWithoutReader declares CapEvents but implements only StateReader.
+type eventsWithoutReader struct{ recordingASC }
+
+func (*eventsWithoutReader) Descriptor() adapter.Descriptor {
+	return adapter.Descriptor{Vendor: "liar", DeviceKind: "asc", Caps: adapter.CapState | adapter.CapEvents}
+}
+
+// A built adapter that declares CapEvents and is not an EventReader fails
+// boot, and both it and every adapter built before it are closed.
+func TestBuildReadersRefusesCapEventsWithoutAnEventReader(t *testing.T) {
+	good := &recordingASC{}
+	liar := &eventsWithoutReader{}
+	reg := adapter.NewRegistry()
+	reg.Register(adapter.Descriptor{Vendor: "fixture", DeviceKind: "asc", Caps: adapter.CapState},
+		func(string, map[string]any) (adapter.Adapter, error) { return good, nil })
+	reg.Register(liar.Descriptor(),
+		func(string, map[string]any) (adapter.Adapter, error) { return liar, nil })
+
+	_, err := buildReaders(slog.New(slog.DiscardHandler), []config.Device{
+		{ID: "asc-1", Vendor: "fixture", DeviceKind: "asc"},
+		{ID: "asc-2", Vendor: "liar", DeviceKind: "asc"},
+	}, reg)
+	if err == nil || !strings.Contains(err.Error(), "declares CapEvents but is not an EventReader") {
+		t.Fatalf("err = %v; want the CapEvents refusal", err)
+	}
+	for name, a := range map[string]*recordingASC{"earlier adapter": good, "refused adapter": &liar.recordingASC} {
+		a.mu.Lock()
+		closed := a.closed
+		a.mu.Unlock()
+		if !closed {
+			t.Errorf("%s was not closed", name)
+		}
 	}
 }

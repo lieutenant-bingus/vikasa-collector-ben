@@ -630,6 +630,7 @@ func TestCETypes_IsCompleteSortedAndDeduped(t *testing.T) {
 		"openits.signal-control.plan-applied.v1",
 		"openits.signal-control.preemption-activated.v1",
 		"openits.signal-control.preemption-cleared.v1",
+		"openits.signal-control.unmapped-event.v1",
 		"openits.traffic-sensor.fault-cleared.v1",
 		"openits.traffic-sensor.fault-raised.v1",
 		"openits.traffic-sensor.traffic-interval-report.v1",

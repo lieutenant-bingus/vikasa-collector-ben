@@ -113,8 +113,9 @@ It does not apply to:
    - This fake is what a fixture *replays into* — it is not a recorder.
      The recorder (`collector record-fixture`) records SNMP and HTTP, by
      wrapping the client `snmp.Dial` or `httpapi.Dial` returns
-     (`snmp.InterceptDial`, `httpapi.InterceptDial`). Until your transport
-     offers the same hook and a fixture format, its adapters hand-capture with a
+     (`snmp.InterceptDial`, `httpapi.InterceptDial`; `-events` also
+     records one event-log read). Until your transport offers the same
+     hook and a fixture format, its adapters hand-capture with a
      provenance comment
      ([`record-fixtures-from-a-device.md`](../../../docs/how-to/record-fixtures-from-a-device.md),
      "Without the recorder"). Your fake existing is what makes that

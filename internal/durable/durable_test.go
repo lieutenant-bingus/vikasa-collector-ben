@@ -189,3 +189,42 @@ func TestUnchangedStateIsNotRewritten(t *testing.T) {
 		t.Fatalf("revision = %d after five identical polls, want 1 write", entry.Revision())
 	}
 }
+
+// ADR 0025: an event-log cursor survives a restart, is not offered to the
+// engine as a facet, and an unchanged cursor is not rewritten.
+func TestEventLogCursorSurvivesARestart(t *testing.T) {
+	port := freePort(t)
+	startNATS(t, port, t.TempDir())
+	js := jsFor(t, port)
+
+	_, s1 := boot(t, js)
+	waitSeeded(t, s1)
+	if c := s1.Cursor("asc-1"); c != nil {
+		t.Fatalf("first boot cursor = %q, want none", c)
+	}
+	s1.RecordCursor("asc-1", []byte("42"))
+	s1.RecordCursor("asc-1", []byte("42"))
+	shutdown(t, s1)
+
+	e2, s2 := boot(t, js)
+	waitSeeded(t, s2)
+	t.Cleanup(func() { shutdown(t, s2) })
+	if c := string(s2.Cursor("asc-1")); c != "42" {
+		t.Fatalf("after restart cursor = %q, want 42", c)
+	}
+	// The engine was seeded with no facets: a first fault still raises.
+	if got := eventKinds(e2.Apply(faults(t0, door))); len(got) != 1 {
+		t.Fatalf("engine saw the cursor as state: %v", got)
+	}
+	kv, err := js.KeyValue(t.Context(), Bucket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := kv.Get(t.Context(), key("asc-1", cursorKind))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.Revision() == 0 || string(entry.Value()) != "42" {
+		t.Fatalf("stored cursor = %q rev %d", entry.Value(), entry.Revision())
+	}
+}

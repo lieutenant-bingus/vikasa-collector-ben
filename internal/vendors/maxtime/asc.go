@@ -44,8 +44,14 @@ var pollMIBs = []string{
 	mibActiveDetectorPlan,
 }
 
-// ascDescriptor is what is registered and what every built adapter reports.
+// ascDescriptor is what is registered: the adapter can read the
+// high-resolution log. A device configured without it is state-only, and
+// its adapter says so (stateDescriptor), so no event loop starts for it.
 var ascDescriptor = adapter.Descriptor{
+	Vendor: "maxtime", DeviceKind: "asc", Caps: adapter.CapState | adapter.CapEvents,
+}
+
+var stateDescriptor = adapter.Descriptor{
 	Vendor: "maxtime", DeviceKind: "asc", Caps: adapter.CapState,
 }
 
@@ -54,8 +60,8 @@ type asc struct {
 	api      *mibAPI
 	now      func() time.Time
 	// loc is the controller clock's zone, for detectorSampleTime. Nil (no
-	// timezone configured) leaves the period's end unknown, and the report
-	// is anchored at the poll that saw it.
+	// asclog block, so no timezone configured) leaves the period's end
+	// unknown, and the report is anchored at the poll that saw it.
 	loc *time.Location
 	// perDetector records that this controller has answered DtAlrms, so a
 	// later poll without it cannot fall back to the summary bit and clear
@@ -67,7 +73,7 @@ type asc struct {
 
 var _ adapter.StateReader = (*asc)(nil)
 
-func (a *asc) Descriptor() adapter.Descriptor { return ascDescriptor }
+func (a *asc) Descriptor() adapter.Descriptor { return stateDescriptor }
 
 func (a *asc) Close() error { return a.api.client.Close() }
 

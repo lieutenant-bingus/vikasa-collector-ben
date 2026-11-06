@@ -11,6 +11,11 @@
 // 1, written only when the encoding changes — so flash writes track real
 // transitions, not polls. Volatile kinds (detector counters) never reach
 // it; see synth's volatile.
+//
+// The same bucket holds each EventReader device's log cursor (ADR 0025)
+// under the reserved kind cursorKind: the position the device's event log
+// has been published up to, so a restart resumes there instead of skipping
+// or replaying what the controller logged meanwhile.
 package durable
 
 import (
@@ -40,6 +45,10 @@ const Bucket = "VIKASA_SYNTH_STATE"
 // report across a sensor's lanes or zones) is a few KB.
 const maxValueSize = 64 << 10
 
+// cursorKind is the key suffix of an event-log cursor. No facet kind is
+// named this, so a cursor never reaches the engine as a facet.
+const cursorKind model.Kind = "event-log-cursor"
+
 type tuning struct {
 	backoffMin, backoffMax time.Duration
 	opTimeout              time.Duration // one KV operation
@@ -59,6 +68,7 @@ type State struct {
 	mu      sync.Mutex
 	pending map[string][]byte // key -> latest unwritten encoding
 	written map[string][]byte // key -> what the bucket holds
+	cursors map[string][]byte // device -> event-log cursor loaded at boot
 	closed  bool
 	wake    chan struct{}
 
@@ -84,7 +94,7 @@ func start(ctx context.Context, js jetstream.JetStream, engine *synth.Engine, de
 	lctx, stop := context.WithCancel(context.WithoutCancel(ctx))
 	s := &State{
 		js: js, engine: engine, deviceIDs: deviceIDs, log: log, tune: tune,
-		pending: make(map[string][]byte), written: make(map[string][]byte),
+		pending: make(map[string][]byte), written: make(map[string][]byte), cursors: make(map[string][]byte),
 		wake: make(chan struct{}, 1), seeded: make(chan struct{}), stop: stop, done: make(chan struct{}),
 	}
 	engine.WithChangeHook(s.record)
@@ -153,6 +163,32 @@ func (s *State) record(deviceID string, k model.Kind, f model.Facet) {
 		return // unchanged: no write, which is what bounds flash wear
 	}
 	s.pending[kk] = raw
+	s.mu.Unlock()
+	s.poke()
+}
+
+// Cursor is the event-log cursor stored for deviceID, or nil if none. It is
+// meaningful only once Seeded is closed.
+func (s *State) Cursor(deviceID string) []byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return bytes.Clone(s.cursors[deviceID])
+}
+
+// RecordCursor stores deviceID's event-log cursor, written through like a
+// facet. Call it only after the events before the cursor have been handed to
+// the publisher: a crash between the two then replays them (same ce-id, so
+// deduplicated) rather than losing them.
+func (s *State) RecordCursor(deviceID string, cursor []byte) {
+	kk := key(deviceID, cursorKind)
+	s.mu.Lock()
+	s.cursors[deviceID] = bytes.Clone(cursor)
+	_, queued := s.pending[kk]
+	if !queued && bytes.Equal(cursor, s.written[kk]) {
+		s.mu.Unlock()
+		return
+	}
+	s.pending[kk] = bytes.Clone(cursor)
 	s.mu.Unlock()
 	s.poke()
 }
@@ -240,6 +276,7 @@ func (s *State) load(ctx context.Context) (jetstream.KeyValue, error) {
 	}
 	byDevice := make(map[string][]model.Facet)
 	written := make(map[string][]byte)
+	cursors := make(map[string][]byte)
 	for kk := range keys.Keys() {
 		deviceID, k, ok := parseKey(kk)
 		if !ok {
@@ -251,6 +288,11 @@ func (s *State) load(ctx context.Context) (jetstream.KeyValue, error) {
 		}
 		if err != nil {
 			return nil, fmt.Errorf("get %s: %w", kk, err)
+		}
+		if k == cursorKind {
+			cursors[deviceID] = entry.Value()
+			written[kk] = entry.Value()
+			continue
 		}
 		f, err := s.engine.DecodeFacet(k, entry.Value())
 		if err != nil {
@@ -265,6 +307,11 @@ func (s *State) load(ctx context.Context) (jetstream.KeyValue, error) {
 
 	s.mu.Lock()
 	maps.Copy(s.written, written)
+	for id, c := range cursors {
+		if _, recorded := s.cursors[id]; !recorded {
+			s.cursors[id] = c
+		}
+	}
 	s.mu.Unlock()
 	for _, id := range s.deviceIDs {
 		s.engine.Seed(id, byDevice[id])

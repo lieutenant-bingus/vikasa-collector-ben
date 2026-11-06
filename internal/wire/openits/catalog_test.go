@@ -178,5 +178,4 @@ var unmapped = map[string]unmappedReason{
 	"openits.signal-control.tsam-mode-changed.v1":           signalControlNotAssessed,
 	"openits.signal-control.tsam-recommendation-applied.v1": signalControlNotAssessed,
 	"openits.signal-control.tsp-event.v1":                   signalControlNotAssessed,
-	"openits.signal-control.unmapped-event.v1":              signalControlNotAssessed,
 }

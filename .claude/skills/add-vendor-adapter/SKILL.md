@@ -47,9 +47,16 @@ It does not apply to:
 3. Implement `StateReader` (`sdk/adapter/adapter.go`) and set
    `Caps: adapter.CapState` — every adapter is pull-driven (ADR 0004: the
    runner calls `Read`, nothing an adapter does calls back into the core).
-   If the device yields discrete events rather than state, stop: there is
-   no event reader in the SDK, and adding one is a design change
-   (ADR 0021), not part of an adapter PR.
+   If the device also keeps a log of discrete events (a high-resolution
+   log), implement `EventReader` too and set `CapEvents` on the registered
+   Descriptor (ADR 0025). A built adapter's `Descriptor()` reports only
+   what that device is configured for, so a device without its log
+   configured stays `CapState` and gets no event loop. The core stores the
+   cursor; the adapter defines it, primes at the log's end with none, and
+   resynchronises itself when the device renumbers. `maxtime-asc`
+   (`internal/vendors/maxtime/asclog.go`) is the reference. A device that
+   yields only events and no state, or a command path, is still a design
+   change (ADR 0021), not part of an adapter PR.
 4. Parse the `connection` block inside your `Factory`: your own top-level
    key, lowercase snake_case fields, sensible defaults over required
    knobs, and a rejected build on anything malformed rather than a dial

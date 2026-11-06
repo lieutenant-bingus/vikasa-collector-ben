@@ -49,7 +49,10 @@ func (d Descriptor) Key() string { return d.Vendor + "-" + d.DeviceKind }
 
 type Capability uint8
 
-const CapState Capability = 1 // implements StateReader
+const (
+	CapState  Capability = 1 << iota // implements StateReader
+	CapEvents                        // also implements EventReader (ADR 0025)
+)
 ```
 
 A `Descriptor` is vendor × device kind, nothing else. `ntcip` is a vendor
@@ -58,14 +61,16 @@ other vendors' adapters are compared against. The two adapters in the repo
 are `ntcip-asc` and `ntcip-dms` (`ascDescriptor` in
 `internal/vendors/ntcip/asc.go`, `dmsDescriptor` in `dms.go`).
 
-`Capability` is a bitset with one bit today. Only the state-reading path
-exists, because
-[ADR 0021](../adr/0021-sdk-interfaces-ship-with-their-first-implementer.md)
-says an SDK interface ships together with its first implementer. An
-event-shaped reader (for a hi-res log, say) or a command writer will arrive
-with the adapter that needs it, as a new capability bit and a new
-interface. Go interfaces are satisfied implicitly, so adding one changes no
-existing adapter.
+`Capability` is a bitset with two bits. `CapState` is the state-reading
+path every adapter has. `CapEvents` is the event-log path: an
+`EventReader` reads a log the device keeps (a signal controller's
+high-resolution log) on its own loop, from a cursor the core stores
+([ADR 0025](../adr/0025-event-reader-with-checkpointing.md)); `maxtime-asc`
+is its first implementer. A command writer will arrive with the adapter
+that needs it, as a new bit and a new interface
+([ADR 0021](../adr/0021-sdk-interfaces-ship-with-their-first-implementer.md)).
+Go interfaces are satisfied implicitly, so adding one changes no existing
+adapter.
 
 ### Factory and Registry: how an adapter gets built
 
@@ -195,8 +200,8 @@ ADR 0004 also keeps state and events on separate interfaces, even though
 both are pulled. "Pull" describes the transport direction, not what the
 data means. One interface with a state-or-event flag would push that
 distinction into every consumer instead of settling it once at the
-interface. Only `StateReader` exists today; the event-shaped reader will be
-its own interface when it arrives (ADR 0021).
+interface. `StateReader` and `EventReader` are those two interfaces
+(ADR 0025).
 
 ## The rule of three
 

@@ -135,6 +135,9 @@ var ceTypeFor = map[key]string{
 	{"preemption-cleared", "asc"}:        "openits.signal-control.preemption-cleared.v1",
 	{"detector-report", "asc"}:           "openits.signal-control.detector-report.v1",
 
+	// High-resolution log rows (ADR 0025), published raw.
+	{"hr-unmapped", "asc"}: "openits.signal-control.unmapped-event.v1",
+
 	{"message-activation-failed", "dms"}: "openits.dms.message-activation-failed.v1",
 	{"message-changed", "dms"}:           "openits.dms.message-changed.v1",
 	{"sign-status-report", "dms"}:        "openits.dms.sign-status-report.v1",
