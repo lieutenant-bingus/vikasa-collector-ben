@@ -39,6 +39,10 @@ func phasesOf(t *testing.T, snap *model.Snapshot) map[uint32]uint8 {
 	return out
 }
 
+// callPhaseASC loads the recorded poll, then replaces the batch with
+// withPlan. The recording is one real poll on plan 2 and holds that
+// batch as the controller sent it; the plan-change and no-plan tests
+// need a batch the recording does not contain, so they keep this Set.
 func callPhaseASC(t *testing.T, plan string) (*asc, *httpapitest.Static, *time.Time) {
 	t.Helper()
 	s := httpapitest.LoadFixture(t, "testdata/asc-lab-callphase.json")
@@ -76,12 +80,10 @@ func TestCallPhaseFromLabAssignment(t *testing.T) {
 	}
 }
 
-// The call-phase poll as record-fixture captured it on the lab controller
-// (firmware 2.15.1, 2026-11-05, detector plan 2), replayed unmodified: the
-// batch answer names the plan and the second exchange is its assignment.
-// The same run published these phases on detector-report and
-// detector-transition; every other channel calls phase 0 and carries none.
-func TestCallPhaseRecordedPollGolden(t *testing.T) {
+// TestCallPhaseFromRecordedPoll replays the lab recording with no answer
+// substituted. The detector facet carries the plan-2 call phases, and a
+// channel that calls none stays 0.
+func TestCallPhaseFromRecordedPoll(t *testing.T) {
 	s := httpapitest.LoadFixture(t, "testdata/asc-lab-callphase.json")
 	if _, ok := s.Responses[batchKey]; !ok {
 		t.Fatalf("fixture has no exchange for today's batch request %q", batchKey)
@@ -92,17 +94,21 @@ func TestCallPhaseRecordedPollGolden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := map[uint32]uint8{}
-	for ch, ph := range phasesOf(t, snap) {
-		if ph != 0 {
-			got[ch] = ph
-		}
+	if len(snap.Errors) != 0 {
+		t.Errorf("snapshot errors: %+v", snap.Errors)
 	}
-	want := map[uint32]uint8{
-		1: 1,
-		3: 2, 4: 2, 5: 2, 6: 2,
-		21: 6, 22: 6,
-		31: 8, 32: 8, 33: 8, 34: 8,
+	got := phasesOf(t, snap)
+	want := make(map[uint32]uint8, len(got))
+	for ch := range got {
+		want[ch] = 0
+	}
+	want[1] = 1
+	for _, ch := range []uint32{3, 4, 5, 6} {
+		want[ch] = 2
+	}
+	want[21], want[22] = 6, 6
+	for _, ch := range []uint32{31, 32, 33, 34} {
+		want[ch] = 8
 	}
 	if !maps.Equal(got, want) {
 		t.Errorf("phases = %v, want %v", got, want)
