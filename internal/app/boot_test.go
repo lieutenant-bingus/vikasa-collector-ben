@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -414,6 +416,41 @@ func TestEventLogResumesAcrossARestart(t *testing.T) {
 		want := time.Unix(int64(i+1), 0).UTC().Format(time.RFC3339)
 		if ts != want {
 			t.Fatalf("row %d ce-time = %s, want %s: rows %v (a gap or a replay across the restart)", i, ts, want, rows)
+		}
+	}
+}
+
+// eventsWithoutReader declares CapEvents but implements only StateReader.
+type eventsWithoutReader struct{ recordingASC }
+
+func (*eventsWithoutReader) Descriptor() adapter.Descriptor {
+	return adapter.Descriptor{Vendor: "liar", DeviceKind: "asc", Caps: adapter.CapState | adapter.CapEvents}
+}
+
+// A built adapter that declares CapEvents and is not an EventReader fails
+// boot, and both it and every adapter built before it are closed.
+func TestBuildReadersRefusesCapEventsWithoutAnEventReader(t *testing.T) {
+	good := &recordingASC{}
+	liar := &eventsWithoutReader{}
+	reg := adapter.NewRegistry()
+	reg.Register(adapter.Descriptor{Vendor: "fixture", DeviceKind: "asc", Caps: adapter.CapState},
+		func(string, map[string]any) (adapter.Adapter, error) { return good, nil })
+	reg.Register(liar.Descriptor(),
+		func(string, map[string]any) (adapter.Adapter, error) { return liar, nil })
+
+	_, err := buildReaders(slog.New(slog.DiscardHandler), []config.Device{
+		{ID: "asc-1", Vendor: "fixture", DeviceKind: "asc"},
+		{ID: "asc-2", Vendor: "liar", DeviceKind: "asc"},
+	}, reg)
+	if err == nil || !strings.Contains(err.Error(), "declares CapEvents but is not an EventReader") {
+		t.Fatalf("err = %v; want the CapEvents refusal", err)
+	}
+	for name, a := range map[string]*recordingASC{"earlier adapter": good, "refused adapter": &liar.recordingASC} {
+		a.mu.Lock()
+		closed := a.closed
+		a.mu.Unlock()
+		if !closed {
+			t.Errorf("%s was not closed", name)
 		}
 	}
 }
