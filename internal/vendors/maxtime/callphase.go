@@ -22,9 +22,8 @@ const (
 // an operator's edit to the running plan goes unseen.
 const callPhaseRefresh = 15 * time.Minute
 
-// callPhases is the detector-to-phase assignment the state poll last read.
-// It is locked because the high-resolution log reader (ADR 0025, proposed)
-// would read it from its own goroutine.
+// callPhases is the detector-to-phase assignment the state poll last read,
+// shared with the log reader so a detector row carries the phase it called.
 // The assignment is an attribute, never evidence of a state change: when it
 // cannot be read the phase is unknown (0) and simply omitted.
 type callPhases struct {

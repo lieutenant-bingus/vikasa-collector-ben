@@ -18,6 +18,11 @@ type HighResEvent struct {
 	Base
 	Code  uint16
 	Param uint16
+	// PhaseServed is, for a detector row, the phase that detector called
+	// when the row was logged; 0 when it called none or that is not known.
+	// The row does not say: the adapter joins it from the call-phase
+	// assignment it read, and only for rows logged under that assignment.
+	PhaseServed uint8
 }
 
 // Stamped is e with the device identity the core owns (LogEvent).
@@ -26,7 +31,76 @@ func (e HighResEvent) Stamped(deviceID, deviceKind string) Event {
 	return e
 }
 
-// EventKind is one kind for every row: each is published raw, as the
-// catalog's unmapped-event, with its code and param, until the emitter
-// maps the Indiana families to their typed notifications.
-func (e HighResEvent) EventKind() string { return "hr-unmapped" }
+// HighResClass is the family a code belongs to, which picks the catalog
+// notification it is published as.
+type HighResClass uint8
+
+const (
+	HighResUnmapped     HighResClass = iota // no typed notification yet; published raw
+	HighResPhase                            // phase-state-change
+	HighResPedestrian                       // pedestrian-event
+	HighResDetector                         // detector-transition
+	HighResOverlap                          // overlap-change
+	HighResPreemption                       // preemption-event
+	HighResCoordination                     // coordination-change
+)
+
+// Class is the family of e's code. Codes outside every family — and every
+// family's code whose parameter could not be a valid number for it — are
+// HighResUnmapped, which still reaches the bus with the raw code and param.
+func (e HighResEvent) Class() HighResClass {
+	c, p := e.Code, e.Param
+	phase := p >= 1 && p <= 40 // NEMA phase-number range
+	id := p >= 1 && p <= 255   // overlap, preempt and detector numbers on the wire
+	switch {
+	case c <= 12, c == 14, c == 31, c >= 41 && c <= 44, c == 46, c == 47:
+		return pick(phase, HighResPhase)
+	case c >= 21 && c <= 26, c == 45, c == 48, c == 49:
+		return pick(phase, HighResPedestrian)
+	case c >= 67 && c <= 70, c >= 89 && c <= 92:
+		return pick(id, HighResPedestrian)
+	case c >= 81 && c <= 88:
+		return pick(p >= 1, HighResDetector)
+	case c >= 61 && c <= 66, c == 32, c == 33:
+		return pick(id, HighResOverlap)
+	case c >= 101 && c <= 111:
+		return pick(id, HighResPreemption)
+	case c == 116: // preempt force-off: the param is the phase forced off
+		return pick(phase, HighResPreemption)
+	case c >= 50 && c <= 54, c == 151: // MAX-in-effect, yield point: the param is a phase
+		return pick(phase, HighResCoordination)
+	case c >= 131 && c <= 149: // pattern, cycle, offset, split N: the param is a value
+		return HighResCoordination
+	case c == 150: // cycle state 0..7 (Indiana 2020)
+		return pick(p <= 7, HighResCoordination)
+	default:
+		return HighResUnmapped
+	}
+}
+
+func pick(valid bool, c HighResClass) HighResClass {
+	if valid {
+		return c
+	}
+	return HighResUnmapped
+}
+
+// EventKind routes by family, so each family reaches its own ce-type.
+func (e HighResEvent) EventKind() string {
+	switch e.Class() {
+	case HighResPhase:
+		return "hr-phase"
+	case HighResPedestrian:
+		return "hr-pedestrian"
+	case HighResDetector:
+		return "hr-detector"
+	case HighResOverlap:
+		return "hr-overlap"
+	case HighResPreemption:
+		return "hr-preemption"
+	case HighResCoordination:
+		return "hr-coordination"
+	default:
+		return "hr-unmapped"
+	}
+}

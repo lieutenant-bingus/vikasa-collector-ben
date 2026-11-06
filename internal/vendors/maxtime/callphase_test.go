@@ -3,6 +3,7 @@ package maxtime
 import (
 	"maps"
 	"net/http"
+	"net/url"
 	"testing"
 	"time"
 
@@ -170,5 +171,35 @@ func TestCallPhaseWithoutPlanIsUnknown(t *testing.T) {
 	}
 	if n := len(s.Requests()); n != 1 {
 		t.Errorf("%d requests, want only the poll", n)
+	}
+}
+
+// A detector row carries the phase only when it was logged under the
+// assignment read; phase and pedestrian-detector rows never do.
+func TestLogDetectorRowsCarryPhaseServedFromTheirTime(t *testing.T) {
+	s := &httpapitest.Static{}
+	body := `<EventResponses><EventResponse>` +
+		`<Event ID="100" TimeStamp="09-08-2026 09:59:27.8" EventTypeID="82" Parameter="3"/>` +
+		`<Event ID="101" TimeStamp="09-08-2026 09:59:28.0" EventTypeID="82" Parameter="3"/>` +
+		`<Event ID="102" TimeStamp="09-08-2026 09:59:28.1" EventTypeID="1" Parameter="2"/>` +
+		`<Event ID="103" TimeStamp="09-08-2026 09:59:28.2" EventTypeID="89" Parameter="3"/>` +
+		`<Event ID="104" TimeStamp="09-08-2026 09:59:28.3" EventTypeID="81" Parameter="9"/>` +
+		`</EventResponse></EventResponses>`
+	s.Set("GET "+defaultLogPath+"?"+url.Values{"since": {"09-08-2026 09:59:27.0"}}.Encode(), http.StatusOK, body)
+	read := time.Date(2026, 9, 8, 13, 59, 28, 0, time.UTC) // 09:59:28.0 EDT
+	l := newLog(s, true, read.Add(time.Minute))
+	l.calls = &callPhases{plan: 2, phases: map[uint32]uint8{3: 2}, since: read, fetched: read}
+	evs, _, err := l.read(t.Context(), cursor(t, 99, read.Add(-time.Second)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []uint8{0, 2, 0, 0, 0} // before the read; joined; phase row; ped detector; calls none
+	if len(evs) != len(want) {
+		t.Fatalf("%d events, want %d", len(evs), len(want))
+	}
+	for i, ev := range evs {
+		if got := ev.(model.HighResEvent).PhaseServed; got != want[i] {
+			t.Errorf("row %d PhaseServed = %d, want %d", 100+i, got, want[i])
+		}
 	}
 }

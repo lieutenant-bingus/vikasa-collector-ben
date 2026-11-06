@@ -65,8 +65,8 @@ func TestLogReadsRowsAfterTheCursor(t *testing.T) {
 		t.Errorf("first = %+v, want row 6151, cycle state 5 at 14:54:06.0 EST", first)
 	}
 	vendor := evs[1].(model.HighResEvent)
-	if vendor.Code != 316 || vendor.Param != 110 {
-		t.Errorf("row 6152 = %+v; a MaxTime code above 255 must reach the bus raw", vendor)
+	if vendor.Code != 316 || vendor.Param != 110 || vendor.Class() != model.HighResUnmapped {
+		t.Errorf("row 6152 = %+v class %d; a MaxTime code above 255 must reach the bus raw, as unmapped", vendor, vendor.Class())
 	}
 	if c := decodeCursor(t, next); c.ID != 6165 {
 		t.Errorf("cursor id = %d, want 6165", c.ID)
@@ -75,6 +75,22 @@ func TestLogReadsRowsAfterTheCursor(t *testing.T) {
 	again, next2, err := l.read(t.Context(), next)
 	if err != nil || len(again) != 0 || string(next2) != string(next) {
 		t.Errorf("re-read = %d events, cursor %s, err %v; want none, unchanged", len(again), next2, err)
+	}
+}
+
+// The lab recording holds no overlap rows, so an overlap row is built here:
+// it decodes into its code and overlap number, and classes as an overlap.
+func TestLogDecodesAnOverlapRow(t *testing.T) {
+	s := &httpapitest.Static{}
+	s.Set("GET "+defaultLogPath, http.StatusOK, `<EventResponses><EventResponse>`+
+		`<Event ID="21" TimeStamp="11-04-2026 09:00:00.0" EventTypeID="61" Parameter="1"/>`+
+		`</EventResponse></EventResponses>`)
+	evs, _, err := newLog(s, false, fixedNow()).read(t.Context(), cursor(t, 20, time.Time{}))
+	if err != nil || len(evs) != 1 {
+		t.Fatalf("events %+v err %v", evs, err)
+	}
+	if e := evs[0].(model.HighResEvent); e.Code != 61 || e.Param != 1 || e.Class() != model.HighResOverlap {
+		t.Errorf("row 21 = %+v, want overlap 1 begin green", e)
 	}
 }
 
@@ -298,5 +314,30 @@ func TestLabLogPrimesAtTheEnd(t *testing.T) {
 	want := time.Date(2026, 11, 4, 19, 55, 15, 400_000_000, time.UTC) // 14:55:15.4 EST
 	if c := decodeCursor(t, next); c.ID != 6165 || !c.At.Equal(want) {
 		t.Errorf("cursor = %+v, want 6165 at %v", c, want)
+	}
+}
+
+func TestLabLogClassesAfterACursor(t *testing.T) {
+	l := newLog(httpapitest.LoadFixture(t, labLogFixture), false, labNow)
+	evs, _, err := l.read(t.Context(), cursor(t, 6146, time.Date(2026, 11, 4, 19, 53, 56, 0, time.UTC)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(evs) != 19 { // 6147..6165
+		t.Fatalf("got %d events, want 19", len(evs))
+	}
+	for i, want := range map[int]struct {
+		code, param uint16
+		class       model.HighResClass
+	}{
+		0: {13, 2, model.HighResUnmapped},      // not in the pinned release
+		4: {150, 5, model.HighResCoordination}, // cycle state 5
+		5: {316, 110, model.HighResUnmapped},   // MaxTime vendor range
+		8: {150, 7, model.HighResCoordination},
+	} {
+		e := evs[i].(model.HighResEvent)
+		if e.Code != want.code || e.Param != want.param || e.Class() != want.class {
+			t.Errorf("event %d = code %d param %d class %d, want %+v", i, e.Code, e.Param, e.Class(), want)
+		}
 	}
 }

@@ -372,7 +372,7 @@ func TestEventLogResumesAcrossARestart(t *testing.T) {
 	var mu sync.Mutex
 	var rows []string
 	if _, err := nc.Subscribe(">", func(m *nats.Msg) {
-		if m.Header.Get("ce-type") == "openits.signal-control.unmapped-event.v1" {
+		if m.Header.Get("ce-type") == "openits.signal-control.detector-transition.v1" {
 			mu.Lock()
 			rows = append(rows, m.Header.Get("ce-time"))
 			mu.Unlock()

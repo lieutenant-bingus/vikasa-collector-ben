@@ -67,7 +67,7 @@ type asc struct {
 	// later poll without it cannot fall back to the summary bit and clear
 	// the per-detector faults it raised (absence of evidence).
 	perDetector atomic.Bool
-	// calls is the detector-to-phase assignment the poll keeps current.
+	// calls is the detector-to-phase assignment, shared with the log reader.
 	calls *callPhases
 }
 
