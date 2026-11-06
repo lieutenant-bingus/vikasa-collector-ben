@@ -45,8 +45,11 @@ func (d *detectorDiffer) Diff(prev, curr model.Facet, base model.Base) []model.E
 		return nil
 	}
 
-	prevByCh := byChannel(prev.(model.DetectorSamples))
 	c := curr.(model.DetectorSamples)
+	if c.Period != nil {
+		return periodReport(prev.(model.DetectorSamples), c, base)
+	}
+	prevByCh := byChannel(prev.(model.DetectorSamples))
 
 	readings := make([]model.DetectorReading, 0, len(c.Samples))
 	for _, s := range c.Samples {
@@ -69,6 +72,38 @@ func (d *detectorDiffer) Diff(prev, curr model.Facet, base model.Base) []model.E
 		Base:             base,
 		IntervalStart:    start,
 		IntervalDuration: base.OccurredAt.Sub(start),
+		Readings:         readings,
+	}}
+}
+
+// periodReport reports a completed collection period once, when its
+// Sequence first appears: its totals are the counts, the period is the
+// interval. A poll that sees the period already reported emits nothing.
+// The first period after a restart, or after a cumulative-counter sample,
+// is not reported: it may already have been (the state is volatile), and a
+// duplicate count is worse than a missing one.
+func periodReport(prev, c model.DetectorSamples, base model.Base) []model.Event {
+	if prev.Period == nil || prev.Period.Sequence == c.Period.Sequence || c.Period.Duration <= 0 {
+		return nil
+	}
+	readings := make([]model.DetectorReading, 0, len(c.Samples))
+	for _, s := range c.Samples {
+		readings = append(readings, model.DetectorReading{
+			Channel: s.Channel, VolumeDelta: s.VolumeCount, OccupancyTenths: s.OccupancyTenths,
+		})
+	}
+	if len(readings) == 0 {
+		return nil
+	}
+	sort.Slice(readings, func(i, j int) bool { return readings[i].Channel < readings[j].Channel })
+	end := c.Period.End
+	if end.IsZero() {
+		end = base.OccurredAt
+	}
+	return []model.Event{model.DetectorReport{
+		Base:             base,
+		IntervalStart:    end.Add(-c.Period.Duration),
+		IntervalDuration: c.Period.Duration,
 		Readings:         readings,
 	}}
 }
