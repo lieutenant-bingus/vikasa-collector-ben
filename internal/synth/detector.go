@@ -61,6 +61,7 @@ func (d *detectorDiffer) Diff(prev, curr model.Facet, base model.Base) []model.E
 			Channel:         s.Channel,
 			VolumeDelta:     delta(p.VolumeCount, s.VolumeCount),
 			OccupancyTenths: s.OccupancyTenths, // a fraction, never delta'd
+			PhaseServed:     s.PhaseServed,
 		})
 	}
 	if len(readings) == 0 {
@@ -90,6 +91,7 @@ func periodReport(prev, c model.DetectorSamples, base model.Base) []model.Event 
 	for _, s := range c.Samples {
 		readings = append(readings, model.DetectorReading{
 			Channel: s.Channel, VolumeDelta: s.VolumeCount, OccupancyTenths: s.OccupancyTenths,
+			PhaseServed: s.PhaseServed,
 		})
 	}
 	if len(readings) == 0 {

@@ -114,6 +114,7 @@ type DetectorReading struct {
 	Channel         uint32
 	VolumeDelta     uint32
 	OccupancyTenths uint16
+	PhaseServed     uint8 // 0: none or unknown, omitted on the wire
 }
 
 // DetectorReport is the per-interval detector summary, emitted every poll

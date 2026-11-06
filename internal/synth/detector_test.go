@@ -271,3 +271,27 @@ func TestPeriodReportCarriesDeviceKind(t *testing.T) {
 		t.Fatalf("events %+v, want one report stamped asc", evs)
 	}
 }
+
+// PhaseServed is carried, never diffed: it rides on both report paths, and
+// an assignment change alone (a detector plan switch) reports nothing.
+func TestPhaseServedIsCarriedNotAChangeAxis(t *testing.T) {
+	t.Parallel()
+	e := NewEngine(NewDetectorDiffer())
+	end := t0.Add(15 * time.Minute)
+	e.Apply(periodSnap(end, 7, end, model.DetectorSample{Channel: 3, PhaseServed: 2}))
+	if evs := e.Apply(periodSnap(end.Add(5*time.Second), 7, end, model.DetectorSample{Channel: 3, PhaseServed: 6})); len(evs) != 0 {
+		t.Fatalf("an assignment change alone must emit nothing, got %v", kinds(evs))
+	}
+	next := end.Add(15 * time.Minute)
+	evs := e.Apply(periodSnap(next, 8, next, model.DetectorSample{Channel: 3, VolumeCount: 4, PhaseServed: 6}))
+	if len(evs) != 1 || evs[0].(model.DetectorReport).Readings[0].PhaseServed != 6 {
+		t.Fatalf("period report must carry the current phase, got %+v", evs)
+	}
+
+	c := NewEngine(NewDetectorDiffer())
+	c.Apply(detSnap(t0, model.DetectorSample{Channel: 3, VolumeCount: 10, PhaseServed: 2}))
+	evs = c.Apply(detSnap(t0.Add(time.Minute), model.DetectorSample{Channel: 3, VolumeCount: 12, PhaseServed: 2}))
+	if len(evs) != 1 || evs[0].(model.DetectorReport).Readings[0].PhaseServed != 2 {
+		t.Fatalf("cumulative report must carry the phase, got %+v", evs)
+	}
+}

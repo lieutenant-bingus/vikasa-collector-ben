@@ -21,6 +21,11 @@ type DetectorSample struct {
 	Channel         uint32 // NTCIP channel number == table row, 1-based
 	VolumeCount     uint32
 	OccupancyTenths uint16
+	// PhaseServed is the phase the detector calls under the controller's
+	// active detector plan (NTCIP 1202 vehicleDetectorCallPhase); 0 when it
+	// calls none or the adapter could not read the assignment. It is an
+	// attribute of the sample, never a change axis.
+	PhaseServed uint8
 }
 
 // DetectorSamples holds one sample per answering channel, sorted by Channel.
