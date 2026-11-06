@@ -76,6 +76,42 @@ func TestCallPhaseFromLabAssignment(t *testing.T) {
 	}
 }
 
+// The call-phase poll as record-fixture captured it on the lab controller
+// (firmware 2.15.1, 2026-11-05, detector plan 2), replayed unmodified: the
+// batch answer names the plan and the second exchange is its assignment.
+// The same run published these phases on detector-report and
+// detector-transition; every other channel calls phase 0 and carries none.
+func TestCallPhaseRecordedPollGolden(t *testing.T) {
+	s := httpapitest.LoadFixture(t, "testdata/asc-lab-callphase.json")
+	if _, ok := s.Responses[batchKey]; !ok {
+		t.Fatalf("fixture has no exchange for today's batch request %q", batchKey)
+	}
+	a := newASC(s)
+	a.calls = &callPhases{}
+	snap, err := a.Read(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[uint32]uint8{}
+	for ch, ph := range phasesOf(t, snap) {
+		if ph != 0 {
+			got[ch] = ph
+		}
+	}
+	want := map[uint32]uint8{
+		1: 1,
+		3: 2, 4: 2, 5: 2, 6: 2,
+		21: 6, 22: 6,
+		31: 8, 32: 8, 33: 8, 34: 8,
+	}
+	if !maps.Equal(got, want) {
+		t.Errorf("phases = %v, want %v", got, want)
+	}
+	if n := len(s.Requests()); n != 2 {
+		t.Errorf("%d requests, want the poll and plan 2's assignment", n)
+	}
+}
+
 // A plan switch whose assignment cannot be read leaves every phase unknown:
 // the old plan's phases no longer apply.
 func TestCallPhasePlanChangeWithoutAnswerIsUnknown(t *testing.T) {
