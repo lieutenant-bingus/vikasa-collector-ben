@@ -6,8 +6,9 @@ contract: v1
 
 # Adding a transport
 
-Exactly one transport exists in this repo today, `sdk/transport/snmp`. This
-skill generalises from it honestly: where SNMP's shape is a genuine
+Two transports exist in this repo: `sdk/transport/snmp` and
+`sdk/transport/httpapi` (with `httpapitest` and `httpfixture`). This skill
+generalises from them honestly: where SNMP's shape is a genuine
 protocol constraint (a PDU size cap, a connection that cannot be shared
 across goroutines), that constraint is named as SNMP's, not smuggled in as
 a rule every transport must follow. Where SNMP's shape is just SNMP's

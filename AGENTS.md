@@ -31,7 +31,8 @@ go run ./cmd/collector -config collector.yaml   # needs a real broker AND real d
 - `sdk/` — the stable surface adapters build on: `sdk/adapter` (the
   `StateReader` contract, registry, strict connection-block helpers),
   `sdk/model` (facets and domain events), `sdk/transport/snmp` (+ its
-  `snmptest` replay fake).
+  `snmptest` replay fake), `sdk/transport/httpapi` (+ `httpapitest` and the
+  `httpfixture` format).
 - `internal/vendors/ntcip` — the only adapters today: `ntcip-asc` and
   `ntcip-dms`.
 - `internal/synth` — one differ per facet kind. `internal/durable` keeps
