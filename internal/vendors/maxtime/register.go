@@ -15,7 +15,7 @@ import (
 //
 //	connection:
 //	  http:
-//	    base_url: "http://192.168.0.20/maxtime"  # controller + MIB API prefix
+//	    base_url: "http://192.0.2.20/maxtime"    # controller + MIB API prefix
 //	    auth: basic                              # basic | maxprofile; required with username
 //	    username: "..."
 //	    password: "..."
