@@ -47,6 +47,10 @@ func TestApplyRejectsAWrongTypedFacet(t *testing.T) {
 	}{
 		{"pointer to the right type", &model.SignalStatus{CabinetOutput: model.OutputFlash}, "*model.SignalStatus"},
 		{"foreign type, same kind", foreignSignal{}, "synth.foreignSignal"},
+		// Found by FuzzPollSurvivesAnyAdapter: asking either for its kind
+		// panicked, outside the runner's recovery, taking down every device.
+		{"nil facet", nil, "<nil>"},
+		{"typed nil pointer", (*model.SignalStatus)(nil), "*model.SignalStatus"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

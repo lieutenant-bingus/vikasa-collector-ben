@@ -4,8 +4,10 @@ package snmptest
 
 import (
 	"context"
+	"testing"
 
 	"github.com/Vikasa2M/vikasa-collector/sdk/transport/snmp"
+	"github.com/Vikasa2M/vikasa-collector/sdk/transport/snmp/snmpfixture"
 )
 
 // Static replays a fixed OID→value map. OIDs absent from Values / Octets are
@@ -65,3 +67,14 @@ func (s *Static) GetAll(_ context.Context, oids []string) (snmp.Values, error) {
 }
 
 func (s *Static) Close() error { return nil }
+
+// LoadFixture reads a recorded fixture file (see snmpfixture) and returns a
+// Static that replays it. A missing or invalid file fails the test.
+func LoadFixture(t testing.TB, path string) *Static {
+	t.Helper()
+	f, err := snmpfixture.Read(path)
+	if err != nil {
+		t.Fatalf("load fixture: %v", err)
+	}
+	return &Static{Values: f.Ints, Octets: f.OctetBytes()}
+}

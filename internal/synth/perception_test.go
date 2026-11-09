@@ -130,7 +130,7 @@ func zones(start time.Time, crossed uint32) model.ZoneIntervals {
 		Zones: []model.ZoneMeasurement{{
 			ZoneID: "zone-a", CrossedVolume: crossed, ObservedCount: crossed + 2,
 			OccupancyTenths: 310, SpeedAvgHundredthsKPH: 5125, SpeedReported: true,
-			ClassCounts: []model.ZoneClassCount{{Class: model.ObjectTruck, Count: 4}},
+			CrossedClassCounts: []model.ZoneClassCount{{Class: model.ObjectTruck, Count: 4}},
 		}},
 	}
 }

@@ -38,6 +38,11 @@ jobs:
           go version
           make check
 
+      # Device responses are untrusted input (SECURITY.md). A short run per
+      # target on every change; longer runs are a local `make fuzz FUZZTIME=…`.
+      - name: fuzz
+        run: make fuzz FUZZTIME=15s
+
       # The binary ships to linux/arm64 and linux/amd64 cabinets; a host-only
       # build would not catch a platform-specific break.
       - name: cross-compile

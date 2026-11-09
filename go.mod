@@ -2,7 +2,7 @@ module github.com/Vikasa2M/vikasa-collector
 
 go 1.26.0
 
-toolchain go1.26.9
+toolchain go1.26.10
 
 require (
 	github.com/Vikasa2M/openits-models v0.8.0

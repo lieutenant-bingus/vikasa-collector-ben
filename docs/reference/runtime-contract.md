@@ -28,7 +28,13 @@ notes call it out.
 | Command line | `-nats`, `-nats-creds`, `-nats-ca`, `-log-level`, `-log-format`, `-status-addr` | Defaults and validation are in [`configuration.md`](configuration.md#the-command-line). |
 | Broker credential | `-nats-creds <path>` (optional) | A NATS `.creds` file. Boot fails if other users can read it. |
 | Broker CA | `-nats-ca <path>` (optional) | For a `tls://` broker signed by a private CA. |
-| Environment | none | The collector reads no environment variables. |
+| Environment | `NOTIFY_SOCKET`, `WATCHDOG_USEC`, `WATCHDOG_PID` (all optional) | The supervisor's `sd_notify` socket and watchdog, set by systemd for a `Type=notify` unit or by podman with `--sdnotify=container`. The collector reads no other environment variable. A `NOTIFY_SOCKET` that is not an absolute path or an `@abstract` name fails boot with exit 2. |
+
+One other invocation exists, and it is not for a supervisor:
+`vikasa-collector record-fixture` polls one configured device once and
+writes a test fixture for its adapter, for a person at the device. It
+connects to no broker, and writes only the file its `-out` names. See
+[`record-fixtures-from-a-device.md`](../how-to/record-fixtures-from-a-device.md).
 
 ## Files and privileges
 
@@ -70,7 +76,18 @@ the grant listed in the
 | `GET /status` | JSON: version, config revision, broker state, counters, per-device state | people and dashboards |
 
 Only requests addressed to a loopback host are answered. Readiness does not
-depend on the broker. The collector also announces itself on the bus
+depend on the broker.
+
+Under a supervisor that sets `NOTIFY_SOCKET`, the same signals arrive over
+`sd_notify`:
+
+- `READY=1` at the moment `/readyz` latches;
+- `STOPPING=1` when shutdown begins;
+- with `WATCHDOG_USEC` set, `WATCHDOG=1` at half the watchdog timeout.
+
+The watchdog ping is sent while every device's poll loop is completing
+rounds. A device that is down does not stop it, because its loop still turns,
+so only a hung collector goes quiet and is restarted. The collector also announces itself on the bus
 (`instance.started`, then a periodic `instance.heartbeat`), carrying its
 version and config revision.
 
@@ -78,8 +95,15 @@ version and config revision.
 
 - **Start-up:** config and flags are validated before anything runs. A
   value the collector does not understand is refused, never defaulted
-  ([ADR 0014](../adr/0014-config-is-the-trust-boundary.md)). There is no
-  readiness notification to the supervisor (`sd_notify`); poll `/readyz`.
+  ([ADR 0014](../adr/0014-config-is-the-trust-boundary.md)). Under
+  `sd_notify` the unit stays "activating" until a device answers, and the
+  collector polls and reports normally meanwhile. Give it an unbounded
+  start timeout (`TimeoutStartSec=infinity`), or a cabinet whose devices
+  are all down at boot is killed and restarted instead of reporting them
+  unreachable. The exception is a rollout tool that rolls back on a failed
+  start, such as `podman auto-update`: it needs a finite timeout to see a
+  failure. The cost is that a cabinet whose devices are all down rolls back
+  a good version.
 - **Stop:** SIGTERM or SIGINT starts a bounded shutdown:
   1. polling stops;
   2. adapters are closed (up to 2 s);
@@ -107,8 +131,9 @@ version and config revision.
 
 The collector never updates itself
 ([ADR 0012](../adr/0012-host-executed-updates.md)). Replace the binary and
-restart it. Gate the rollout on `/readyz` and on the new `version` in
-`/status`. Roll back the same way.
+restart it. Gate the rollout on `/readyz` (or the unit reaching "active"
+under `sd_notify`) and on the new `version` in `/status`. Roll back the same
+way.
 
 ## One per cabinet
 

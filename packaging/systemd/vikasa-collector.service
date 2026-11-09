@@ -8,9 +8,17 @@
 # devices on the cabinet network, connects to the local NATS, and serves the
 # loopback management surface. Everything else is denied.
 #
-# Readiness: there is no sd_notify yet, so this is Type=simple. A supervisor
-# gating a rollout should poll http://127.0.0.1:9471/readyz (latching: the
-# first successful device poll) rather than trust "started".
+# Readiness: Type=notify. The collector sends READY=1 when the first device
+# answers, the moment http://127.0.0.1:9471/readyz latches, so "active" means
+# working, not merely running. Until then the unit is "activating" while the
+# collector polls and reports normally; TimeoutStartSec=infinity keeps a
+# cabinet whose devices are all down at boot running, reporting them
+# unreachable, instead of being killed. `systemctl start` waits for READY=1;
+# use --no-block to return at once.
+#
+# Watchdog: the collector pings while every device's poll loop is turning. A
+# device that is down does not stop the pings; a hung collector does, and
+# systemd restarts it.
 
 [Unit]
 Description=vikasa-collector (OpenITS cabinet edge collector)
@@ -22,7 +30,10 @@ Wants=network-online.target
 After=nats.service
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=main
+TimeoutStartSec=infinity
+WatchdogSec=60s
 # The config holds SNMP community strings, so it is a secret: install it
 # 0640 root:vikasa-collector, readable by root and this service only.
 # For an authenticated or remote broker, add -nats-creds (and -nats-ca for a

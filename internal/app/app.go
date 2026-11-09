@@ -18,6 +18,7 @@ import (
 	"github.com/Vikasa2M/vikasa-collector/internal/manage"
 	"github.com/Vikasa2M/vikasa-collector/internal/publish"
 	"github.com/Vikasa2M/vikasa-collector/internal/runner"
+	"github.com/Vikasa2M/vikasa-collector/internal/sdnotify"
 	"github.com/Vikasa2M/vikasa-collector/internal/stats"
 	"github.com/Vikasa2M/vikasa-collector/internal/subject"
 	"github.com/Vikasa2M/vikasa-collector/internal/synth"
@@ -64,6 +65,13 @@ type Options struct {
 	// StatusAddr is the loopback address for the management surface
 	// (/livez, /readyz, /status); empty disables it.
 	StatusAddr string
+	// Notify reaches the supervisor over sd_notify ($NOTIFY_SOCKET): READY=1
+	// when the first device answers, STOPPING=1 on shutdown, and watchdog
+	// pings. Nil means no supervisor is listening.
+	Notify *sdnotify.Notifier
+	// Watchdog is the supervisor's watchdog timeout ($WATCHDOG_USEC); zero
+	// means none is armed. Used only with Notify.
+	Watchdog time.Duration
 	// Counters receives the collector's own counts (ADR 0020 clause 4).
 	// Nil means Run keeps private ones; the caller that serves /status or
 	// the heartbeat passes its own.
@@ -221,12 +229,19 @@ func Run(ctx context.Context, cfg *config.Config, reg *adapter.Registry, opts Op
 	state := durable.Start(ctx, pub.JetStream(), engine, cfg.DeviceIDs(), log)
 
 	var wg sync.WaitGroup
+	live := stats.NewLiveness()
 	for i, d := range cfg.Devices {
 		r := runner.New(readers[i], runner.Config{
 			DeviceID: d.ID, Interval: d.PollInterval, Engine: engine, Out: sink,
-			Counters: counters, Devices: devices, Log: log,
+			Counters: counters, Devices: devices, Log: log, Liveness: live,
 		})
 		wg.Go(func() { r.Run(ctx) })
+	}
+	if opts.Notify != nil {
+		wg.Go(func() { notifyReady(ctx, log, opts.Notify, devices) })
+		if opts.Watchdog > 0 {
+			wg.Go(func() { feedWatchdog(ctx, log, opts.Notify, opts.Watchdog, live) })
+		}
 	}
 	wg.Go(func() { runHeartbeat(ctx, heartbeatInterval, inst, started, counters, sink) })
 	// The shipper stops with the runners, before the drain: a record logged
@@ -245,6 +260,10 @@ func Run(ctx context.Context, cfg *config.Config, reg *adapter.Registry, opts Op
 	})
 
 	<-ctx.Done()
+	// Told first, so the supervisor knows the drain below is a stop, not a hang.
+	if err := opts.Notify.Notify("STOPPING=1"); err != nil {
+		log.Warn("could not tell the supervisor the collector is stopping", "err", err)
+	}
 
 	// Runners stop promptly (a hung read is abandoned, and sink never
 	// blocks), so once they have, nothing else can be queued. Then give the

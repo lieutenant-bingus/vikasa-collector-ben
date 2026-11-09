@@ -31,7 +31,7 @@ tooling keeps them in the git-ignored `.superpowers/` directory.
 | Support a device that doesn't speak SNMP | [`add-transport`](../.claude/skills/add-transport/SKILL.md) — builds the `sdk/transport/<name>` package, not the adapter itself |
 | Map a domain event to a wire ce-type | [`how-to/map-an-event-to-the-wire.md`](how-to/map-an-event-to-the-wire.md), then [`wire-emitter`](../.claude/skills/wire-emitter/SKILL.md) |
 | Adopt a new openits-models release | [`how-to/adopt-an-openits-models-release.md`](how-to/adopt-an-openits-models-release.md), then [`wire-emitter`](../.claude/skills/wire-emitter/SKILL.md) |
-| Record fixtures from a real device | [`how-to/record-fixtures-from-a-device.md`](how-to/record-fixtures-from-a-device.md) — a stub: the recording tool does not exist yet, and it says what to do meanwhile |
+| Record fixtures from a real device | [`how-to/record-fixtures-from-a-device.md`](how-to/record-fixtures-from-a-device.md) — `collector record-fixture`, scrubbing, and regenerating a fixture |
 | Review an incoming adapter contribution | [`review-adapter-contribution`](../.claude/skills/review-adapter-contribution/SKILL.md) — the machine checks, plus what no check can see |
 | Know what will fail my PR | [`reference/invariants.md`](reference/invariants.md) for the rules and what enforces each, [`reference/test-requirements.md`](reference/test-requirements.md) for the testing bar per contribution type |
 | Understand how the pieces fit together | [`explanation/architecture.md`](explanation/architecture.md) — the pipeline end to end; read this first |
@@ -110,10 +110,10 @@ requires recorded raw transport responses. `internal/vendors/ntcip/asc_test.go`'
 `healthyFixture` is a hand-typed `map[string]int64`, and the adapter's own
 doc comment says its alarm bitmap has never been validated against a
 physical controller. (`ntcip-dms`'s fixtures, by contrast, are transcribed
-from a live controller and say so.) *Closing it:* a fixture recorder and
-adapter conformance kit — a tool that captures real SNMP responses into
-`testdata/` with a sanctioned regeneration path — then re-recording
-`ntcip-asc` against a real controller. Evidence: ledger `:194-210`,
+from a live controller and say so.) *Closing it:* re-record `ntcip-asc`
+against a real controller with `collector record-fixture`
+([how](how-to/record-fixtures-from-a-device.md)), which needs the
+hardware and nothing else. Evidence: ledger `:194-210`,
 `:3428-3440`.
 
 **ADR 0012's expected-version drift reporting does not exist.** Two of ADR

@@ -208,11 +208,13 @@ you open the PR. Examples of each, in `internal/vendors/ntcip/`:
   `TestParseSNMPBlockRejectsUnknownConnectionKey` (`register_test.go`)
 - capability bits — `TestDMSDescriptorCaps`
 
-**Fixtures must be recorded from the device**, with a comment saying what
-you captured, from which make, model and firmware, and when. There is no
-recording tool yet; [`record-fixtures-from-a-device.md`](record-fixtures-from-a-device.md)
-is the manual recipe. A fixture with no provenance comment reads to a
-reviewer exactly like a hand-typed one, because
+**Fixtures must be recorded from the device**, saying what you captured,
+from which make, model and firmware, and when. For an SNMP adapter,
+`collector record-fixture` writes the file and its provenance for you;
+[`record-fixtures-from-a-device.md`](record-fixtures-from-a-device.md) is
+the recipe, and the manual one for other transports. A hand-transcribed
+fixture with no provenance comment reads to a reviewer exactly like a
+hand-typed one, because
 [nothing in the test format can tell them apart](../explanation/testing-strategy.md#fixture-replay-reproducible-not-verified).
 
 ## Verify

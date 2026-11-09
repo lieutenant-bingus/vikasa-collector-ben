@@ -16,8 +16,8 @@ func (e *emitter) encodeZoneOccupancy(ev model.Event) (proto.Message, bool) {
 	case model.ZoneOccupancyIntervalReport:
 		zones := make([]*zocv1.Zone, 0, len(v.Zones))
 		for _, z := range v.Zones {
-			classes := make([]*zocv1.ObservedClass, 0, len(z.ClassCounts))
-			for _, cc := range z.ClassCounts {
+			classes := make([]*zocv1.ObservedClass, 0, len(z.ObservedClassCounts))
+			for _, cc := range z.ObservedClassCounts {
 				// MeanConfidence is left unset: the domain carries no
 				// per-class confidence, and zero is the wire's "not stated"
 				// for a uint32 count of confidence, not a claim of none.

@@ -1,4 +1,4 @@
-.PHONY: build cross release-snapshot test vet lint vuln tidy-check dev lint-boundary lint-boundary-selftest lint-boundary-replace-selftest lint-boundary-tag-selftest lint-docs check
+.PHONY: build cross release-snapshot test vet lint vuln fuzz tidy-check dev lint-boundary lint-boundary-selftest lint-boundary-replace-selftest lint-boundary-tag-selftest lint-boundary-independent-selftest lint-docs check
 
 # Developer tools live in their own module (tools/go.mod) so their dependency
 # graphs never touch the collector's. Versions are pinned there, not here.
@@ -45,6 +45,11 @@ tidy-check:
 	go mod tidy -diff
 	go mod verify
 	cd tools && go mod tidy -diff
+
+# Coverage-guided fuzzing of every Fuzz target, FUZZTIME each (default 10s).
+# Their seed corpora already run as tests in `make check`.
+fuzz:
+	FUZZTIME=$(FUZZTIME) ./scripts/fuzz.sh
 
 lint-boundary:
 	./scripts/lint-boundary.sh
@@ -100,6 +105,26 @@ lint-boundary-replace-selftest:
 	fi; \
 	echo "lint-boundary replace-rule selftest: Rule C fires correctly"
 
+# Prove Rule E can actually fail. Points it at a pair that genuinely depends:
+# the publisher uses the subject template, so internal/publish reaches
+# internal/subject. If that does not trip, the rule is inert and its green
+# result on subject/cloudevents means nothing. Grepped for the rule's own
+# message, as above, because exit 2 (a go list failure) is not Rule E firing.
+lint-boundary-independent-selftest:
+	@out=$$(LINT_INDEPENDENT="internal/publish internal/subject" ./scripts/lint-boundary.sh 2>&1); \
+	status=$$?; \
+	if [ $$status -eq 0 ]; then \
+		echo "SELFTEST FAILED: lint-boundary did not flag a dependency between a pair that has one" >&2; \
+		printf '%s\n' "$$out" >&2; \
+		exit 1; \
+	fi; \
+	if ! printf '%s\n' "$$out" | grep -q 'BOUNDARY VIOLATION (independence): .*internal/publish reaches .*internal/subject'; then \
+		echo "SELFTEST FAILED: lint-boundary failed, but not with Rule E's independence violation -- the failure proves nothing about the rule" >&2; \
+		printf '%s\n' "$$out" >&2; \
+		exit 1; \
+	fi; \
+	echo "lint-boundary independence selftest: Rule E fires correctly"
+
 # Prove Rule D can actually fail. Points the rule at a fixture go.mod pinning
 # the model module at the exact main-HEAD pseudo-version this repo carried
 # before ADR 0018; if that does not trip, the rule is inert and its green
@@ -145,4 +170,4 @@ dev:
 lint-docs:
 	./scripts/lint-docs.sh
 
-check: vet lint tidy-check test lint-boundary lint-boundary-selftest lint-boundary-replace-selftest lint-boundary-tag-selftest lint-docs
+check: vet lint tidy-check test lint-boundary lint-boundary-selftest lint-boundary-replace-selftest lint-boundary-tag-selftest lint-boundary-independent-selftest lint-docs

@@ -18,6 +18,7 @@ table is what to trust for exact wording, not this file.
 make check              # vet + golangci-lint (gofmt) + tidy + race tests + boundary/docs lints — the CI gate
 make lint-docs          # just the docs lint: relative links, #anchors, skill sections
 make vuln               # govulncheck; CI runs it as its own, non-blocking workflow
+make fuzz               # coverage-guided fuzzing of every Fuzz target (FUZZTIME=10s each; CI runs 15s)
 make dev                # whole pipeline locally: embedded NATS + synthetic device
 make cross              # linux arm64/amd64 build; CI runs it after make check
 go run ./cmd/collector -config collector.yaml   # needs a real broker AND real devices

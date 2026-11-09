@@ -154,13 +154,42 @@ if [ -n "$pin" ]; then
   fi
 fi
 
+# ---- Rule E: subject routing and the CloudEvents envelope stay independent --
+# (ADR 0009, ADR 0011, ADR 0015.) The operator owns the subject grammar; the
+# envelope (ce-type, ce-source, ce-id) is canonical. They meet only in the
+# publisher, which uses both. If either package could reach the other, a
+# change could derive ce-source from the subject template, or a subject from
+# the envelope, and every downstream consumer would see ids and sources
+# change with an operator's routing choice. Transitive and including test
+# imports: a helper that bridges the two is the same coupling one step away.
+#
+# Overridable so the rule itself is testable — see
+# `make lint-boundary-independent-selftest`.
+read -r indep_a indep_b <<<"${LINT_INDEPENDENT:-internal/subject internal/cloudevents}"
+pairs=0
+for dir in "$indep_a $indep_b" "$indep_b $indep_a"; do
+  read -r from to <<<"$dir"
+  if ! deps=$(go list -deps -test "./$from" 2>"$errfile"); then
+    echo "lint-boundary: go list -deps -test ./$from failed:" >&2
+    sed 's/^/  /' "$errfile" >&2
+    exit 2
+  fi
+  pairs=$((pairs + 1))
+  # A test variant prints as "<pkg> [<pkg>.test]", so match the import path
+  # as a whole first field, not as a substring of a longer path.
+  if awk -v want="$module/$to" '$1 == want { found=1 } END { exit !found }' <<<"$deps"; then
+    echo "BOUNDARY VIOLATION (independence): $module/$from reaches $module/$to; subject routing and the CloudEvents envelope must not depend on each other" >&2
+    fail=1
+  fi
+done
+
 if [ "$checked" -eq 0 ] && [ "$direct" -eq 0 ]; then
   echo "lint-boundary: inspected 0 packages — the rule proved nothing" >&2
   exit 2
 fi
 
 if [ "$fail" -ne 0 ]; then
-  echo "lint-boundary: FAILED against $forbidden" >&2
+  echo "lint-boundary: FAILED (violations above)" >&2
   exit 1
 fi
-echo "lint-boundary: clean ($checked roots transitively, $direct packages for direct imports, pin $pinstate) against $forbidden"
+echo "lint-boundary: clean ($checked roots transitively, $direct packages for direct imports, pin $pinstate) against $forbidden; $indep_a and $indep_b independent ($pairs directions)"

@@ -61,10 +61,12 @@ and hardware-free, so a maintainer can review an adapter by reading the
 mapping and the fixture.
 
 **What it cannot prove:** that the fixture resembles what a real device
-sends. A fixture is a Go map literal in the test file; the repo has no
-`testdata/` recordings. A value captured from a live device and a value
-typed in until the test passed produce the same source, the same test run,
-and the same green check.
+sends. A value captured from a live device and a value typed in until the
+test passed produce the same test run and the same green check. A file
+from `collector record-fixture` narrows this: it carries required
+provenance and was written by the adapter's own poll, and a hand edit to
+an octet string fails to load. It still cannot prove the device it names
+is the one it came from.
 
 The two shipped adapters show both sides. `ntcip-dms`'s fixture in
 `internal/vendors/ntcip/dms_test.go` is transcribed from live SNMP reads of
@@ -76,7 +78,7 @@ controller. That falls short of
 and the gap is tracked in
 [known gaps](../README.md#the-code-does-not-meet-a-bar-the-docs-correctly-state).
 [`record-fixtures-from-a-device.md`](../how-to/record-fixtures-from-a-device.md)
-is how to capture a real one.
+is how to record a real one.
 
 ### Provenance is a review question, not a test
 
@@ -85,9 +87,11 @@ by a reviewer reading the diff**, not asserted by CI. This matters in
 practice. While the `review-adapter-contribution` skill was being evaluated
 against synthetic adapter PRs, a review without the skill's guidance
 blocked a clean contribution twice, both times for the fixture being a Go
-literal (commit `5161b3f`). Every fixture in this repo is a Go literal, so
-that objection carries no information and would turn away a real
-contributor.
+literal (commit `5161b3f`). Every fixture in this repo at the time was a
+Go literal, so that objection carried no information and would have turned
+away a real contributor. Prefer a recorded file now that one can be made,
+but a transcribed literal with a provenance comment is still valid
+evidence.
 
 What a reviewer can usefully look at is the *values*, not the format:
 
@@ -142,16 +146,28 @@ contracts.
 openits-models' own Tier 2 conformance checks (`tools/conformance/tests`),
 imported rather than copied, against events a live collector publishes. The
 collector runs against an embedded NATS server, with scripted
-signal-controller and sign adapters. Before any check runs, the test waits
+signal-controller, sign, camera, traffic-sensor and perception adapters. Before any check runs, the test waits
 until every event type in its `want` list has been published, so no check
 can pass for lack of the event it judges. It then runs each device kind's
-event-stream checks: subject shape, `ce-type` format, `ce-source` URN,
-`ce-id` present, and the preemption and DMS event shapes. The rest of each
-suite judges a device's YANG state tree, which a collector never publishes.
-Checks are looked up by name, so one the harness renames or drops fails the
-test instead of silently not running. Because the checks come from the
-pinned release, a pin bump that tightens the profile shows up here with no
-edit on our side.
+event-stream checks:
+- subject shape, `ce-type` format, `ce-source` URN, and `ce-id` presence;
+- per-device sequence continuity;
+- that each fault kind matches its service;
+- each service's event shapes, including whether class breakdowns
+  reconcile with their totals.
+
+The rest of each suite judges a device's YANG state tree, which a collector
+never publishes, or needs an event the collector does not emit.
+`TestEveryHarnessCheckIsRunOrRuledOut` holds those lists to the pinned
+harness in both directions. A check the harness renames or drops fails
+instead of silently not running, and a check a release adds fails until it
+is classified. Because the checks come from the pinned release, a pin bump
+that tightens the profile shows up here with no edit on our side.
+
+It has paid for itself. When it was extended to perception, it found that
+one domain class breakdown fed two reports whose breakdowns must sum to
+different totals, crossed and observed. `ZoneMeasurement` now carries one
+breakdown for each.
 
 **`internal/app/conformance_test.go`** covers what the harness does not:
 the binding's header constants (`ce-specversion`, `ce-datacontenttype`, and
@@ -209,6 +225,39 @@ invisible. A clean run is real evidence, not proof, which is why
 concurrency-sensitive code still deserves reasoning about its
 synchronisation.
 
+## Fuzzing: what a device can send
+
+A device's response is untrusted input, and
+[`SECURITY.md`](../../SECURITY.md) puts "a malformed or malicious device
+response that crashes the collector" in scope. Fixtures show a device's
+honest answers; native Go fuzz targets show what happens with any answer:
+
+- `FuzzResponseDecode` (`sdk/transport/snmp`) feeds arbitrary bytes through
+  gosnmp's packet decode and this package's conversion of each varbind;
+- `FuzzASCRead` and `FuzzDMSRead` (`internal/vendors/ntcip`) give each
+  adapter any value, or no answer, for every OID its `Read` asks for, and
+  check the snapshot is coherent: no facet both present and failed, and
+  percentages and occupancy in range;
+- `FuzzPollSurvivesAnyAdapter` (`internal/runner`) has an adapter panic,
+  return nil, or hand back nil, wrong-typed or failed-and-present facets,
+  through a runner with every differ registered.
+
+Each target's seed corpus, drawn from the existing fixtures plus every input
+that has ever failed it (under `testdata/fuzz/`), runs as an ordinary test in
+`make check`. `make fuzz` adds coverage-guided mutation. CI runs it for 15
+seconds per target on every change; run it longer locally
+(`make fuzz FUZZTIME=10m`) after touching a decode path.
+
+**What fuzzing proves:** the inputs it tried did not crash, hang or break
+the stated checks. It has already paid for itself twice. A nil facet from
+an adapter panicked in the engine, outside the runner's recovery, which would
+have taken down every device. And a large photocell reading overflowed
+`percentOf` into a published 255% ambient light.
+
+**What it does not prove:** that no such input exists. Coverage guidance
+finds a lot quickly, but the search is still a sample, and the checks only
+catch what they state. A value decoded wrongly but in range passes.
+
 ## Doc guards: structural, not semantic
 
 `internal/docs` is a package of tests, not production code, that keeps
@@ -260,6 +309,7 @@ is a review problem, on purpose.
 | Differ tests | State transitions are correct, including the absence rule, for every registered differ | Facet kinds that do not exist yet |
 | Conformance tests | Published shape matches an external contract | Anything the loaded contract does not state; the catalog check reads the pinned `asyncapi.yaml`, not openits-models' prose or JSON Schemas |
 | `-race` | No race on the interleavings this run exercised | Paths not run, and interleavings that did not occur |
+| Fuzzing | Device-facing decode and the poll path survive the inputs tried | Inputs not tried; values decoded wrongly but in range |
 | Doc guards | A specific structural claim still matches the code | Whether the claim is relevant, or the prose around it accurate |
 
 No layer substitutes for another. A golden cannot catch a wrong mapping, a

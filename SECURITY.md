@@ -29,7 +29,8 @@ reports we care about include:
 
 - **Device-facing parsing** — a malformed or malicious device response
   (e.g. crafted SNMP data) that crashes the collector or corrupts what it
-  publishes;
+  publishes. These paths are fuzzed (`make fuzz`), and a crashing input
+  found that way is in scope too;
 - **Config trust boundary** — config values that bypass boot validation and
   corrupt subject grammar, stream bindings, or event routing;
 - **Publish path** — ways to forge, replay, or misroute events on the bus

@@ -138,10 +138,14 @@ re-probes only what a later pin bump could actually have moved.
    `internal/wire/openits/catalog_test.go` — see
    [the catalog-conformance check](#the-catalog-conformance-check) below.
 8. **If the ce-type is in a service the Tier 2 harness judges**
-   (`signal-control` or `dms` today), consider adding a step that produces
-   it to the scripted device in `internal/wire/tier2/tier2_test.go` and the
-   ce-type to its `want` list, so openits-models' own conformance checks
-   run against it.
+   (`signal-control`, `dms`, `cctv`, `traffic-sensor`, `perception` and
+   `zone-occupancy` today), add a step that produces it to that kind's
+   scripted device in `internal/wire/tier2/tier2_test.go` and the ce-type
+   to `want` (plus its decoder in `payloadFor`), so openits-models' own
+   conformance checks run against it. If a harness check was ruled out in
+   `unpublished` because this ce-type was not mapped,
+   `TestEveryHarnessCheckIsRunOrRuledOut` now fails until you move it into
+   `checks`.
 
 Every mapping — new or existing — is a field-by-field, explicit,
 reviewable diff by design; there is no mapping DSL to configure instead of

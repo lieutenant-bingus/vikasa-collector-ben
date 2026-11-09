@@ -30,15 +30,15 @@ so the gap is visible rather than implied.
 | Config is the trust boundary; boot fails on the unrecognized | ADR 0014 | `internal/config`, `TestRunExitCodes` |
 | The broker credential comes from a file, never the URL | ADR 0022 | `internal/publish/security.go`, `TestValidateSecurity`, `TestCredentialsInTheURLAreRefusedUnlogged`, `TestStartErrorNeverContainsCredentials` |
 | Plaintext NATS only on loopback; TLS is always verified | ADR 0022 | `TestValidateSecurity`, `TestTLSBrokerIsVerifiedAgainstTheNamedCA` |
-| The documented least-privilege broker grant is sufficient | ADR 0022 | `TestLeastPrivilegeGrantIsSufficient` |
+| The documented least-privilege broker grant is sufficient | ADR 0022 | `TestLeastPrivilegeGrantIsSufficient`, `TestDeployGuideGrantMatchesTheTestedGrant` |
 | The management surface answers only on loopback | ADR 0022 | `TestValidateAddrIsLoopbackOnly`, `TestOnlyLoopbackHostHeadersAreServed`, `TestRunRejectsNonLoopbackStatusAddr` |
-| Subjects are operator-configurable; the CloudEvents envelope stays canonical | ADR 0009, ADR 0011, ADR 0015 | `internal/subject`, `internal/cloudevents`, `internal/config` |
+| Subjects are operator-configurable; the CloudEvents envelope stays canonical | ADR 0009, ADR 0011, ADR 0015 | `scripts/lint-boundary.sh` (Rule E), `internal/config` |
 | openits-models is not reshaped to suit the collector | ADR 0016 | Review (manual) |
 | Every mapped ce-type has a byte-exact golden | ADR 0008 | `internal/wire/openits/golden_test.go` |
-| The catalog stream passes the openits-models Tier 2 harness | openits-models NATS profile; ADR 0011 | `TestCollectorStreamPassesTheTier2Harness` |
+| The catalog stream passes the openits-models Tier 2 harness | openits-models NATS profile; ADR 0011 | `TestCollectorStreamPassesTheTier2Harness`, `TestEveryHarnessCheckIsRunOrRuledOut` |
 | `asyncapi.yaml` documents exactly the collector-owned ce-types | ADR 0007 | `TestAsyncAPICoversEveryEmittedType`, `TestAsyncAPIDocumentsNothingUnemittable`, `TestAsyncAPIAddressesMatchRenderedSubjects` |
-| No fixtures, no merge | ADR 0008 | Review (manual) — no fixture recorder exists yet |
-| Every guard must be shown to fail | Practice (no ADR; promoted here) | `make lint-boundary-selftest`, `make lint-boundary-replace-selftest`, `make lint-boundary-tag-selftest` |
+| No fixtures, no merge | ADR 0008 | Review (manual) — recordings come from `cmd/collector/record.go`, and a recording without provenance fails to load (`TestReadRejects`) |
+| Every guard must be shown to fail | Practice (no ADR; promoted here) | `make lint-boundary-selftest`, `make lint-boundary-replace-selftest`, `make lint-boundary-tag-selftest`, `make lint-boundary-independent-selftest` |
 
 ## Adapters and `sdk/` never import openits-models
 
@@ -219,8 +219,12 @@ runs the collector against a broker that grants only that set, and fails
 on any permission violation while it provisions and writes both streams
 and creates, loads and writes the `VIKASA_SYNTH_STATE` bucket.
 
-The test holds its own copy of the grant. Keeping that copy identical to
-the deploy guide's is a review step; nothing compares the two.
+The test holds its own copy of the grant, so
+`TestDeployGuideGrantMatchesTheTestedGrant` (`internal/app/grant_doc_test.go`)
+holds the deploy guide's two copies — the grant table and the `nsc`
+command — to exactly that set, in both directions. A subject the collector
+needs that the guide leaves out fails it, and so does one the guide grants
+that the tested set does not.
 
 ## The management surface answers only on loopback
 
@@ -253,13 +257,14 @@ by `SourceFor`, and `ce-id` is deterministic (`internal/cloudevents`). The
 `ce-id` derivation is openits-models' contract, defined in its
 `ce-id-spec.md`; deterministic does not mean "a bare content hash."
 
-**This separation is architectural, not regression-tested.**
-`internal/subject` and `internal/cloudevents` do not import each other, but
-nothing scans the import graph or the code to keep it that way. A PR that
-derived `ce-source` from a rendered subject, or the reverse, would pass
-every check in this repo today.
+**Rule E of `scripts/lint-boundary.sh` keeps the two packages apart:**
+neither `internal/subject` nor `internal/cloudevents` may reach the other
+by any import path, test imports included, so neither can compute its
+output from the other's. They meet only in packages that use both, such as
+`internal/publish` and `internal/app`, and what those do with the two is
+still a review question: the lint sees imports, not data flow.
 
-The enforcers named in the table cover one narrower point. `subject.New`
+`internal/config` covers one narrower point. `subject.New`
 enforces only the permissive NATS-token rule (no `.`, `*`, `>` or
 whitespace) and relies on `config.Load` having already run
 `cloudevents.Tenant.Validate`'s stricter `^[a-z0-9][a-z0-9-]*$`. A
@@ -336,16 +341,22 @@ judges).
 Violating this looks like catalog events that encode correctly but break
 the profile's envelope or subject rules — a subject outside the seven-token
 `openits.` shape, a malformed ce-type or `ce-source` URN, a missing
-`ce-id`, or a per-service event shape the harness checks for signal control
-and DMS. `TestCollectorStreamPassesTheTier2Harness`
+`ce-id`, or a per-service event shape the harness checks.
+`TestCollectorStreamPassesTheTier2Harness`
 (`internal/wire/tier2`) runs the real collector against an embedded
-`nats-server`, with scripted signal-controller and sign devices, and runs
+`nats-server`, with scripted signal-controller, sign, camera,
+traffic-sensor and perception devices, and runs
 openits-models' own Tier 2 checks (`tools/conformance/tests`, imported
 from the pinned release rather than transcribed) over everything published
 on `openits.>`. It runs on every `go test ./...` and needs no network or
 external broker. It judges headers and subjects, not payload bytes — those
 are locked by the goldens above. The test names each harness check it runs,
 and fails if the pinned release no longer has one.
+`TestEveryHarnessCheckIsRunOrRuledOut` covers the other direction: every
+check the pinned release defines for those kinds is either run or ruled out,
+either as judging the device's state tree or as needing an event the
+collector does not publish. So a check a new release adds fails until
+someone decides which it is.
 
 ## `asyncapi.yaml` documents exactly the collector-owned ce-types
 
@@ -381,10 +392,15 @@ table has never been validated against a physical controller — a tracked
 [known gap](../README.md#the-code-does-not-meet-a-bar-the-docs-correctly-state),
 not a precedent.
 
-No tool in the repo records a device session, so nothing can check
-provenance automatically: this is enforced in PR review, and marked
-`Review (manual)`. When a fixture recorder exists, this row's enforcer
-should name it.
+`collector record-fixture` records a device session into a fixture file
+whose provenance (make, model, firmware, date) is required for it to load
+at all — see
+[`record-fixtures-from-a-device.md`](../how-to/record-fixtures-from-a-device.md).
+That makes a recording checkable, but nothing can stop a PR from replaying
+a hand-typed map instead, or prove a file came from the device its
+provenance names. So the rule itself stays enforced in PR review, and
+marked `Review (manual)`: the reviewer's question becomes "where is the
+recording?", which the recorder makes cheap to answer.
 
 ## Every guard must be shown to fail
 
@@ -400,7 +416,7 @@ For a validation or a Go test, the tripping test lives beside it: each
 boot check has a case that feeds it a bad value, and the failed-read tests
 under [absence of evidence](#absence-of-evidence-is-never-a-state-change)
 pick recovery polls that a forgetful engine would get wrong. For the
-boundary lint, the guards-of-the-guard are three Makefile targets, each a
+boundary lint, the guards-of-the-guard are four Makefile targets, each a
 prerequisite of `make check`:
 
 - `make lint-boundary-selftest` points Rule A at `gosnmp`, a dependency
@@ -408,13 +424,16 @@ prerequisite of `make check`:
 - `make lint-boundary-replace-selftest` points Rule C at a throwaway
   `go.mod` that carries a `replace` directive;
 - `make lint-boundary-tag-selftest` points Rule D at a `go.mod` pinning
-  the exact pseudo-version this repo once carried.
+  the exact pseudo-version this repo once carried;
+- `make lint-boundary-independent-selftest` points Rule E at
+  `internal/publish` and `internal/subject`, a pair that genuinely
+  depends.
 
 None accepts a bare nonzero exit as proof: `lint-boundary.sh` also exits
 non-zero when `go list` fails or `LINT_GOMOD` is unreadable, so each target
 greps for its own rule's violation message and fails if the lint failed for
-any other reason. All three drive the script through its
-`LINT_FORBIDDEN`/`LINT_GOMOD` override hooks; the script is what they
+any other reason. All four drive the script through its
+`LINT_FORBIDDEN`/`LINT_GOMOD`/`LINT_INDEPENDENT` override hooks; the script is what they
 test, so the row names the targets, not the script.
 `TestInvariantsTableNamesRealEnforcers` checks that each named target is
 still wired into `check:`, because a guard CI never runs is as unenforced

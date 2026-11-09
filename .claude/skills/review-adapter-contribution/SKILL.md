@@ -77,7 +77,12 @@ hand-typing: round numbers, values that exactly match the assertion, a
 suspiciously minimal OID set, no capture metadata, comments explaining what
 each value "should" mean. Signals of recording: unexplained extra fields,
 values the test ignores, device quirks nobody would invent.
-Ask directly if unclear — provenance is a question, not an accusation.
+A `testdata/*.json` fixture loaded with `snmptest.LoadFixture` was written by
+`collector record-fixture`, carries its provenance, and fails to load if its
+octet text was hand-edited — but a file can still be authored by hand from
+scratch, so the values still deserve the same look. A `redacted` list means
+those values are synthetic. Ask directly if unclear — provenance is a
+question, not an accusation.
 
 **Absence of evidence — trace it, do not judge it.** The rule, what
 violating it looks like, and the `Snapshot` mechanism behind it are the

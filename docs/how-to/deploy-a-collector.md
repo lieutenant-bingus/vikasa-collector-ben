@@ -130,6 +130,7 @@ own `region`, `agency` and `agency_unit`:
 | publish | `openits-collector.us-ga.metro.d01.>` | the collector's own health and lifecycle events |
 | publish | `$JS.API.INFO` | JetStream account check, made when the state bucket is opened |
 | publish | `$JS.API.STREAM.CREATE.<stream>`, `$JS.API.STREAM.UPDATE.<stream>` for each of `OPENITS-US-GA-METRO-D01`, `OPENITS-COLLECTOR-US-GA-METRO-D01` and `KV_VIKASA_SYNTH_STATE` | the collector provisions its two streams and its state bucket |
+| publish | `$JS.API.STREAM.INFO.<stream>` for `OPENITS-US-GA-METRO-D01` and `OPENITS-COLLECTOR-US-GA-METRO-D01` | it reads each stream before changing it, so your retention is never overwritten |
 | publish | `$KV.VIKASA_SYNTH_STATE.>` | writing synth state ([ADR 0017](../adr/0017-durable-synth-state.md)) |
 | publish | `$JS.API.CONSUMER.CREATE.KV_VIKASA_SYNTH_STATE.>`, `$JS.API.CONSUMER.DELETE.KV_VIKASA_SYNTH_STATE.>`, `$JS.API.DIRECT.GET.KV_VIKASA_SYNTH_STATE.>` | reading synth state back at boot |
 | subscribe | `_INBOX.>` | replies to the above; nothing else |
@@ -147,6 +148,7 @@ nsc add user vikasa-collector \
   --allow-pub '$JS.API.STREAM.CREATE.OPENITS-US-GA-METRO-D01,$JS.API.STREAM.UPDATE.OPENITS-US-GA-METRO-D01' \
   --allow-pub '$JS.API.STREAM.CREATE.OPENITS-COLLECTOR-US-GA-METRO-D01,$JS.API.STREAM.UPDATE.OPENITS-COLLECTOR-US-GA-METRO-D01' \
   --allow-pub '$JS.API.STREAM.CREATE.KV_VIKASA_SYNTH_STATE,$JS.API.STREAM.UPDATE.KV_VIKASA_SYNTH_STATE' \
+  --allow-pub '$JS.API.STREAM.INFO.OPENITS-US-GA-METRO-D01,$JS.API.STREAM.INFO.OPENITS-COLLECTOR-US-GA-METRO-D01' \
   --allow-pub '$JS.API.CONSUMER.CREATE.KV_VIKASA_SYNTH_STATE.>,$JS.API.CONSUMER.DELETE.KV_VIKASA_SYNTH_STATE.>' \
   --allow-pub '$JS.API.DIRECT.GET.KV_VIKASA_SYNTH_STATE.>' \
   --allow-sub '_INBOX.>'
@@ -155,6 +157,24 @@ nsc add user vikasa-collector \
 Leave the subscribe list explicit: an empty one means "everything" to NATS.
 A grant that is too tight shows in the journal as `broker refused an
 operation`, naming the subject.
+
+### Stream retention
+
+The collector creates its two event streams with no limits, and after that
+retention is yours: it never overwrites a limit you set. On each boot it
+corrects only what it depends on (the stream's subjects, and a duplicate
+window of at least two minutes for `ce-id` deduplication) and keeps
+everything else. A cabinet's flash storage is finite, so set limits once the
+streams exist:
+
+```bash
+nats stream edit OPENITS-US-GA-METRO-D01           --max-age 7d --max-bytes 1GiB
+nats stream edit OPENITS-COLLECTOR-US-GA-METRO-D01 --max-age 7d --max-bytes 256MiB
+```
+
+Size them against how long the uplink can be down, since a stream is the
+cabinet's buffer while it is. The two roots are separate streams so they can
+be sized separately ([ADR 0011](../adr/0011-namespace-rooted-subject-spaces.md)).
 
 ## 3. Check it is working
 
@@ -209,7 +229,6 @@ in `/status`.
 - **Expected-version drift reporting** — `/status` and the heartbeat report
   the running version and `config_revision`, but nothing yet compares them
   with what a cabinet *should* be running.
-- **`sd_notify`** — the unit is `Type=simple`; readiness is `/readyz`.
 - **Packages and a container image** — not project deliverables
   ([ADR 0023](../adr/0023-ship-a-binary-and-a-runtime-contract.md)). Build
   one from the release binary against the

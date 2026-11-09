@@ -3,6 +3,7 @@ package ntcip
 import (
 	"errors"
 	"maps"
+	"math"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -430,5 +431,25 @@ func TestDMSNoEnvSensorsOmitsEnvironmentFacet(t *testing.T) {
 	}
 	if _, ok := snap.Facet(model.KindDMSEnvironment); ok {
 		t.Fatal("empty env must not produce a facet (would spam empty status reports)")
+	}
+}
+
+// Found by FuzzDMSRead: raw*100 overflowed int64 for a device reporting a
+// huge photocell level under an even larger maximum, and the wrapped result
+// published as 255% ambient light.
+func TestPercentOfSurvivesHugeDeviceValues(t *testing.T) {
+	cases := []struct {
+		raw, max int64
+		want     uint8
+	}{
+		{1 << 61, 1 << 62, 50},
+		{math.MaxInt64 - 1, math.MaxInt64, 99},
+		{8, 16, 50},
+		{1, 3, 33},
+	}
+	for _, c := range cases {
+		if got := percentOf(c.raw, c.max); got != c.want {
+			t.Errorf("percentOf(%d, %d) = %d, want %d", c.raw, c.max, got, c.want)
+		}
 	}
 }

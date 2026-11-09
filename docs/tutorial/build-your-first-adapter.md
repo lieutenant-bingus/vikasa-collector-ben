@@ -699,7 +699,8 @@ read before you do them for real:
   values captured from a real or simulated device, with a comment saying
   where and when.
   [`docs/how-to/record-fixtures-from-a-device.md`](../how-to/record-fixtures-from-a-device.md)
-  is the recipe; there is no recording tool yet, so it is a manual step.
+  is the recipe: for an SNMP adapter, `collector record-fixture` records
+  one from the device.
 - **The full test bar for a real adapter.** You wrote a golden test and a
   failed-read test for one facet. A real adapter needs one of each *per
   facet*, plus connection-parse rejection tests and a capability-bits check

@@ -70,8 +70,8 @@ func (e *emitter) encodePerception(ev model.Event) (proto.Message, bool) {
 	case model.ZoneIntervalReport:
 		zones := make([]*pcpv1.ZoneIntervalReportZone, 0, len(v.Zones))
 		for _, z := range v.Zones {
-			counts := make([]*pcpv1.ClassCount, 0, len(z.ClassCounts))
-			for _, cc := range z.ClassCounts {
+			counts := make([]*pcpv1.ClassCount, 0, len(z.CrossedClassCounts))
+			for _, cc := range z.CrossedClassCounts {
 				counts = append(counts, &pcpv1.ClassCount{
 					Class: proto.String(objectClassIdentity(cc.Class)), Count: proto.Uint32(cc.Count),
 				})

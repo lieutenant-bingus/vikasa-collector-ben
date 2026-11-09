@@ -31,7 +31,8 @@ type Runner struct {
 	engine     *synth.Engine
 	out        func([]model.Event)
 
-	jitter func(time.Duration) time.Duration
+	jitter   func(time.Duration) time.Duration
+	liveness *stats.Liveness
 
 	consecutiveFailures int
 	// lastContact is the last successful poll; zero until the device first
@@ -79,6 +80,9 @@ type Config struct {
 	Devices *stats.Devices
 	// Log receives adapter faults; nil means slog.Default().
 	Log *slog.Logger
+	// Liveness, when set, hears every completed poll round, for the systemd
+	// watchdog. A round completes whether or not the device answered.
+	Liveness *stats.Liveness
 	// Jitter picks the start delay within one interval, so devices sharing a
 	// poll interval do not all poll at once; nil means uniformly random.
 	Jitter func(time.Duration) time.Duration
@@ -104,6 +108,12 @@ func New(dev adapter.StateReader, c Config) *Runner {
 	if c.Jitter == nil {
 		c.Jitter = rand.N[time.Duration]
 	}
+	if c.Liveness != nil {
+		// The start jitter is under one interval and a round is bounded by
+		// the timeout (a hung Read is abandoned), so a loop that is turning
+		// completes one well within two intervals plus the timeout.
+		c.Liveness.Expect(c.DeviceID, 2*c.Interval+c.Timeout, time.Now())
+	}
 	return &Runner{
 		dev: dev, deviceID: c.DeviceID,
 		// From the adapter's own Descriptor: an adapter cannot forget to report
@@ -111,7 +121,7 @@ func New(dev adapter.StateReader, c Config) *Runner {
 		deviceKind: dev.Descriptor().DeviceKind,
 		interval:   c.Interval, timeout: c.Timeout,
 		engine: c.Engine, out: c.Out, counters: c.Counters, devices: c.Devices, log: c.Log,
-		jitter: c.Jitter,
+		jitter: c.Jitter, liveness: c.Liveness,
 	}
 }
 
@@ -126,6 +136,9 @@ func (r *Runner) Run(ctx context.Context) {
 	defer ticker.Stop()
 	for {
 		r.pollOnce(ctx)
+		if r.liveness != nil {
+			r.liveness.Beat(r.deviceID, time.Now())
+		}
 		select {
 		case <-ticker.C:
 		case <-ctx.Done():

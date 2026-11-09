@@ -110,12 +110,14 @@ It does not apply to:
      can exercise "this facet's read failed, that one didn't" without a
      second fake type.
    - This fake is what a fixture *replays into* — it is not a recorder.
-     Nothing in this repo captures a live session into fixture data yet;
-     [`record-fixtures-from-a-device.md`](../../../docs/how-to/record-fixtures-from-a-device.md)
-     is the honest account of that gap and what to do meanwhile
-     (hand-capture, with a provenance comment). Your fake existing is what
-     makes that hand-capture usable at all — without it there is nothing
-     for a hand-typed or hand-captured fixture to replay into, and no
+     The recorder (`collector record-fixture`) records SNMP only, by
+     wrapping the client `snmp.Dial` returns (`snmp.InterceptDial`). Until
+     your transport offers the same hook, its adapters hand-capture with a
+     provenance comment
+     ([`record-fixtures-from-a-device.md`](../../../docs/how-to/record-fixtures-from-a-device.md),
+     "Without the recorder"). Your fake existing is what makes that
+     usable at all — without it there is nothing for a fixture to replay
+     into, and no
      adapter built on your transport can reach the bar in
      [`test-requirements.md`'s "A new adapter" section](../../../docs/reference/test-requirements.md#a-new-adapter).
 

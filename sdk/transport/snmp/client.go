@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gosnmp/gosnmp"
@@ -66,7 +67,25 @@ func Dial(cfg DialConfig) (Client, error) {
 	if err := g.Connect(); err != nil {
 		return nil, fmt.Errorf("snmp connect %s: %w", cfg.Address, err)
 	}
-	return &client{g: g}, nil
+	var c Client = &client{g: g}
+	if wrap := dialHook.Load(); wrap != nil {
+		c = (*wrap)(cfg, c)
+	}
+	return c, nil
+}
+
+// dialHook, when set, wraps every Client that Dial returns.
+var dialHook atomic.Pointer[func(DialConfig, Client) Client]
+
+// InterceptDial makes every later Dial pass its config and Client through
+// wrap, until the returned func undoes it. It exists for the collector's
+// fixture recorder, which records what an adapter's own Read asks a device
+// by wrapping the client the adapter dials — so the recording is made by the
+// real adapter, through its real factory and connection block. It is
+// process-wide: the collector's polling path never sets it.
+func InterceptDial(wrap func(DialConfig, Client) Client) (undo func()) {
+	dialHook.Store(&wrap)
+	return func() { dialHook.Store(nil) }
 }
 
 type client struct {

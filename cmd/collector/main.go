@@ -19,6 +19,7 @@ import (
 	"github.com/Vikasa2M/vikasa-collector/internal/config"
 	"github.com/Vikasa2M/vikasa-collector/internal/manage"
 	"github.com/Vikasa2M/vikasa-collector/internal/publish"
+	"github.com/Vikasa2M/vikasa-collector/internal/sdnotify"
 	"github.com/Vikasa2M/vikasa-collector/sdk/adapter"
 )
 
@@ -64,6 +65,10 @@ func exitCode(err error) int {
 // given writers, and failure is a returned error rather than os.Exit, so the
 // whole command line is testable.
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	if len(args) > 0 && args[0] == "record-fixture" {
+		info, _ := debug.ReadBuildInfo()
+		return recordFixture(ctx, args[1:], stdout, stderr, resolveVersion(version, info))
+	}
 	fs := flag.NewFlagSet("collector", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	cfgPath := fs.String("config", "", "path to collector.yaml (required)")
@@ -102,13 +107,26 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return usageError{err}
 	}
 
+	// The supervisor's sd_notify socket and watchdog: the only environment
+	// the collector reads (runtime contract). Unset means no supervisor is
+	// listening; a malformed socket is a broken unit, refused like any
+	// other unrecognized input.
+	notify, err := sdnotify.New(os.Getenv("NOTIFY_SOCKET"))
+	if err != nil {
+		return usageError{err}
+	}
+	watchdog, _ := sdnotify.WatchdogInterval(os.Getenv("WATCHDOG_USEC"), os.Getenv("WATCHDOG_PID"))
+
 	reg := adapter.NewRegistry()
 	RegisterAdapters(reg)
 	cfg, err := config.Load(*cfgPath, reg)
 	if err != nil {
 		return err
 	}
-	return app.Run(ctx, cfg, reg, app.Options{NATSURL: *natsURL, NATS: natsSec, Version: ver, Logger: log, StatusAddr: *statusAddr})
+	return app.Run(ctx, cfg, reg, app.Options{
+		NATSURL: *natsURL, NATS: natsSec, Version: ver, Logger: log, StatusAddr: *statusAddr,
+		Notify: notify, Watchdog: watchdog,
+	})
 }
 
 // newLogger builds the process logger from the -log-* flags. An unknown

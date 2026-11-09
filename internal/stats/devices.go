@@ -16,6 +16,8 @@ type Devices struct {
 	mu         sync.Mutex
 	byID       map[string]*DeviceStatus
 	everPolled atomic.Bool
+	ready      chan struct{}
+	readyOnce  sync.Once
 }
 
 // DeviceStatus is one device's last known poll outcome.
@@ -30,7 +32,7 @@ type DeviceStatus struct {
 // NewDevices tracks the given device IDs, so a device that has never been
 // polled is still listed — "configured but silent" is itself a finding.
 func NewDevices(ids []string) *Devices {
-	d := &Devices{byID: make(map[string]*DeviceStatus, len(ids))}
+	d := &Devices{byID: make(map[string]*DeviceStatus, len(ids)), ready: make(chan struct{})}
 	for _, id := range ids {
 		d.byID[id] = &DeviceStatus{ID: id}
 	}
@@ -45,6 +47,7 @@ func (d *Devices) PollOK(id string, at time.Time) {
 	s.ConsecutiveFailures = 0
 	d.mu.Unlock()
 	d.everPolled.Store(true)
+	d.readyOnce.Do(func() { close(d.ready) })
 }
 
 // PollFailed records a failed poll. The last error is kept after a recovery,
@@ -62,6 +65,10 @@ func (d *Devices) PollFailed(id string, at time.Time, err error) {
 // It latches: the readiness rule (management-surface spec §1) depends on a
 // later outage never making it false again.
 func (d *Devices) EverPolled() bool { return d.everPolled.Load() }
+
+// Ready is closed when EverPolled first becomes true, for a caller that must
+// act at that moment (sd_notify READY=1) rather than poll for it.
+func (d *Devices) Ready() <-chan struct{} { return d.ready }
 
 // Snapshot returns every device's status, sorted by ID.
 func (d *Devices) Snapshot() []DeviceStatus {

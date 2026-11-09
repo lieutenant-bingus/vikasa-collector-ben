@@ -133,3 +133,16 @@ func TestRunRejectsNonLoopbackStatusAddr(t *testing.T) {
 		t.Fatalf("run = %v (exit %d), want a usage error about loopback", err, exitCode(err))
 	}
 }
+
+// NOTIFY_SOCKET comes from the unit, so a malformed one is a broken unit:
+// refused at boot with the usage exit code, like a bad flag.
+func TestMalformedNotifySocketIsAUsageError(t *testing.T) {
+	t.Setenv("NOTIFY_SOCKET", "relative/notify")
+	var stdout, stderr bytes.Buffer
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	err := run(ctx, []string{"-config", filepath.Join("..", "..", "collector.yaml")}, &stdout, &stderr)
+	if got := exitCode(err); got != 2 || !strings.Contains(err.Error(), "NOTIFY_SOCKET") {
+		t.Fatalf("exit %d, err %v; want 2 naming NOTIFY_SOCKET", got, err)
+	}
+}

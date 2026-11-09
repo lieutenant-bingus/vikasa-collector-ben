@@ -170,6 +170,15 @@ func (e *Engine) Apply(snap *model.Snapshot) []model.Event {
 	base := model.Base{DeviceID: snap.DeviceID, DeviceKind: snap.DeviceKind, OccurredAt: snap.SampledAt}
 	var events []model.Event
 	for _, f := range snap.Facets {
+		if isNil(f) {
+			// An adapter bug with no kind to ask for: FacetKind on a nil
+			// interface or a nil pointer panics, here on the runner's
+			// goroutine, where no recovery stands between it and the process.
+			if e.reject != nil {
+				e.reject(snap.DeviceID, "", fmt.Sprintf("%T", f))
+			}
+			continue
+		}
 		k := f.FacetKind()
 		d, ok := e.differs[k]
 		if !ok {
@@ -194,4 +203,13 @@ func (e *Engine) Apply(snap *model.Snapshot) []model.Event {
 		}
 	}
 	return events
+}
+
+// isNil reports a nil facet, or a non-nil interface holding a nil pointer.
+func isNil(f model.Facet) bool {
+	if f == nil {
+		return true
+	}
+	v := reflect.ValueOf(f)
+	return v.Kind() == reflect.Pointer && v.IsNil()
 }

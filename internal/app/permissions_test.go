@@ -44,6 +44,11 @@ func leastPrivilege() jwt.Permissions {
 			"$JS.API.STREAM.UPDATE."+stream,
 		)
 	}
+	// The event streams are inspected before any change, so an operator's
+	// retention is never overwritten (provision in internal/publish).
+	for _, stream := range []string{"OPENITS-US-GA-METRO-D01", "OPENITS-COLLECTOR-US-GA-METRO-D01"} {
+		pub = append(pub, "$JS.API.STREAM.INFO."+stream)
+	}
 	pub = append(pub,
 		"$JS.API.CONSUMER.CREATE."+kv+".>",
 		"$JS.API.CONSUMER.DELETE."+kv+".>",
@@ -232,10 +237,33 @@ func TestLeastPrivilegeGrantIsSufficient(t *testing.T) {
 		st, err := kv.Status(t.Context())
 		return err == nil && st.Values() > 0
 	})
-	// Second boot: the stored state is read back, the path a first boot on
-	// an empty bucket never takes.
+	// Between boots an operator shortens both streams' duplicate window, so
+	// the second boot must repair them: that is the path that needs
+	// STREAM.UPDATE on an event stream, which a clean first boot never takes.
+	for _, name := range []string{"OPENITS-US-GA-METRO-D01", "OPENITS-COLLECTOR-US-GA-METRO-D01"} {
+		st, err := js.Stream(t.Context(), name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg := st.CachedInfo().Config
+		cfg.Duplicates = 10 * time.Second
+		if _, err := js.UpdateStream(t.Context(), cfg); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Second boot: the stored state is read back (the path a first boot on
+	// an empty bucket never takes), and the altered streams are repaired.
 	boot("second boot", func(logged string) bool {
-		return strings.Contains(logged, "synth state loaded")
+		if !strings.Contains(logged, "synth state loaded") {
+			return false
+		}
+		for _, name := range []string{"OPENITS-US-GA-METRO-D01", "OPENITS-COLLECTOR-US-GA-METRO-D01"} {
+			st, err := js.Stream(t.Context(), name)
+			if err != nil || st.CachedInfo().Config.Duplicates != 2*time.Minute {
+				return false
+			}
+		}
+		return true
 	})
 
 	if got := v.all(); len(got) > 0 {

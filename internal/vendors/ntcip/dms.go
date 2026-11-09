@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"maps"
+	"math/bits"
 	"time"
 
 	"github.com/Vikasa2M/vikasa-collector/sdk/adapter"
@@ -307,7 +308,12 @@ func percentOf(raw, max int64) uint8 {
 	if raw >= max {
 		return 100
 	}
-	return uint8((raw * 100) / max)
+	// raw*100 in 128 bits: a device's photocell scale is its own, and an
+	// int64 product overflows for values a malformed agent can send. The
+	// quotient is under 100, and the high word under max, so Div64 is safe.
+	hi, lo := bits.Mul64(uint64(raw), 100)
+	q, _ := bits.Div64(hi, lo, uint64(max))
+	return uint8(q) //nolint:gosec // q < 100 because raw < max
 }
 
 func controlModeFromNTCIP(v int64) model.DMSControlMode {

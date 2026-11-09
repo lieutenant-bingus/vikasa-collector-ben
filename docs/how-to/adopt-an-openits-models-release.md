@@ -131,7 +131,12 @@ bump specifically, three parts of it earn their keep:
   that is now mapped or no longer declared.
 - **The Tier 2 harness run** (`internal/wire/tier2`) runs the new release's
   own conformance checks against a live collector stream, so a check the
-  release renamed or dropped fails rather than silently not running.
+  release renamed or dropped fails rather than silently not running. A check
+  the release *added* fails `TestEveryHarnessCheckIsRunOrRuledOut` until you
+  classify it, in one of three ways:
+  - run it (`checks`), if it judges events we publish;
+  - rule it out as judging the device's state tree (`stateChecks`);
+  - rule it out as needing an event we do not emit (`unpublished`).
 - **The boundary lint** catches a `replace` directive left behind from
   local debugging (Rule C), and a pin that came out as a pseudo-version
   because `@main` slipped into the `go get` (Rule D).

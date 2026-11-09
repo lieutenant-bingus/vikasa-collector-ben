@@ -171,6 +171,11 @@ type ZoneClassCount struct {
 // ObservedCount is how many were present. They differ for a stopped vehicle,
 // which is observed repeatedly but crosses once — which is exactly the
 // condition these sensors exist to notice, so the two must not be conflated.
+//
+// Each population has its own class breakdown, because each sums to its own
+// total: CrossedClassCounts to CrossedVolume, ObservedClassCounts to
+// ObservedCount. An adapter fills only the breakdown its device reports; a
+// nil one is "not reported", and is never filled from the other.
 type ZoneMeasurement struct {
 	ZoneID                string
 	CrossedVolume         uint32
@@ -178,7 +183,8 @@ type ZoneMeasurement struct {
 	OccupancyTenths       uint16
 	SpeedAvgHundredthsKPH uint32
 	SpeedReported         bool
-	ClassCounts           []ZoneClassCount // sorted by Class
+	CrossedClassCounts    []ZoneClassCount // sorted by Class
+	ObservedClassCounts   []ZoneClassCount // sorted by Class
 }
 
 // ZoneIntervals is the sensor's most recently completed aggregate interval.

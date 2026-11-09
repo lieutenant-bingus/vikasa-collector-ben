@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"log/slog"
 	neturl "net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -87,6 +88,10 @@ type Publisher struct {
 	done chan struct{}      // closed when the drainer exits
 
 	counters *stats.Counters
+	// storageWarned names streams already reported as not file-backed, so a
+	// re-provision after every transient failure does not repeat it. Only
+	// the drainer goroutine provisions.
+	storageWarned map[string]bool
 }
 
 // StreamNameForBinding derives a stream name from its subject filter, so the
@@ -435,17 +440,54 @@ func (p *Publisher) next(ctx context.Context) *nats.Msg {
 	}
 }
 
-// provision ensures one stream per binding. CreateOrUpdateStream is
-// idempotent, so re-running it after a reconnect is safe.
+// provision ensures one stream per binding, without taking ownership of the
+// stream. Retention, limits and replicas belong to the broker's operator
+// (consumer contract), so an existing stream is updated only when a field
+// the collector depends on is wrong, and then from its existing config:
+//   - subjects must include the binding, or publishes have nowhere to land;
+//   - the duplicate window must be at least dedupWindow, or ce-id dedup
+//     breaks across a reconnect (a longer one is kept);
+//   - storage should be file, but cannot be changed in place, so a
+//     mismatch is logged once rather than fought.
+//
+// Safe to re-run after a reconnect: a correct stream gets no update.
 func (p *Publisher) provision(ctx context.Context) error {
 	for _, b := range p.bindings {
-		if _, err := p.js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
-			Name:       StreamNameForBinding(b),
-			Subjects:   []string{b},
-			Storage:    jetstream.FileStorage,
-			Duplicates: dedupWindow,
-		}); err != nil {
-			return fmt.Errorf("ensure stream for %s: %w", b, err)
+		name := StreamNameForBinding(b)
+		st, err := p.js.Stream(ctx, name)
+		if errors.Is(err, jetstream.ErrStreamNotFound) {
+			if _, err := p.js.CreateStream(ctx, jetstream.StreamConfig{
+				Name: name, Subjects: []string{b}, Storage: jetstream.FileStorage, Duplicates: dedupWindow,
+			}); err != nil {
+				return fmt.Errorf("create stream for %s: %w", b, err)
+			}
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("look up stream for %s: %w", b, err)
+		}
+		cfg := st.CachedInfo().Config
+		update := false
+		if !slices.Contains(cfg.Subjects, b) {
+			cfg.Subjects = append(cfg.Subjects, b)
+			update = true
+		}
+		if cfg.Duplicates < dedupWindow {
+			cfg.Duplicates = dedupWindow
+			update = true
+		}
+		if cfg.Storage != jetstream.FileStorage && !p.storageWarned[name] {
+			if p.storageWarned == nil {
+				p.storageWarned = make(map[string]bool)
+			}
+			p.storageWarned[name] = true
+			p.log.Warn("stream is not file-backed, so events do not survive a broker restart; storage cannot be changed in place",
+				"stream", name, "storage", cfg.Storage.String())
+		}
+		if update {
+			if _, err := p.js.UpdateStream(ctx, cfg); err != nil {
+				return fmt.Errorf("update stream for %s: %w", b, err)
+			}
 		}
 	}
 	return nil

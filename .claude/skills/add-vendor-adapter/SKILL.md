@@ -34,8 +34,11 @@ It does not apply to:
    `register.go` for registration and strict connection parsing, `asc.go`
    and `dms.go` for the read. Do not copy `asc.go`'s fixture provenance or
    its alarm-bitmap table; both are known gaps (see the canonical doc's
-   "Before you start" section). `dms_test.go`'s fixtures, transcribed from
-   a live controller with a provenance comment, are the better model.
+   "Before you start" section). Record your fixtures with `collector
+   record-fixture` and replay them with `snmptest.LoadFixture`
+   (`docs/how-to/record-fixtures-from-a-device.md`); `dms_test.go`'s
+   fixtures, transcribed by hand from a live controller with a provenance
+   comment, predate the recorder.
 2. Confirm the facet you need already exists in `sdk/model` —
    `docs/reference/starter-tasks.md` lists the facets that are modeled and
    diffed with no adapter producing them yet. If your device needs a

@@ -31,7 +31,8 @@ make check    # vet, golangci-lint (gofmt included), tidy, race tests, boundary 
 ```
 
 `make check` is what the required `check` CI job runs. That job also
-cross-compiles for linux `arm64`/`amd64` (`make cross`) and validates the
+cross-compiles for linux `arm64`/`amd64` (`make cross`), fuzzes the
+device-facing decode paths briefly (`make fuzz`), and validates the
 GoReleaser config. `make vuln` (govulncheck) runs as a separate,
 non-blocking workflow.
 

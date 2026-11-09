@@ -4,13 +4,14 @@
 **Status:** Mostly implemented; kept as the design record. §1 is built
 (`internal/manage`; the operator-facing reference is
 [`configuration.md`'s management-surface section](../reference/configuration.md#the-management-surface)),
-except `sd_notify`. §2's boot record and periodic self-report are built as
+and so is `sd_notify` (`internal/sdnotify`; see the
+[runtime contract](../reference/runtime-contract.md#health)). §2's boot record and periodic self-report are built as
 [ADR 0019](../adr/0019-collector-self-health.md)'s `instance.*` events; its
 drift report is superseded — ADR 0019 has the collector report what it runs
 and leaves the comparison with what was expected to the fleet control plane.
 §3 is deferred by design. §5 is resolved by
-[ADR 0020](../adr/0020-broker-absence-is-latency.md). The only open
-collector-side item is `sd_notify`.
+[ADR 0020](../adr/0020-broker-absence-is-latency.md). No collector-side
+item is open.
 **Depends on:** ADR 0004 (pull-only), ADR 0007 (collector-owned health schema),
 ADR 0011 (namespace-rooted subjects), ADR 0012 (host-executed updates)
 **Context:** `docs/specs/2026-08-09-fleet-deployment.md`
@@ -25,7 +26,7 @@ Three directions, deliberately asymmetric:
 
 | Direction | Mechanism | Exists today |
 |---|---|---|
-| **Local** — supervisor and on-site technician | HTTP on loopback | yes (`internal/manage`), less `sd_notify` |
+| **Local** — supervisor and on-site technician | HTTP on loopback | yes (`internal/manage`, plus `sd_notify`) |
 | **Outbound** — fleet observability | events on the bus | yes (ADR 0019 `instance.*` events) |
 | **Inbound** — desired state | config file, no control channel | n/a, by design |
 

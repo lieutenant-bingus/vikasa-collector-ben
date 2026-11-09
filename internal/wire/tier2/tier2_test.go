@@ -3,6 +3,7 @@ package tier2_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -12,9 +13,13 @@ import (
 	"github.com/nats-io/nats.go"
 	"google.golang.org/protobuf/proto"
 
+	cctvv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/cctv/v1"
 	commonv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/common/v1"
 	dmsv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/dms/v1"
+	pcpv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/perception/v1"
 	scv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/signal_control/v1"
+	tsv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/traffic_sensor/v1"
+	zocv1 "github.com/Vikasa2M/openits-models/pkg/proto/openits/zone_occupancy/v1"
 
 	conformance "github.com/Vikasa2M/openits-models/tools/conformance/tests"
 
@@ -99,6 +104,70 @@ func dmsScript() [][]model.Facet {
 	}
 }
 
+// intervalAt gives each scripted step its own measurement interval, so every
+// step is a new interval report.
+func intervalAt(step int) time.Time {
+	return time.Date(2026, 10, 22, 12, step, 0, 0, time.UTC)
+}
+
+func cctvScript() [][]model.Facet {
+	return [][]model.Facet{
+		{
+			model.CCTVStatus{ControlMode: model.CCTVControlCentral, Tours: []model.CCTVTour{{TourID: 4, State: model.TourRunning}}},
+			model.FaultSet{},
+		},
+		{
+			model.CCTVStatus{ControlMode: model.CCTVControlLocal, Tours: []model.CCTVTour{{TourID: 4, State: model.TourPaused}}},
+			model.FaultSet{Faults: []model.Fault{{ID: "link-down", Severity: model.SeverityMajor, Category: model.CategoryCommunication, Description: "uplink lost"}}},
+		},
+		{
+			model.CCTVStatus{ControlMode: model.CCTVControlCentral, Tours: []model.CCTVTour{{TourID: 4, State: model.TourStopped}}},
+			model.FaultSet{},
+		},
+	}
+}
+
+func trafficScript() [][]model.Facet {
+	lane := func(vol uint32) model.LaneMeasurement {
+		return model.LaneMeasurement{
+			LaneID: 1, Volume: vol, OccupancyTenths: 125, SpeedAvgHundredthsKPH: 8850, SpeedReported: true,
+			ClassVolumes: []model.LaneClassVolume{{ClassID: 2, Volume: vol}}, Quality: model.QualityValid,
+		}
+	}
+	report := func(step int, vol uint32) model.TrafficIntervals {
+		return model.TrafficIntervals{IntervalStart: intervalAt(step), IntervalDuration: time.Minute, Lanes: []model.LaneMeasurement{lane(vol)}}
+	}
+	return [][]model.Facet{
+		{report(0, 40), model.FaultSet{}},
+		{report(1, 42), model.FaultSet{Faults: []model.Fault{{ID: "psu", Severity: model.SeverityMajor, Category: model.CategoryPower, Description: "supply low"}}}},
+		{report(2, 38), model.FaultSet{}},
+	}
+}
+
+func perceptionScript() [][]model.Facet {
+	incident := func(confidence uint8) model.ZoneIncident {
+		return model.ZoneIncident{
+			IncidentID: "i-1", ZoneID: "zone-a", Type: model.IncidentWrongWayVehicle, Severity: model.IncidentMajor,
+			ObjectClass: model.ObjectTruck, ConfidencePercent: confidence, SpeedHundredthsKPH: 4250, SpeedReported: true,
+			TrackID: 7, TrackEpoch: 2,
+		}
+	}
+	zones := func(step int) model.ZoneIntervals {
+		return model.ZoneIntervals{IntervalStart: intervalAt(step), IntervalDuration: time.Minute, Zones: []model.ZoneMeasurement{{
+			ZoneID: "zone-a", CrossedVolume: 40, ObservedCount: 42, OccupancyTenths: 310,
+			SpeedAvgHundredthsKPH: 5125, SpeedReported: true,
+			CrossedClassCounts:  []model.ZoneClassCount{{Class: model.ObjectPassengerVehicle, Count: 36}, {Class: model.ObjectTruck, Count: 4}},
+			ObservedClassCounts: []model.ZoneClassCount{{Class: model.ObjectPassengerVehicle, Count: 38}, {Class: model.ObjectTruck, Count: 4}},
+		}}}
+	}
+	return [][]model.Facet{
+		{model.ZoneIncidents{}, zones(0), model.FaultSet{}},
+		{model.ZoneIncidents{Incidents: []model.ZoneIncident{incident(80)}}, zones(1),
+			model.FaultSet{Faults: []model.Fault{{ID: "overheat", Severity: model.SeverityMajor, Category: model.CategoryEnvironment, Description: "enclosure hot"}}}},
+		{model.ZoneIncidents{Incidents: []model.ZoneIncident{incident(95)}}, zones(2), model.FaultSet{}},
+	}
+}
+
 // want is the catalog event set the scripts must produce before the checks
 // run, so no check can pass for want of the event it judges.
 var want = []string{
@@ -116,40 +185,73 @@ var want = []string{
 	"openits.dms.message-activation-failed.v1",
 	"openits.dms.fault-raised.v1",
 	"openits.dms.fault-cleared.v1",
+	"openits.cctv.mode-changed.v1",
+	"openits.cctv.tour-state-changed.v1",
+	"openits.cctv.fault-raised.v1",
+	"openits.cctv.fault-cleared.v1",
+	"openits.traffic-sensor.traffic-interval-report.v1",
+	"openits.traffic-sensor.fault-raised.v1",
+	"openits.traffic-sensor.fault-cleared.v1",
+	"openits.perception.zone-incident-detected.v1",
+	"openits.perception.zone-incident-updated.v1",
+	"openits.perception.zone-incident-cleared.v1",
+	"openits.perception.zone-interval-report.v1",
+	"openits.perception.fault-raised.v1",
+	"openits.perception.fault-cleared.v1",
+	"openits.zone-occupancy.zone-occupancy-interval-report.v1",
 }
 
 // checks names, per harness kind, the harness checks that judge the event
-// stream. The rest of each kind's suite judges the device's YANG state
-// tree, which a collector never publishes, so it does not apply here.
+// stream. Every other check the harness defines for a kind is ruled out:
+// stateChecks judge the device's YANG state tree, which a collector never
+// publishes, and unpublished need an event the collector does not emit. TestEveryHarnessCheckIsRunOrRuledOut holds the two lists to
+// the pinned harness, so a check a release adds cannot go unrun unnoticed.
 // Checks are looked up by name in conformance.All: a check the harness
 // renames or drops fails this test instead of silently not running.
+var envelopeChecks = []string{
+	"TestSubject_SevenTokenShape",
+	"TestSubject_OpenitsPrefix",
+	"TestCEType_OpenitsFormat",
+	"TestCESource_URN",
+	"TestCEID_Present",
+	"TestEvent_SequenceContiguousWithinEpoch",
+	"TestFault_KindMatchesService",
+	"TestMode_ValueMatchesKind",
+}
+
 var checks = map[string][]string{
-	"asc": {
-		"TestSubject_SevenTokenShape",
-		"TestSubject_OpenitsPrefix",
-		"TestCEType_OpenitsFormat",
-		"TestCESource_URN",
-		"TestCEID_Present",
-		"TestFault_KindMatchesService",
-		"TestMode_ValueMatchesKind",
+	"asc": append(slices.Clone(envelopeChecks),
 		"TestPreemption_EventFired",
 		"TestPreemption_EventTypeShape",
 		"TestEvents_CabinetOutputChanged",
 		"TestEvents_StatusReportFlashCause",
-	},
-	"dms": {
-		"TestSubject_SevenTokenShape",
-		"TestSubject_OpenitsPrefix",
-		"TestCEType_OpenitsFormat",
-		"TestCESource_URN",
-		"TestCEID_Present",
-		"TestFault_KindMatchesService",
-		"TestMode_ValueMatchesKind",
+	),
+	"dms": append(slices.Clone(envelopeChecks),
 		"TestDMSOperational_Heartbeat",
 		"TestDMSEvent_FaultRaisedShape",
 		"TestDMSEvent_ModeChangedShape",
 		"TestDMSEvent_ActivationFailedShape",
-	},
+	),
+	"cctv": append(slices.Clone(envelopeChecks),
+		"TestCctvEvent_FaultRaisedShape",
+	),
+	"traffic-sensor": append(slices.Clone(envelopeChecks),
+		"TestTrafficSensorEvent_IntervalReportShape",
+		"TestTrafficSensorEvent_FaultRaisedShape",
+	),
+	"perception": append(slices.Clone(envelopeChecks),
+		"TestPerceptionEvent_IncidentDetectedShape",
+		"TestPerceptionEvent_IntervalCrossedReconciles",
+		"TestPerceptionEvent_FaultRaisedShape",
+		// The zone-occupancy capability's event checks run in the
+		// perception suite, which is where the harness composes them.
+		"TestZoneOccupancyEvent_IntervalReportShape",
+		"TestZoneOccupancyEvent_ObservedClassReconciles",
+		"TestZoneOccupancyEvent_PeakWithinObserved",
+		"TestZoneOccupancyEvent_ChangedShape",
+		"TestZoneOccupancyEvent_ChangedKindAgreesWithPayload",
+		"TestZoneOccupancyEvent_ChangedPresentClassSumsToCount",
+	),
 }
 
 // payloadFor decodes each catalog ce-type the scripts produce, so the
@@ -171,10 +273,30 @@ var payloadFor = map[string]func() proto.Message{
 	"openits.dms.fault-raised.v1":                         func() proto.Message { return &commonv1.FaultRaised{} },
 	"openits.dms.fault-cleared.v1":                        func() proto.Message { return &commonv1.FaultCleared{} },
 	"openits.dms.sign-status-report.v1":                   func() proto.Message { return &dmsv1.SignStatusReport{} },
+	"openits.cctv.mode-changed.v1":                        func() proto.Message { return &commonv1.ModeChanged{} },
+	"openits.cctv.tour-state-changed.v1":                  func() proto.Message { return &cctvv1.TourStateChanged{} },
+	"openits.cctv.fault-raised.v1":                        func() proto.Message { return &commonv1.FaultRaised{} },
+	"openits.cctv.fault-cleared.v1":                       func() proto.Message { return &commonv1.FaultCleared{} },
+	"openits.traffic-sensor.traffic-interval-report.v1":   func() proto.Message { return &tsv1.TrafficIntervalReport{} },
+	"openits.traffic-sensor.fault-raised.v1":              func() proto.Message { return &commonv1.FaultRaised{} },
+	"openits.traffic-sensor.fault-cleared.v1":             func() proto.Message { return &commonv1.FaultCleared{} },
+	"openits.perception.zone-incident-detected.v1":        func() proto.Message { return &pcpv1.ZoneIncidentDetected{} },
+	"openits.perception.zone-incident-updated.v1":         func() proto.Message { return &pcpv1.ZoneIncidentUpdated{} },
+	"openits.perception.zone-incident-cleared.v1":         func() proto.Message { return &pcpv1.ZoneIncidentCleared{} },
+	"openits.perception.zone-interval-report.v1":          func() proto.Message { return &pcpv1.ZoneIntervalReport{} },
+	"openits.perception.fault-raised.v1":                  func() proto.Message { return &commonv1.FaultRaised{} },
+	"openits.perception.fault-cleared.v1":                 func() proto.Message { return &commonv1.FaultCleared{} },
+	"openits.zone-occupancy.zone-occupancy-interval-report.v1": func() proto.Message {
+		return &zocv1.ZoneOccupancyIntervalReport{}
+	},
 }
 
 // serviceKind is the harness kind whose suite judges a catalog service.
-var serviceKind = map[string]string{"signal-control": "asc", "dms": "dms"}
+// zone-occupancy is a capability the harness composes into perception.
+var serviceKind = map[string]string{
+	"signal-control": "asc", "dms": "dms", "cctv": "cctv",
+	"traffic-sensor": "traffic-sensor", "perception": "perception", "zone-occupancy": "perception",
+}
 
 func TestCollectorStreamPassesTheTier2Harness(t *testing.T) {
 	ns, err := server.NewServer(&server.Options{Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir()})
@@ -188,21 +310,25 @@ func TestCollectorStreamPassesTheTier2Harness(t *testing.T) {
 	}
 
 	reg := adapter.NewRegistry()
-	ascDesc := adapter.Descriptor{Vendor: "fixture", DeviceKind: "asc", Caps: adapter.CapState}
-	dmsDesc := adapter.Descriptor{Vendor: "fixture", DeviceKind: "dms", Caps: adapter.CapState}
-	reg.Register(ascDesc, func(id string, _ map[string]any) (adapter.Adapter, error) {
-		return &scripted{desc: ascDesc, id: id, steps: ascScript()}, nil
-	})
-	reg.Register(dmsDesc, func(id string, _ map[string]any) (adapter.Adapter, error) {
-		return &scripted{desc: dmsDesc, id: id, steps: dmsScript()}, nil
-	})
 	cfg := &config.Config{
 		Region: "us-ga", Agency: "metro", AgencyUnit: "d01", Site: "cab-1",
 		CollectorID: "metro-cab-1-collector", ModelVersion: "openits/v1",
-		Devices: []config.Device{
-			{ID: "asc-1", Vendor: "fixture", DeviceKind: "asc", PollInterval: 30 * time.Millisecond},
-			{ID: "dms-1", Vendor: "fixture", DeviceKind: "dms", PollInterval: 30 * time.Millisecond},
-		},
+	}
+	for _, d := range []struct {
+		kind, id string
+		script   func() [][]model.Facet
+	}{
+		{"asc", "asc-1", ascScript},
+		{"dms", "dms-1", dmsScript},
+		{"cctv", "cam-1", cctvScript},
+		{"traffic-sensor", "ts-1", trafficScript},
+		{"perception", "pcp-1", perceptionScript},
+	} {
+		desc := adapter.Descriptor{Vendor: "fixture", DeviceKind: d.kind, Caps: adapter.CapState}
+		reg.Register(desc, func(id string, _ map[string]any) (adapter.Adapter, error) {
+			return &scripted{desc: desc, id: id, steps: d.script()}, nil
+		})
+		cfg.Devices = append(cfg.Devices, config.Device{ID: d.id, Vendor: "fixture", DeviceKind: d.kind, PollInterval: 30 * time.Millisecond})
 	}
 
 	// Subscribe to the catalog subject space only: that is what the harness
@@ -292,7 +418,7 @@ func TestCollectorStreamPassesTheTier2Harness(t *testing.T) {
 		t.Errorf("catalog payloads the harness checks could not see: %q", undecodable)
 	}
 	if len(stray) > 0 {
-		t.Errorf("catalog-space subjects outside the 7-token signal-control/dms shape: %q", stray)
+		t.Errorf("catalog-space subjects outside the 7-token shape, or for a service no harness kind judges: %q", stray)
 	}
 	window := time.Since(start)
 	for kind, names := range checks {

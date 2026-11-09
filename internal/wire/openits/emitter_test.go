@@ -1215,7 +1215,8 @@ func TestEncode_ZoneIntervalReport(t *testing.T) {
 		Zones: []model.ZoneMeasurement{{
 			ZoneID: "zone-a", CrossedVolume: 40, ObservedCount: 42,
 			OccupancyTenths: 310, SpeedAvgHundredthsKPH: 5125, SpeedReported: true,
-			ClassCounts: []model.ZoneClassCount{{Class: model.ObjectTruck, Count: 4}},
+			CrossedClassCounts:  []model.ZoneClassCount{{Class: model.ObjectPassengerVehicle, Count: 36}, {Class: model.ObjectTruck, Count: 4}},
+			ObservedClassCounts: []model.ZoneClassCount{{Class: model.ObjectPassengerVehicle, Count: 38}, {Class: model.ObjectTruck, Count: 4}},
 		}},
 	}, &got)
 
@@ -1242,8 +1243,8 @@ func TestEncode_ZoneIntervalReport(t *testing.T) {
 	// here -- identityrefs are plain strings -- so this assertion is the
 	// check.
 	cc := z.GetClassCount()
-	if len(cc) != 1 || cc[0].GetClass() != "openits-types:object-truck" || cc[0].GetCount() != 4 {
-		t.Errorf("class counts = %+v", cc)
+	if len(cc) != 2 || cc[1].GetClass() != "openits-types:object-truck" || cc[1].GetCount() != 4 || cc[0].GetCount() != 36 {
+		t.Errorf("class counts = %+v; want the crossed breakdown (36 passenger, 4 truck)", cc)
 	}
 }
 
@@ -1260,7 +1261,8 @@ func TestEncode_ZoneOccupancyIntervalReport(t *testing.T) {
 		Zones: []model.ZoneMeasurement{{
 			ZoneID: "zone-a", CrossedVolume: 40, ObservedCount: 42,
 			OccupancyTenths: 310, SpeedAvgHundredthsKPH: 5125, SpeedReported: true,
-			ClassCounts: []model.ZoneClassCount{{Class: model.ObjectTruck, Count: 4}},
+			CrossedClassCounts:  []model.ZoneClassCount{{Class: model.ObjectPassengerVehicle, Count: 36}, {Class: model.ObjectTruck, Count: 4}},
+			ObservedClassCounts: []model.ZoneClassCount{{Class: model.ObjectPassengerVehicle, Count: 38}, {Class: model.ObjectTruck, Count: 4}},
 		}},
 	}, &got)
 
@@ -1286,8 +1288,8 @@ func TestEncode_ZoneOccupancyIntervalReport(t *testing.T) {
 		t.Errorf("peak = %d, want 0 (unobserved, not inferred)", z.GetPeakOccupancyCount())
 	}
 	oc := z.GetObservedClass()
-	if len(oc) != 1 || oc[0].GetClass() != "openits-types:object-truck" || oc[0].GetCount() != 4 {
-		t.Errorf("observed classes = %+v", oc)
+	if len(oc) != 2 || oc[1].GetClass() != "openits-types:object-truck" || oc[1].GetCount() != 4 || oc[0].GetCount() != 38 {
+		t.Errorf("observed classes = %+v; want the observed breakdown (38 passenger, 4 truck)", oc)
 	}
 	// No per-class confidence in the domain; the leaf is "not stated", and
 	// zero must not read as a confidence of none.
@@ -1389,3 +1391,49 @@ func TestEncode_DeviceStatusChangedDeclinedWithoutACatalogChannel(t *testing.T) 
 // testEpoch is the sequence-epoch every test emitter stamps. It is cleared
 // from identity bytes, so it shows only in Data.
 const testEpoch = "01TESTEPOCH0000000000000000"
+
+// Crossed and observed are different populations — a stopped vehicle is
+// observed repeatedly but crosses once — and each report's breakdown must sum
+// to its own total (openits-models conformance:
+// TestPerceptionEvent_IntervalCrossedReconciles and
+// TestZoneOccupancyEvent_ObservedClassReconciles). One shared breakdown could
+// satisfy at most one of them; found by the Tier 2 test.
+func TestEachIntervalReportCarriesItsOwnClassBreakdown(t *testing.T) {
+	zone := model.ZoneMeasurement{
+		ZoneID: "zone-a", CrossedVolume: 40, ObservedCount: 42, OccupancyTenths: 310,
+		CrossedClassCounts:  []model.ZoneClassCount{{Class: model.ObjectPassengerVehicle, Count: 36}, {Class: model.ObjectTruck, Count: 4}},
+		ObservedClassCounts: []model.ZoneClassCount{{Class: model.ObjectPassengerVehicle, Count: 38}, {Class: model.ObjectTruck, Count: 4}},
+	}
+	start := time.Date(2026, 8, 9, 11, 59, 0, 0, time.UTC)
+
+	var crossed pcpv1.ZoneIntervalReport
+	encodeOK(t, model.ZoneIntervalReport{Base: base("lidar-01", "perception"), IntervalStart: start,
+		IntervalDuration: time.Minute, Zones: []model.ZoneMeasurement{zone}}, &crossed)
+	var sum uint32
+	for _, cc := range crossed.GetZone()[0].GetClassCount() {
+		sum += cc.GetCount()
+	}
+	if sum != 40 {
+		t.Errorf("zone-interval-report class-count sums to %d, want the crossed volume 40", sum)
+	}
+
+	var observed zocv1.ZoneOccupancyIntervalReport
+	encodeOK(t, model.ZoneOccupancyIntervalReport{Base: base("lidar-01", "perception"), IntervalStart: start,
+		IntervalDuration: time.Minute, Zones: []model.ZoneMeasurement{zone}}, &observed)
+	sum = 0
+	for _, oc := range observed.GetZone()[0].GetObservedClass() {
+		sum += oc.GetCount()
+	}
+	if sum != 42 {
+		t.Errorf("zone-occupancy-interval-report observed-class sums to %d, want the observed count 42", sum)
+	}
+
+	// A breakdown the device does not give is absent, not borrowed from the
+	// other population.
+	zone.ObservedClassCounts = nil
+	encodeOK(t, model.ZoneOccupancyIntervalReport{Base: base("lidar-01", "perception"), IntervalStart: start,
+		IntervalDuration: time.Minute, Zones: []model.ZoneMeasurement{zone}}, &observed)
+	if got := observed.GetZone()[0].GetObservedClass(); len(got) != 0 {
+		t.Errorf("observed-class = %v with no observed breakdown; want absent", got)
+	}
+}
