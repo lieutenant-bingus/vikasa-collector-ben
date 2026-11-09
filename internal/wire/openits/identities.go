@@ -230,7 +230,10 @@ func faultKindIdentity(c model.FaultCategory, deviceKind string, ft model.FaultT
 		case model.FaultTypeGateCommandRefused:
 			return rlTypes + "reversible-lane-fault-interlock", true
 		case model.FaultTypePLCNotScanning:
-			return rlTypes + "reversible-lane-fault-plc-communication", true
+			// A successful read observed a counter that stopped. That is the
+			// controller watchdog leaf. The description stays the observation;
+			// a failed read never reaches this case.
+			return rlTypes + "reversible-lane-fault-controller", true
 		case model.FaultTypePLCFault:
 			return rlTypes + "reversible-lane-fault-controller", true
 		case model.FaultTypePLCCabinetIDMismatch,

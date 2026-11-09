@@ -849,7 +849,7 @@ func TestFaultKindIdentity_ACSMapsByFaultType(t *testing.T) {
 		model.FaultTypeGateEmergencyStop:     "openits-reversible-lane-types:reversible-lane-fault-gate-emergency-stop",
 		model.FaultTypeGateInvalidInputs:     "openits-vendor-cameleon-reversible-lane-types:cameleon-gate-invalid-inputs",
 		model.FaultTypeGateCommandRefused:    "openits-reversible-lane-types:reversible-lane-fault-interlock",
-		model.FaultTypePLCNotScanning:        "openits-reversible-lane-types:reversible-lane-fault-plc-communication",
+		model.FaultTypePLCNotScanning:        "openits-reversible-lane-types:reversible-lane-fault-controller",
 		model.FaultTypePLCFault:              "openits-reversible-lane-types:reversible-lane-fault-controller",
 		model.FaultTypePLCCabinetIDMismatch:  "openits-reversible-lane-types:reversible-lane-fault-controller-configuration",
 		model.FaultTypePLCProgramCRCMismatch: "openits-reversible-lane-types:reversible-lane-fault-controller-configuration",
